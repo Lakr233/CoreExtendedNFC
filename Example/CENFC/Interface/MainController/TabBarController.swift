@@ -1,6 +1,6 @@
 import UIKit
 
-final class TabBarController: UITabBarController {
+class TabBarController: UITabBarController {
     private var hasScheduledWelcome = false
 
     override func viewDidLoad() {

@@ -5,7 +5,7 @@ import SPIndicator
 import Then
 import UIKit
 
-final class CardDetailViewController: StackScrollController {
+class CardDetailViewController: StackScrollController {
     private let record: ScanRecord
 
     private let dateFormatter = DateFormatter().then {

@@ -5,11 +5,13 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-final class NDEFViewController: UIViewController {
+class NDEFViewController: UIViewController {
     nonisolated enum Section { case main }
 
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private var dataSource: UITableViewDiffableDataSource<Section, UUID>!
+    private var dataSource: ReorderableTableViewDiffableDataSource<Section, UUID>!
+    private var pendingSnapshotReload = false
+    private var pendingSnapshotAnimated = true
 
     private lazy var addBarButton: UIBarButtonItem = {
         let addMenu = UIMenu(children: [
@@ -139,13 +141,17 @@ final class NDEFViewController: UIViewController {
         setupDataSource()
         setupNavBar()
         setupSearch()
-        reloadSnapshot()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadSnapshot()
         navigationController?.setToolbarHidden(true, animated: animated)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        flushPendingSnapshotReloadIfNeeded()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -180,6 +186,16 @@ final class NDEFViewController: UIViewController {
                 cell.update(with: record)
             }
             return cell
+        }
+        dataSource.canReorderItem = { [weak self] _ in
+            self?.currentSearchText.isEmpty == true
+        }
+        dataSource.onReorderedItems = { orderedIDs in
+            AppLogStore.shared.info(
+                "moveRow reconciled orderedIDs=\(orderedIDs.count)",
+                source: "NDEFReorder"
+            )
+            NDEFStore.shared.reorder(by: orderedIDs)
         }
         dataSource.defaultRowAnimation = .fade
     }
@@ -239,7 +255,16 @@ final class NDEFViewController: UIViewController {
 
     // MARK: - Data Source
 
-    func reloadSnapshot() {
+    func reloadSnapshot(animatingDifferences: Bool = true) {
+        guard isViewLoaded, view.window != nil, tableView.window != nil else {
+            pendingSnapshotReload = true
+            pendingSnapshotAnimated = pendingSnapshotAnimated || animatingDifferences
+            AppLogStore.shared.debug(
+                "reloadSnapshot deferred animated=\(animatingDifferences) viewWindow=\(view.window != nil) tableWindow=\(tableView.window != nil)",
+                source: "NDEFReorder"
+            )
+            return
+        }
         let query = currentSearchText
         let filtered = NDEFStore.shared.records.filter { record in
             query.isEmpty
@@ -247,6 +272,10 @@ final class NDEFViewController: UIViewController {
                 || record.displayType.localizedCaseInsensitiveContains(query)
                 || record.displayValue.localizedCaseInsensitiveContains(query)
         }
+        AppLogStore.shared.debug(
+            "reloadSnapshot query='\(query)' total=\(NDEFStore.shared.records.count) filtered=\(filtered.count) window=\(view.window != nil)",
+            source: "NDEFReorder"
+        )
         let previousItems = Set(dataSource.snapshot().itemIdentifiers)
         var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
         snapshot.appendSections([.main])
@@ -256,7 +285,19 @@ final class NDEFViewController: UIViewController {
         if !itemsToReconfigure.isEmpty {
             snapshot.reconfigureItems(itemsToReconfigure)
         }
-        dataSource.apply(snapshot, animatingDifferences: true)
+        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+    }
+
+    private func flushPendingSnapshotReloadIfNeeded() {
+        guard pendingSnapshotReload, view.window != nil, tableView.window != nil else { return }
+        let animated = pendingSnapshotAnimated
+        pendingSnapshotReload = false
+        pendingSnapshotAnimated = true
+        AppLogStore.shared.debug(
+            "flushing deferred snapshot animated=\(animated)",
+            source: "NDEFReorder"
+        )
+        reloadSnapshot(animatingDifferences: animated)
     }
 
     // MARK: - Create
@@ -683,7 +724,22 @@ extension NDEFViewController: UITableViewDragDelegate {
         itemsForBeginning _: UIDragSession,
         at indexPath: IndexPath
     ) -> [UIDragItem] {
+        guard view.window != nil, tableView.window != nil else {
+            AppLogStore.shared.warning("drag begin blocked because table/view is not in a window", source: "NDEFReorder")
+            return []
+        }
+        guard currentSearchText.isEmpty else {
+            AppLogStore.shared.warning(
+                "drag begin blocked by active search query='\(currentSearchText)'",
+                source: "NDEFReorder"
+            )
+            return []
+        }
         guard let recordID = dataSource.itemIdentifier(for: indexPath) else { return [] }
+        AppLogStore.shared.debug(
+            "drag begin row=\(indexPath.row) id=\(recordID.uuidString)",
+            source: "NDEFReorder"
+        )
         let provider = NSItemProvider(object: recordID.uuidString as NSString)
         let item = UIDragItem(itemProvider: provider)
         item.localObject = recordID
@@ -706,34 +762,28 @@ extension NDEFViewController: UITableViewDropDelegate {
         dropSessionDidUpdate session: UIDropSession,
         withDestinationIndexPath _: IndexPath?
     ) -> UITableViewDropProposal {
+        guard view.window != nil, tableView.window != nil else {
+            AppLogStore.shared.warning("drop update cancelled because table/view is not in a window", source: "NDEFReorder")
+            return UITableViewDropProposal(operation: .cancel)
+        }
         guard session.localDragSession != nil else {
             return UITableViewDropProposal(operation: .cancel)
         }
+        guard currentSearchText.isEmpty else {
+            AppLogStore.shared.warning(
+                "drop update forbidden due to active search query='\(currentSearchText)'",
+                source: "NDEFReorder"
+            )
+            return UITableViewDropProposal(operation: .forbidden)
+        }
+        AppLogStore.shared.debug("drop update local move", source: "NDEFReorder")
         return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
     }
 
     func tableView(
         _: UITableView,
-        performDropWith coordinator: UITableViewDropCoordinator
+        performDropWith _: UITableViewDropCoordinator
     ) {
-        let destinationIndexPath = coordinator.destinationIndexPath
-            ?? IndexPath(row: NDEFStore.shared.records.count, section: 0)
-
-        for item in coordinator.items {
-            guard let sourceID = item.dragItem.localObject as? UUID,
-                  let sourceIndex = NDEFStore.shared.records.firstIndex(where: { $0.id == sourceID })
-            else { continue }
-
-            NDEFStore.shared.move(from: sourceIndex, to: destinationIndexPath.row)
-
-            var snapshot = dataSource.snapshot()
-            let ids = NDEFStore.shared.records.map(\.id)
-            snapshot.deleteAllItems()
-            snapshot.appendSections([.main])
-            snapshot.appendItems(ids)
-            dataSource.apply(snapshot, animatingDifferences: false)
-
-            coordinator.drop(item.dragItem, toRowAt: destinationIndexPath)
-        }
+        AppLogStore.shared.debug("performDrop local noop; datasource handles reorder", source: "NDEFReorder")
     }
 }

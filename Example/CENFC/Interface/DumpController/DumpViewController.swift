@@ -5,11 +5,13 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-final class DumpViewController: UIViewController {
+class DumpViewController: UIViewController {
     nonisolated enum Section { case main }
 
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private var dataSource: UITableViewDiffableDataSource<Section, UUID>!
+    private var dataSource: ReorderableTableViewDiffableDataSource<Section, UUID>!
+    private var pendingSnapshotReload = false
+    private var pendingSnapshotAnimated = true
 
     private lazy var dumpBarButton: UIBarButtonItem = {
         let protocolActions: [UIMenuElement] = [
@@ -129,12 +131,16 @@ final class DumpViewController: UIViewController {
         setupDataSource()
         setupNavBar()
         setupSearch()
-        reloadSnapshot()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadSnapshot()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        flushPendingSnapshotReloadIfNeeded()
     }
 
     // MARK: - Setup
@@ -164,6 +170,16 @@ final class DumpViewController: UIViewController {
                 cell.update(with: record)
             }
             return cell
+        }
+        dataSource.canReorderItem = { [weak self] _ in
+            self?.currentSearchText.isEmpty == true
+        }
+        dataSource.onReorderedItems = { orderedIDs in
+            AppLogStore.shared.info(
+                "moveRow reconciled orderedIDs=\(orderedIDs.count)",
+                source: "DumpReorder"
+            )
+            DumpStore.shared.reorder(by: orderedIDs)
         }
         dataSource.defaultRowAnimation = .fade
     }
@@ -258,7 +274,16 @@ final class DumpViewController: UIViewController {
 
     // MARK: - Data Source
 
-    func reloadSnapshot() {
+    func reloadSnapshot(animatingDifferences: Bool = true) {
+        guard isViewLoaded, view.window != nil, tableView.window != nil else {
+            pendingSnapshotReload = true
+            pendingSnapshotAnimated = pendingSnapshotAnimated || animatingDifferences
+            AppLogStore.shared.debug(
+                "reloadSnapshot deferred animated=\(animatingDifferences) viewWindow=\(view.window != nil) tableWindow=\(tableView.window != nil)",
+                source: "DumpReorder"
+            )
+            return
+        }
         let query = currentSearchText
         let filtered = DumpStore.shared.records.filter { record in
             query.isEmpty
@@ -266,10 +291,26 @@ final class DumpViewController: UIViewController {
                 || record.dump.cardInfo.uid.hexString.localizedCaseInsensitiveContains(query)
                 || record.dump.cardInfo.uid.compactHexString.localizedCaseInsensitiveContains(query)
         }
+        AppLogStore.shared.debug(
+            "reloadSnapshot query='\(query)' total=\(DumpStore.shared.records.count) filtered=\(filtered.count) window=\(view.window != nil)",
+            source: "DumpReorder"
+        )
         var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
         snapshot.appendSections([.main])
         snapshot.appendItems(filtered.map(\.id))
-        dataSource.apply(snapshot, animatingDifferences: true)
+        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+    }
+
+    private func flushPendingSnapshotReloadIfNeeded() {
+        guard pendingSnapshotReload, view.window != nil, tableView.window != nil else { return }
+        let animated = pendingSnapshotAnimated
+        pendingSnapshotReload = false
+        pendingSnapshotAnimated = true
+        AppLogStore.shared.debug(
+            "flushing deferred snapshot animated=\(animated)",
+            source: "DumpReorder"
+        )
+        reloadSnapshot(animatingDifferences: animated)
     }
 
     // MARK: - Dump
@@ -528,7 +569,22 @@ extension DumpViewController: UITableViewDragDelegate {
         itemsForBeginning _: UIDragSession,
         at indexPath: IndexPath
     ) -> [UIDragItem] {
+        guard view.window != nil, tableView.window != nil else {
+            AppLogStore.shared.warning("drag begin blocked because table/view is not in a window", source: "DumpReorder")
+            return []
+        }
+        guard currentSearchText.isEmpty else {
+            AppLogStore.shared.warning(
+                "drag begin blocked by active search query='\(currentSearchText)'",
+                source: "DumpReorder"
+            )
+            return []
+        }
         guard let recordID = dataSource.itemIdentifier(for: indexPath) else { return [] }
+        AppLogStore.shared.debug(
+            "drag begin row=\(indexPath.row) id=\(recordID.uuidString)",
+            source: "DumpReorder"
+        )
         let provider = NSItemProvider(object: recordID.uuidString as NSString)
         let item = UIDragItem(itemProvider: provider)
         item.localObject = recordID
@@ -551,34 +607,28 @@ extension DumpViewController: UITableViewDropDelegate {
         dropSessionDidUpdate session: UIDropSession,
         withDestinationIndexPath _: IndexPath?
     ) -> UITableViewDropProposal {
+        guard view.window != nil, tableView.window != nil else {
+            AppLogStore.shared.warning("drop update cancelled because table/view is not in a window", source: "DumpReorder")
+            return UITableViewDropProposal(operation: .cancel)
+        }
         guard session.localDragSession != nil else {
             return UITableViewDropProposal(operation: .cancel)
         }
+        guard currentSearchText.isEmpty else {
+            AppLogStore.shared.warning(
+                "drop update forbidden due to active search query='\(currentSearchText)'",
+                source: "DumpReorder"
+            )
+            return UITableViewDropProposal(operation: .forbidden)
+        }
+        AppLogStore.shared.debug("drop update local move", source: "DumpReorder")
         return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
     }
 
     func tableView(
         _: UITableView,
-        performDropWith coordinator: UITableViewDropCoordinator
+        performDropWith _: UITableViewDropCoordinator
     ) {
-        let destinationIndexPath = coordinator.destinationIndexPath
-            ?? IndexPath(row: DumpStore.shared.records.count, section: 0)
-
-        for item in coordinator.items {
-            guard let sourceID = item.dragItem.localObject as? UUID,
-                  let sourceIndex = DumpStore.shared.records.firstIndex(where: { $0.id == sourceID })
-            else { continue }
-
-            DumpStore.shared.move(from: sourceIndex, to: destinationIndexPath.row)
-
-            var snapshot = dataSource.snapshot()
-            let ids = DumpStore.shared.records.map(\.id)
-            snapshot.deleteAllItems()
-            snapshot.appendSections([.main])
-            snapshot.appendItems(ids)
-            dataSource.apply(snapshot, animatingDifferences: false)
-
-            coordinator.drop(item.dragItem, toRowAt: destinationIndexPath)
-        }
+        AppLogStore.shared.debug("performDrop local noop; datasource handles reorder", source: "DumpReorder")
     }
 }

@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-final class TLVParserViewController: StackScrollController {
+class TLVParserViewController: StackScrollController {
     private lazy var hexInputView = UITextView().then {
         $0.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
         $0.autocapitalizationType = .allCharacters

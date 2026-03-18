@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-final class PassportDetailViewController: StackScrollController {
+class PassportDetailViewController: StackScrollController {
     private let record: PassportRecord
 
     private let dateFormatter = DateFormatter().then {

@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-final class CRCCalculatorViewController: StackScrollController {
+class CRCCalculatorViewController: StackScrollController {
     private lazy var inputField = UITextField().then {
         $0.borderStyle = .roundedRect
         $0.font = .monospacedSystemFont(ofSize: 15, weight: .regular)

@@ -5,7 +5,7 @@ import SPIndicator
 import Then
 import UIKit
 
-final class RawCommunicationViewController: StackScrollController {
+class RawCommunicationViewController: StackScrollController {
     private let cardInfo: CardInfo
 
     init(cardInfo: CardInfo) {

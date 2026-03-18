@@ -9,8 +9,8 @@ import Testing
 // MARK: - ScanRecord Roundtrip
 
 struct ScanRecordRoundTripTests {
-    @Test("ScanRecord with ISO 14443A card round-trips through JSON")
-    func iso14443aRoundTrip() throws {
+    @Test
+    func `ScanRecord with ISO 14443A card round-trips through JSON`() throws {
         let cardInfo = CardInfo(
             type: .ntag213,
             uid: Data([0x04, 0x57, 0x01, 0xCA, 0x53, 0x28, 0x80]),
@@ -40,8 +40,8 @@ struct ScanRecordRoundTripTests {
         #expect(decoded.cardInfo.ats?.maxFrameSize == 64)
     }
 
-    @Test("ScanRecord with FeliCa card round-trips")
-    func felicaRoundTrip() throws {
+    @Test
+    func `ScanRecord with FeliCa card round-trips`() throws {
         let cardInfo = CardInfo(
             type: .felicaLite,
             uid: Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]),
@@ -58,8 +58,8 @@ struct ScanRecordRoundTripTests {
         #expect(decoded.cardInfo.idm == cardInfo.idm)
     }
 
-    @Test("ScanRecord with ISO 15693 card round-trips")
-    func iso15693RoundTrip() throws {
+    @Test
+    func `ScanRecord with ISO 15693 card round-trips`() throws {
         let cardInfo = CardInfo(
             type: .iso15693_generic,
             uid: Data([0xE0, 0x04, 0x01, 0x53, 0x0B, 0x29, 0x65, 0xB7]),
@@ -74,8 +74,8 @@ struct ScanRecordRoundTripTests {
         #expect(decoded.cardInfo.icManufacturer == 4)
     }
 
-    @Test("ScanRecord with unknown card type round-trips associated values")
-    func unknownCardTypeRoundTrip() throws {
+    @Test
+    func `ScanRecord with unknown card type round-trips associated values`() throws {
         let cardInfo = CardInfo(
             type: .unknown(atqa: Data([0x12, 0x34]), sak: 0xAB),
             uid: Data([0x01, 0x02, 0x03, 0x04])
@@ -88,8 +88,8 @@ struct ScanRecordRoundTripTests {
         #expect(decoded.cardInfo.type == .unknown(atqa: Data([0x12, 0x34]), sak: 0xAB))
     }
 
-    @Test("ScanRecord array round-trips through JSON (simulates ScanStore)")
-    func storeArrayRoundTrip() throws {
+    @Test
+    func `ScanRecord array round-trips through JSON (simulates ScanStore)`() throws {
         let records = [
             ScanRecord(cardInfo: CardInfo(type: .ntag213, uid: Data([0x04, 0x01]))),
             ScanRecord(cardInfo: CardInfo(type: .mifareDesfire, uid: Data([0x04, 0x02]))),
@@ -114,8 +114,8 @@ struct ScanRecordRoundTripTests {
 // MARK: - DumpRecord Roundtrip
 
 struct DumpRecordRoundTripTests {
-    @Test("DumpRecord with pages round-trips through JSON")
-    func pageBasedRoundTrip() throws {
+    @Test
+    func `DumpRecord with pages round-trips through JSON`() throws {
         let dump = MemoryDump(
             cardInfo: CardInfo(
                 type: .ntag213,
@@ -151,8 +151,8 @@ struct DumpRecordRoundTripTests {
         #expect(decoded.dump.cardInfo.type == .ntag213)
     }
 
-    @Test("DumpRecord with blocks round-trips")
-    func blockBasedRoundTrip() throws {
+    @Test
+    func `DumpRecord with blocks round-trips`() throws {
         let dump = MemoryDump(
             cardInfo: CardInfo(type: .iso15693_generic, uid: Data([0xE0, 0x04]), icManufacturer: 4),
             blocks: (0 ..< 28).map { .init(number: $0, data: Data([0xE1, 0x40, 0x0E, 0x01]), locked: $0 < 2) },
@@ -171,8 +171,8 @@ struct DumpRecordRoundTripTests {
         #expect(decoded.hasMemoryData == true)
     }
 
-    @Test("DumpRecord with files round-trips")
-    func fileBasedRoundTrip() throws {
+    @Test
+    func `DumpRecord with files round-trips`() throws {
         let dump = MemoryDump(
             cardInfo: CardInfo(type: .mifareDesfire, uid: Data([0x04, 0x01, 0x02, 0x03])),
             files: [
@@ -192,8 +192,8 @@ struct DumpRecordRoundTripTests {
         #expect(decoded.dump.files[1].name == nil)
     }
 
-    @Test("Empty DumpRecord round-trips")
-    func emptyDumpRoundTrip() throws {
+    @Test
+    func `Empty DumpRecord round-trips`() throws {
         let dump = MemoryDump(
             cardInfo: CardInfo(type: .unknown(atqa: Data([0x00]), sak: 0x00), uid: Data([0x01]))
         )
@@ -210,8 +210,8 @@ struct DumpRecordRoundTripTests {
         #expect(decoded.hasMemoryData == false)
     }
 
-    @Test("DumpRecord array round-trips through JSON (simulates DumpStore)")
-    func storeArrayRoundTrip() throws {
+    @Test
+    func `DumpRecord array round-trips through JSON (simulates DumpStore)`() throws {
         let records = [
             DumpRecord(from: MemoryDump(
                 cardInfo: CardInfo(type: .ntag213, uid: Data([0x04, 0x01])),
@@ -240,8 +240,8 @@ struct DumpRecordRoundTripTests {
 // MARK: - PassportRecord Roundtrip
 
 struct PassportRecordRoundTripTests {
-    @Test("PassportRecord with MRZ data round-trips through JSON")
-    func mrzRoundTrip() throws {
+    @Test
+    func `PassportRecord with MRZ data round-trips through JSON`() throws {
         let mrz = try MRZData(
             mrzString: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<L898902C36UTO7408122F1204159ZE184226B<<<<<10"
         )
@@ -289,8 +289,8 @@ struct PassportRecordRoundTripTests {
         #expect(decoded.passport.rawDataGroups[.dg1] == Data([0x61, 0x02, 0x5F, 0x1F]))
     }
 
-    @Test("PassportRecord display helpers work after round-trip")
-    func displayHelpersAfterRoundTrip() throws {
+    @Test
+    func `PassportRecord display helpers work after round-trip`() throws {
         let mrz = try MRZData(
             mrzString: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<L898902C36UTO7408122F1204159ZE184226B<<<<<10"
         )
@@ -317,8 +317,8 @@ struct PassportRecordRoundTripTests {
         #expect(decoded.totalRawSize == 1025)
     }
 
-    @Test("PassportRecord with security report round-trips all stages")
-    func securityReportRoundTrip() throws {
+    @Test
+    func `PassportRecord with security report round-trips all stages`() throws {
         let passport = PassportModel(
             ldsVersion: nil, unicodeVersion: nil,
             availableDataGroups: [],
@@ -353,8 +353,8 @@ struct PassportRecordRoundTripTests {
         #expect(report.activeAuthentication.detail == "Sig invalid")
     }
 
-    @Test("PassportRecord array round-trips through JSON (simulates PassportStore)")
-    func storeArrayRoundTrip() throws {
+    @Test
+    func `PassportRecord array round-trips through JSON (simulates PassportStore)`() throws {
         let passport = PassportModel(
             ldsVersion: nil, unicodeVersion: nil,
             availableDataGroups: [.dg1],
@@ -387,8 +387,8 @@ struct PassportRecordRoundTripTests {
 // MARK: - CardDocument Envelope Roundtrip
 
 struct CardDocumentEnvelopeRoundTripTests {
-    @Test("CardDocumentEnvelope with scan + dump round-trips through PropertyList")
-    func envelopeFullRoundTrip() throws {
+    @Test
+    func `CardDocumentEnvelope with scan + dump round-trips through PropertyList`() throws {
         let cardInfo = CardInfo(
             type: .ntag213,
             uid: Data([0x04, 0x57, 0x01, 0xCA, 0x53, 0x28, 0x80]),
@@ -412,8 +412,8 @@ struct CardDocumentEnvelopeRoundTripTests {
         #expect(decoded.dumpRecord?.dump.capabilities == [.readable])
     }
 
-    @Test("CardDocumentEnvelope scan-only round-trips")
-    func envelopeScanOnlyRoundTrip() throws {
+    @Test
+    func `CardDocumentEnvelope scan-only round-trips`() throws {
         let scan = ScanRecord(cardInfo: CardInfo(type: .mifareDesfire, uid: Data([0x04, 0x01])))
         let envelope = CardDocumentEnvelope(scanRecord: scan, dumpRecord: nil)
 
@@ -424,8 +424,8 @@ struct CardDocumentEnvelopeRoundTripTests {
         #expect(decoded.scanRecord.cardInfo.type == .mifareDesfire)
     }
 
-    @Test("File-based round-trip writes and reads back identical envelope")
-    func fileRoundTrip() throws {
+    @Test
+    func `File-based round-trip writes and reads back identical envelope`() throws {
         let scan = ScanRecord(cardInfo: CardInfo(type: .ntag215, uid: Data([0x04, 0x02])))
         let dump = DumpRecord(from: MemoryDump(
             cardInfo: scan.cardInfo,

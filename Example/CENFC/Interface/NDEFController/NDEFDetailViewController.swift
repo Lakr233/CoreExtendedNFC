@@ -141,7 +141,7 @@ class NDEFEditorViewController: StackScrollController {
 
 // MARK: - Text Editor
 
-final class NDEFTextEditorViewController: NDEFEditorViewController {
+class NDEFTextEditorViewController: NDEFEditorViewController {
     private lazy var textField = makeTextView()
     private lazy var languageField = makeTextField(
         placeholder: String(localized: "Language code"),
@@ -189,7 +189,7 @@ final class NDEFTextEditorViewController: NDEFEditorViewController {
 
 // MARK: - URI Editor
 
-final class NDEFURIEditorViewController: NDEFEditorViewController {
+class NDEFURIEditorViewController: NDEFEditorViewController {
     private static let uriPrefixes: [(code: UInt8, prefix: String)] = [
         (0x00, "(No prefix)"),
         (0x04, "https://"),
@@ -301,7 +301,7 @@ final class NDEFURIEditorViewController: NDEFEditorViewController {
 
 // MARK: - Smart Poster Editor
 
-final class NDEFSmartPosterEditorViewController: NDEFEditorViewController {
+class NDEFSmartPosterEditorViewController: NDEFEditorViewController {
     private lazy var uriField = makeTextField(
         placeholder: "https://example.com",
         keyboardType: .URL
@@ -353,7 +353,7 @@ final class NDEFSmartPosterEditorViewController: NDEFEditorViewController {
 
 // MARK: - MIME Editor
 
-final class NDEFMIMEEditorViewController: NDEFEditorViewController {
+class NDEFMIMEEditorViewController: NDEFEditorViewController {
     private lazy var typeField = makeTextField(
         placeholder: "text/plain"
     )
@@ -400,7 +400,7 @@ final class NDEFMIMEEditorViewController: NDEFEditorViewController {
 
 // MARK: - External Type Editor
 
-final class NDEFExternalEditorViewController: NDEFEditorViewController {
+class NDEFExternalEditorViewController: NDEFEditorViewController {
     private lazy var typeField = makeTextField(
         placeholder: "example.com:mytype"
     )

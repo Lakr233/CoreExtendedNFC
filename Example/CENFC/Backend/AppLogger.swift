@@ -46,7 +46,7 @@ private struct AppLogExportEnvelope: Codable {
 }
 
 @MainActor
-final class AppLogStore {
+class AppLogStore {
     static let shared = AppLogStore()
 
     private(set) var entries: [AppLogEntry] = []

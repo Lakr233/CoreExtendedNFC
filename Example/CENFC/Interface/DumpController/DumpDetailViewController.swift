@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-final class DumpDetailViewController: StackScrollController {
+class DumpDetailViewController: StackScrollController {
     private let record: DumpRecord
 
     private let dateFormatter = DateFormatter().then {

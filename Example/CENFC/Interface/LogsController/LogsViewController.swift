@@ -2,7 +2,12 @@ import ConfigurableKit
 import UIKit
 
 @MainActor
-final class LogsViewController: StackScrollController {
+class LogsViewController: StackScrollController {
+    private var currentSearchText: String {
+        navigationItem.searchController?.searchBar.text?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
     init() {
         super.init(nibName: nil, bundle: nil)
         title = String(localized: "Logs")
@@ -17,6 +22,7 @@ final class LogsViewController: StackScrollController {
         super.viewDidLoad()
         setupDismissKeyboardOnTap()
         view.backgroundColor = AppTheme.background
+        setupSearch()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "square.and.arrow.up"),
             primaryAction: UIAction { [weak self] _ in
@@ -47,6 +53,19 @@ final class LogsViewController: StackScrollController {
         )
     }
 
+    private func setupSearch() {
+        let search = UISearchController(searchResultsController: nil)
+        search.obscuresBackgroundDuringPresentation = false
+        search.hidesNavigationBarDuringPresentation = false
+        search.searchBar.placeholder = String(localized: "Search logs")
+        search.searchBar.autocapitalizationType = .none
+        search.searchBar.autocorrectionType = .no
+        search.searchBar.delegate = self
+        navigationItem.searchController = search
+        navigationItem.preferredSearchBarPlacement = .stacked
+        navigationItem.hidesSearchBarWhenScrolling = false
+    }
+
     override func setupContentViews() {
         super.setupContentViews()
         rebuild()
@@ -64,8 +83,20 @@ final class LogsViewController: StackScrollController {
 
         stackView.addArrangedSubview(SeparatorView())
 
-        guard !AppLogStore.shared.entries.isEmpty else {
-            let empty = makeNotice(String(localized: "No logs yet. Scan a tag and the protocol trace will appear here."))
+        let query = currentSearchText.localizedLowercase
+        let entries = AppLogStore.shared.entries.filter { entry in
+            guard !query.isEmpty else { return true }
+            return entry.source.localizedLowercase.contains(query)
+                || entry.level.rawValue.localizedLowercase.contains(query)
+                || entry.message.localizedLowercase.contains(query)
+        }
+
+        guard !entries.isEmpty else {
+            let empty = makeNotice(
+                currentSearchText.isEmpty
+                    ? String(localized: "No logs yet. Scan a tag and the protocol trace will appear here.")
+                    : String(localized: "No matching logs.")
+            )
             stackView.addArrangedSubviewWithMargin(empty) { insets in
                 insets.top = 18
                 insets.bottom = 18
@@ -74,7 +105,7 @@ final class LogsViewController: StackScrollController {
             return
         }
 
-        for entry in AppLogStore.shared.entries.prefix(100) {
+        for entry in entries.prefix(200) {
             let view = LogEntryView(entry: entry)
             stackView.addArrangedSubviewWithMargin(view) { insets in
                 insets.top = 18
@@ -128,7 +159,7 @@ final class LogsViewController: StackScrollController {
     }
 }
 
-private final class LogEntryView: UIView {
+private class LogEntryView: UIView {
     init(entry: AppLogEntry) {
         super.init(frame: .zero)
 
@@ -136,20 +167,37 @@ private final class LogEntryView: UIView {
         sourceLabel.font = AppTheme.unifiedFont(weight: .semibold)
         sourceLabel.textColor = color(for: entry.level)
         sourceLabel.text = "\(entry.source) · \(entry.level.rawValue)"
+        sourceLabel.numberOfLines = 1
+        sourceLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let messageLabel = UILabel()
-        messageLabel.font = AppTheme.unifiedFont()
+        messageLabel.font = .monospacedSystemFont(ofSize: 8, weight: .regular)
+        messageLabel.adjustsFontForContentSizeCategory = false
         messageLabel.numberOfLines = 0
+        messageLabel.lineBreakMode = .byCharWrapping
         messageLabel.text = entry.message
 
         let timeLabel = UILabel()
-        timeLabel.font = AppTheme.unifiedFont(monospaced: true)
+        timeLabel.font = .monospacedSystemFont(
+            ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize,
+            weight: .regular
+        )
         timeLabel.textColor = AppTheme.secondaryText
+        timeLabel.textAlignment = .right
         timeLabel.text = DateFormatter.logTimestamp.string(from: entry.timestamp)
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
 
-        let stack = UIStackView(arrangedSubviews: [sourceLabel, messageLabel, timeLabel])
+        let metaStack = UIStackView(arrangedSubviews: [sourceLabel, timeLabel])
+        metaStack.axis = .horizontal
+        metaStack.alignment = .firstBaseline
+        metaStack.spacing = 12
+
+        timeLabel.widthAnchor.constraint(equalToConstant: 72).isActive = true
+
+        let stack = UIStackView(arrangedSubviews: [metaStack, messageLabel])
         stack.axis = .vertical
-        stack.spacing = 6
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
@@ -180,11 +228,21 @@ private final class LogEntryView: UIView {
     }
 }
 
+extension LogsViewController: UISearchBarDelegate {
+    func searchBar(_: UISearchBar, textDidChange _: String) {
+        rebuild()
+    }
+
+    func searchBarCancelButtonClicked(_: UISearchBar) {
+        rebuild()
+    }
+}
+
 private extension DateFormatter {
     static let logTimestamp: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .medium
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
 }

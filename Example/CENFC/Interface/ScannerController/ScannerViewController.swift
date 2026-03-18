@@ -5,11 +5,13 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-final class ScannerViewController: UIViewController {
+class ScannerViewController: UIViewController {
     nonisolated enum Section { case main }
 
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private var dataSource: UITableViewDiffableDataSource<Section, UUID>!
+    private var dataSource: ReorderableTableViewDiffableDataSource<Section, UUID>!
+    private var pendingSnapshotReload = false
+    private var pendingSnapshotAnimated = true
 
     private lazy var scanBarButton: UIBarButtonItem = {
         let protocolActions: [UIMenuElement] = [
@@ -139,12 +141,16 @@ final class ScannerViewController: UIViewController {
         setupNavBar()
         setupSearch()
         setupDropInteraction()
-        reloadSnapshot()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadSnapshot()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        flushPendingSnapshotReloadIfNeeded()
     }
 
     // MARK: - Setup
@@ -174,6 +180,16 @@ final class ScannerViewController: UIViewController {
                 cell.update(with: record)
             }
             return cell
+        }
+        dataSource.canReorderItem = { [weak self] _ in
+            self?.currentSearchText.isEmpty == true
+        }
+        dataSource.onReorderedItems = { orderedIDs in
+            AppLogStore.shared.info(
+                "moveRow reconciled orderedIDs=\(orderedIDs.count)",
+                source: "ScannerReorder"
+            )
+            ScanStore.shared.reorder(by: orderedIDs)
         }
         dataSource.defaultRowAnimation = .fade
     }
@@ -273,7 +289,16 @@ final class ScannerViewController: UIViewController {
 
     // MARK: - Data Source
 
-    func reloadSnapshot() {
+    func reloadSnapshot(animatingDifferences: Bool = true) {
+        guard isViewLoaded, view.window != nil, tableView.window != nil else {
+            pendingSnapshotReload = true
+            pendingSnapshotAnimated = pendingSnapshotAnimated || animatingDifferences
+            AppLogStore.shared.debug(
+                "reloadSnapshot deferred animated=\(animatingDifferences) viewWindow=\(view.window != nil) tableWindow=\(tableView.window != nil)",
+                source: "ScannerReorder"
+            )
+            return
+        }
         let query = currentSearchText
         let filtered = ScanStore.shared.records.filter { record in
             query.isEmpty
@@ -281,10 +306,26 @@ final class ScannerViewController: UIViewController {
                 || record.cardInfo.uid.hexString.localizedCaseInsensitiveContains(query)
                 || record.cardInfo.uid.compactHexString.localizedCaseInsensitiveContains(query)
         }
+        AppLogStore.shared.debug(
+            "reloadSnapshot query='\(query)' total=\(ScanStore.shared.records.count) filtered=\(filtered.count) window=\(view.window != nil)",
+            source: "ScannerReorder"
+        )
         var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
         snapshot.appendSections([.main])
         snapshot.appendItems(filtered.map(\.id))
-        dataSource.apply(snapshot, animatingDifferences: true)
+        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+    }
+
+    private func flushPendingSnapshotReloadIfNeeded() {
+        guard pendingSnapshotReload, view.window != nil, tableView.window != nil else { return }
+        let animated = pendingSnapshotAnimated
+        pendingSnapshotReload = false
+        pendingSnapshotAnimated = true
+        AppLogStore.shared.debug(
+            "flushing deferred snapshot animated=\(animated)",
+            source: "ScannerReorder"
+        )
+        reloadSnapshot(animatingDifferences: animated)
     }
 
     // MARK: - Scan
@@ -527,9 +568,24 @@ extension ScannerViewController: UITableViewDragDelegate {
         itemsForBeginning _: UIDragSession,
         at indexPath: IndexPath
     ) -> [UIDragItem] {
+        guard view.window != nil, tableView.window != nil else {
+            AppLogStore.shared.warning("drag begin blocked because table/view is not in a window", source: "ScannerReorder")
+            return []
+        }
+        guard currentSearchText.isEmpty else {
+            AppLogStore.shared.warning(
+                "drag begin blocked by active search query='\(currentSearchText)'",
+                source: "ScannerReorder"
+            )
+            return []
+        }
         guard let recordID = dataSource.itemIdentifier(for: indexPath),
               let record = ScanStore.shared.record(for: recordID)
         else { return [] }
+        AppLogStore.shared.debug(
+            "drag begin row=\(indexPath.row) id=\(recordID.uuidString) type=\(record.cardInfo.type.description)",
+            source: "ScannerReorder"
+        )
 
         let provider = NSItemProvider()
         provider.registerDataRepresentation(
@@ -568,9 +624,22 @@ extension ScannerViewController: UITableViewDropDelegate {
         dropSessionDidUpdate session: UIDropSession,
         withDestinationIndexPath _: IndexPath?
     ) -> UITableViewDropProposal {
+        guard view.window != nil, tableView.window != nil else {
+            AppLogStore.shared.warning("drop update cancelled because table/view is not in a window", source: "ScannerReorder")
+            return UITableViewDropProposal(operation: .cancel)
+        }
         if session.localDragSession != nil {
+            guard currentSearchText.isEmpty else {
+                AppLogStore.shared.warning(
+                    "drop update local reorder forbidden due to active search query='\(currentSearchText)'",
+                    source: "ScannerReorder"
+                )
+                return UITableViewDropProposal(operation: .forbidden)
+            }
+            AppLogStore.shared.debug("drop update local move", source: "ScannerReorder")
             return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
         }
+        AppLogStore.shared.debug("drop update external copy", source: "ScannerReorder")
         return UITableViewDropProposal(operation: .copy, intent: .insertAtDestinationIndexPath)
     }
 
@@ -580,24 +649,13 @@ extension ScannerViewController: UITableViewDropDelegate {
     ) {
         let destinationIndexPath = coordinator.destinationIndexPath
             ?? IndexPath(row: ScanStore.shared.records.count, section: 0)
+        AppLogStore.shared.info(
+            "performDrop local=\(coordinator.session.localDragSession != nil) destination=\(destinationIndexPath.row) items=\(coordinator.items.count)",
+            source: "ScannerReorder"
+        )
 
         if coordinator.session.localDragSession != nil {
-            for item in coordinator.items {
-                guard let sourceID = item.dragItem.localObject as? UUID,
-                      let sourceIndex = ScanStore.shared.records.firstIndex(where: { $0.id == sourceID })
-                else { continue }
-
-                ScanStore.shared.move(from: sourceIndex, to: destinationIndexPath.row)
-
-                var snapshot = dataSource.snapshot()
-                let ids = ScanStore.shared.records.map(\.id)
-                snapshot.deleteAllItems()
-                snapshot.appendSections([.main])
-                snapshot.appendItems(ids)
-                dataSource.apply(snapshot, animatingDifferences: false)
-
-                coordinator.drop(item.dragItem, toRowAt: destinationIndexPath)
-            }
+            AppLogStore.shared.debug("performDrop local noop; datasource handles reorder", source: "ScannerReorder")
             return
         }
 
@@ -631,20 +689,39 @@ extension ScannerViewController: UIDropInteractionDelegate {
         _: UIDropInteraction,
         canHandle session: UIDropSession
     ) -> Bool {
-        session.hasItemsConforming(toTypeIdentifiers: [UTType.cenfc.identifier])
+        let canHandle = session.localDragSession == nil
+            && session.hasItemsConforming(toTypeIdentifiers: [UTType.cenfc.identifier])
+        AppLogStore.shared.debug(
+            "view drop canHandle local=\(session.localDragSession != nil) result=\(canHandle)",
+            source: "ScannerReorder"
+        )
+        return canHandle
     }
 
     func dropInteraction(
         _: UIDropInteraction,
-        sessionDidUpdate _: UIDropSession
+        sessionDidUpdate session: UIDropSession
     ) -> UIDropProposal {
-        UIDropProposal(operation: .copy)
+        guard session.localDragSession == nil else {
+            AppLogStore.shared.debug("view drop sessionDidUpdate ignored for local session", source: "ScannerReorder")
+            return UIDropProposal(operation: .cancel)
+        }
+        AppLogStore.shared.debug("view drop sessionDidUpdate external copy", source: "ScannerReorder")
+        return UIDropProposal(operation: .copy)
     }
 
     func dropInteraction(
         _: UIDropInteraction,
         performDrop session: UIDropSession
     ) {
+        guard session.localDragSession == nil else {
+            AppLogStore.shared.debug("view drop performDrop ignored for local session", source: "ScannerReorder")
+            return
+        }
+        AppLogStore.shared.info(
+            "view drop performDrop external items=\(session.items.count)",
+            source: "ScannerReorder"
+        )
         for item in session.items {
             item.itemProvider.loadDataRepresentation(
                 forTypeIdentifier: UTType.cenfc.identifier

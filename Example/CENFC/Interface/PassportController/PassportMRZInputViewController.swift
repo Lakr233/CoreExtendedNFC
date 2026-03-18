@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-final class PassportMRZInputViewController: StackScrollController {
+class PassportMRZInputViewController: StackScrollController {
     var onPassportRead: ((PassportRecord) -> Void)?
 
     private lazy var documentNumberField: UITextField = makeTextField(

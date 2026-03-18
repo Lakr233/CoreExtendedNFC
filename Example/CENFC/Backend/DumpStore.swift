@@ -2,7 +2,7 @@ import CoreExtendedNFC
 import Foundation
 import Then
 
-final class DumpStore {
+class DumpStore {
     static let shared = DumpStore()
 
     private let fileURL: URL = {
@@ -66,6 +66,15 @@ final class DumpStore {
 
     func sort(by comparator: (DumpRecord, DumpRecord) -> Bool) {
         records.sort(by: comparator)
+        save()
+    }
+
+    func reorder(by orderedIDs: [UUID]) {
+        guard orderedIDs.count == records.count else { return }
+        let recordByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
+        let reordered = orderedIDs.compactMap { recordByID[$0] }
+        guard reordered.count == records.count else { return }
+        records = reordered
         save()
     }
 

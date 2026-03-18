@@ -5,7 +5,7 @@
 
 import UIKit
 
-final class FeatureRowView: UIView {
+class FeatureRowView: UIView {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let detailLabel = UILabel()

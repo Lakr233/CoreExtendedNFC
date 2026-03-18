@@ -3,7 +3,7 @@ import SnapKit
 import Then
 import UIKit
 
-final class ToolsViewController: StackScrollController {
+class ToolsViewController: StackScrollController {
     private struct ToolItem {
         let icon: String
         let title: String

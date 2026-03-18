@@ -2,7 +2,7 @@ import SnapKit
 import SPIndicator
 import UIKit
 
-final class TextViewerController: UIViewController {
+class TextViewerController: UIViewController {
     private let textView = UITextView()
 
     init(title: String, text: String) {

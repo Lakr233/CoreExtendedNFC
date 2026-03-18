@@ -3,7 +3,7 @@ import CoreExtendedNFC
 import SnapKit
 import UIKit
 
-final class CardInfoDetailViewController: StackScrollController {
+class CardInfoDetailViewController: StackScrollController {
     private let cardInfo: CardInfo
     private let capturedAt: Date?
 

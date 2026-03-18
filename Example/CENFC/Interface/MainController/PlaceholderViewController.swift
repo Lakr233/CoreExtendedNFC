@@ -1,6 +1,6 @@
 import UIKit
 
-final class PlaceholderViewController: UIViewController {
+class PlaceholderViewController: UIViewController {
     private let pageTitle: String
 
     init(pageTitle: String) {

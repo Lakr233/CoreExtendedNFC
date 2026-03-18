@@ -10,7 +10,7 @@ extension Notification.Name {
 }
 
 @MainActor
-final class AppState {
+class AppState {
     static let shared = AppState()
 
     enum ScanProfile: String, CaseIterable {
@@ -649,7 +649,7 @@ final class AppState {
 }
 
 @MainActor
-private final class ImportPickerDelegate: NSObject, UIDocumentPickerDelegate {
+private class ImportPickerDelegate: NSObject, UIDocumentPickerDelegate {
     nonisolated(unsafe) static var associatedKey = 0
     let format: AppState.ImportFormat
 
