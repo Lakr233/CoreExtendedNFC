@@ -4,6 +4,10 @@ NFC protocol logic for iOS, built on top of CoreNFC.
 
 Identify cards, read/write memory, dump tags, read eMRTD passports — async/await, zero external dependencies.
 
+[![App Store Icon](./Example/Download_on_the_App_Store_Badge_US-UK_RGB_blk_092917.svg)](https://apps.apple.com/app/cenfc/id6760399948)
+
+![CENFC App](./Example/Apptisan_CENFC.jpeg)
+
 ## Why This Exists
 
 CoreNFC gives you a pipe to the tag. It discovers tags, sends bytes, receives bytes. That's it.
