@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(OpenSSL)
+    import OpenSSL
+#endif
+
 /// PACE (Password Authenticated Connection Establishment) handler
 /// per ICAO Doc 9303 Part 11 and BSI TR-03110.
 ///
@@ -170,26 +174,123 @@ public enum PACEHandler {
             decryptedNonce = try CryptoUtils.aesDecrypt(key: passwordKey, message: encryptedNonce, iv: iv)
         }
 
-        // Steps 4-7 require ECDH key agreement using CryptoKit
-        // The full implementation depends on the curve from parameterID
-        // For now, we set up the protocol framework
+        guard paceProtocol.isECDH else {
+            throw NFCError.unsupportedOperation(
+                "PACE currently supports ECDH key agreement only; protocol \(paceInfo.protocolOID) is not supported."
+            )
+        }
 
-        // Step 4: Generate ephemeral key pair and send to chip
-        // Step 5: Receive chip's ephemeral key and compute mapped generator
-        // Step 6: Generate mapped key pair, exchange, compute shared secret
-        // Step 7: Derive session keys and exchange authentication tokens
+        guard paceProtocol.isGenericMapping else {
+            throw NFCError.unsupportedOperation(
+                "PACE currently supports Generic Mapping only; protocol \(paceInfo.protocolOID) is not supported."
+            )
+        }
 
-        // Note: Full ECDH implementation would use:
-        // - CryptoKit P256.KeyAgreement (for secp256r1)
-        // - CryptoKit P384.KeyAgreement (for secp384r1)
-        // - CryptoKit P521.KeyAgreement (for secp521r1)
+        guard let parameterID = paceInfo.parameterID,
+              let domainParameter = DomainParameterID(rawValue: parameterID),
+              domainParameter.isNISTCurve
+        else {
+            throw NFCError.unsupportedOperation(
+                "PACE currently supports standardized NIST curves only (parameter IDs 12, 15, 18)."
+            )
+        }
 
-        throw NFCError.unsupportedOperation(
-            "PACE ECDH key agreement is not yet implemented. "
-                + "Steps 1-3 completed (MSE:Set AT, get encrypted nonce, decrypt nonce: \(decryptedNonce.count) bytes). "
-                + "Steps 4-7 (ECDH key exchange, mapped generator, session keys, auth tokens) require CryptoKit integration. "
-                + "Use BAC as fallback."
-        )
+        #if canImport(OpenSSL)
+            let curve = try OpenSSLPACECurve(parameterID: domainParameter)
+
+            // Step 4: exchange mapping public keys over the standardized generator G.
+            let mappingPrivateKey = try curve.generatePrivateScalar()
+            let terminalMappingPublicKey = try curve.publicPoint(
+                privateScalar: mappingPrivateKey,
+                generator: nil
+            )
+
+            let step2Data = encodeDynamicAuthenticationData(tag: 0x81, value: terminalMappingPublicKey)
+            let step2APDU = CommandAPDU.generalAuthenticate(data: step2Data)
+            let step2Response = try await transport.sendAPDU(step2APDU)
+
+            guard step2Response.isSuccess else {
+                throw NFCError.secureMessagingError(
+                    "PACE step 2 (map nonce) failed: SW=\(String(format: "%04X", step2Response.statusWord))"
+                )
+            }
+
+            let chipMappingPublicKey = try parseTag82FromDynamicAuth(step2Response.data)
+            let mappingSharedPoint = try curve.sharedPoint(
+                privateScalar: mappingPrivateKey,
+                peerPublic: chipMappingPublicKey
+            )
+            let mappedGenerator = try curve.mappedGenerator(
+                nonce: decryptedNonce,
+                sharedPoint: mappingSharedPoint
+            )
+
+            // Step 5: exchange ephemeral public keys over the mapped generator G^.
+            let ephemeralPrivateKey = try curve.generatePrivateScalar()
+            let terminalEphemeralPublicKey = try curve.publicPoint(
+                privateScalar: ephemeralPrivateKey,
+                generator: mappedGenerator
+            )
+
+            let step3Data = encodeDynamicAuthenticationData(tag: 0x83, value: terminalEphemeralPublicKey)
+            let step3APDU = CommandAPDU.generalAuthenticate(data: step3Data)
+            let step3Response = try await transport.sendAPDU(step3APDU)
+
+            guard step3Response.isSuccess else {
+                throw NFCError.secureMessagingError(
+                    "PACE step 3 (key agreement) failed: SW=\(String(format: "%04X", step3Response.statusWord))"
+                )
+            }
+
+            let chipEphemeralPublicKey = try parseTag84FromDynamicAuth(step3Response.data)
+            let sharedSecret = try curve.sharedSecretXCoordinate(
+                privateScalar: ephemeralPrivateKey,
+                peerPublic: chipEphemeralPublicKey
+            )
+            let sessionKeys = derivePACESessionKeys(sharedSecret: sharedSecret, mode: smMode)
+
+            // Step 6: mutual authentication via token exchange.
+            let terminalToken = try computeAuthToken(
+                ksMac: sessionKeys.ksMac,
+                publicKeyOther: chipEphemeralPublicKey,
+                oid: oidData,
+                mode: smMode
+            )
+            let step4Data = encodeDynamicAuthenticationData(tag: 0x85, value: terminalToken)
+            let step4APDU = CommandAPDU.generalAuthenticate(data: step4Data, isLast: true)
+            let step4Response = try await transport.sendAPDU(step4APDU)
+
+            guard step4Response.isSuccess else {
+                throw NFCError.secureMessagingError(
+                    "PACE step 4 (mutual authentication) failed: SW=\(String(format: "%04X", step4Response.statusWord))"
+                )
+            }
+
+            let chipToken = try parseTag86FromDynamicAuth(step4Response.data)
+            let expectedChipToken = try computeAuthToken(
+                ksMac: sessionKeys.ksMac,
+                publicKeyOther: terminalEphemeralPublicKey,
+                oid: oidData,
+                mode: smMode
+            )
+
+            guard chipToken == expectedChipToken else {
+                throw NFCError.secureMessagingError("PACE authentication token verification failed")
+            }
+
+            // PACE starts a fresh secure-messaging session with a zero SSC.
+            return SecureMessagingTransport(
+                transport: transport,
+                ksEnc: sessionKeys.ksEnc,
+                ksMac: sessionKeys.ksMac,
+                ssc: Data(count: 8),
+                mode: smMode
+            )
+        #else
+            throw NFCError.unsupportedOperation(
+                "PACE ECDH key agreement requires OpenSSL-backed elliptic-curve point operations."
+            )
+        #endif
     }
 
     // MARK: - Key Derivation
@@ -197,22 +298,31 @@ public enum PACEHandler {
     /// Derive the password encryption key for PACE nonce decryption.
     ///
     /// For MRZ: K_π = KDF(SHA-1(MRZ_information), 3)
-    /// For CAN/PIN/PUK: K_π = KDF(SHA-1(password.utf8), 3)
+    /// For CAN/PIN/PUK: K_π = KDF(password bytes, 3)
     static func derivePasswordKey(
         password: String,
         keyReference: KeyReference,
-        mode _: SMEncryptionMode
+        mode: SMEncryptionMode
     ) -> Data {
-        let passwordData: Data = if keyReference == .mrz {
+        let passwordData: Data
+        if keyReference == .mrz {
             // For MRZ, use the existing Kseed derivation
-            KeyDerivation.generateKseed(mrzKey: password)
+            passwordData = KeyDerivation.generateKseed(mrzKey: password)
         } else {
-            // For CAN/PIN/PUK, hash the password directly
-            Data(HashUtils.sha1(Data(password.utf8)).prefix(16))
+            // ICAO 9303 encodes CAN/PIN/PUK as ISO-8859-1 character data.
+            guard let isoData = password.data(using: .isoLatin1, allowLossyConversion: false) else {
+                preconditionFailure(
+                    "PACE password for \(keyReference) contains characters that cannot be represented in ISO-8859-1."
+                )
+            }
+            passwordData = isoData
         }
 
-        // Derive key using the PACE counter (3)
-        return KeyDerivation.deriveKey(keySeed: passwordData, mode: .pace)
+        return deriveKey(
+            keySeed: passwordData,
+            counter: 3,
+            mode: mode
+        )
     }
 
     /// Derive PACE session keys from the shared secret.
@@ -223,34 +333,10 @@ public enum PACEHandler {
         sharedSecret: Data,
         mode: SMEncryptionMode
     ) -> (ksEnc: Data, ksMac: Data) {
-        let keyLen = switch mode {
-        case .tripleDES: 16
-        case .aes128: 16
-        case .aes192: 24
-        case .aes256: 32
-        }
-
-        // Use SHA-256 for AES modes, SHA-1 for 3DES
-        let hashFunc: (Data) -> Data = switch mode {
-        case .tripleDES:
-            HashUtils.sha1
-        default:
-            HashUtils.sha256
-        }
-
-        // KSenc
-        var encInput = sharedSecret
-        encInput.append(contentsOf: [0x00, 0x00, 0x00, 0x01])
-        let encHash = hashFunc(encInput)
-        let ksEnc = Data(encHash.prefix(keyLen))
-
-        // KSmac
-        var macInput = sharedSecret
-        macInput.append(contentsOf: [0x00, 0x00, 0x00, 0x02])
-        let macHash = hashFunc(macInput)
-        let ksMac = Data(macHash.prefix(keyLen))
-
-        return (ksEnc, ksMac)
+        (
+            ksEnc: deriveKey(keySeed: sharedSecret, counter: 1, mode: mode),
+            ksMac: deriveKey(keySeed: sharedSecret, counter: 2, mode: mode)
+        )
     }
 
     /// Compute PACE authentication token.
@@ -282,6 +368,33 @@ public enum PACEHandler {
         }
     }
 
+    private static func deriveKey(
+        keySeed: Data,
+        counter: UInt8,
+        mode: SMEncryptionMode
+    ) -> Data {
+        var input = keySeed
+        input.append(contentsOf: [0x00, 0x00, 0x00, counter])
+
+        switch mode {
+        case .tripleDES:
+            let hash = HashUtils.sha1(input)
+            let ka = KeyDerivation.adjustParity(Data(hash[0 ..< 8]))
+            let kb = KeyDerivation.adjustParity(Data(hash[8 ..< 16]))
+            return ka + kb
+        case .aes128:
+            return Data(HashUtils.sha1(input).prefix(16))
+        case .aes192:
+            return Data(HashUtils.sha256(input).prefix(24))
+        case .aes256:
+            return Data(HashUtils.sha256(input).prefix(32))
+        }
+    }
+
+    private static func encodeDynamicAuthenticationData(tag: UInt8, value: Data) -> Data {
+        ASN1Parser.encodeTLV(tag: 0x7C, value: ASN1Parser.encodeTLV(tag: UInt(tag), value: value))
+    }
+
     // MARK: - Response Parsing
 
     /// Parse tag 0x80 from a Dynamic Authentication Data (7C) response.
@@ -310,7 +423,7 @@ public enum PACEHandler {
         return keyNode.value
     }
 
-    /// Parse tag 0x82 (mapped key agreement public key) from Dynamic Authentication Data.
+    /// Parse tag 0x82 (chip mapping public key) from Dynamic Authentication Data.
     static func parseTag82FromDynamicAuth(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
@@ -319,6 +432,19 @@ public enum PACEHandler {
         let children = try ASN1Parser.parseTLV(wrapper.value)
         guard let keyNode = children.first(where: { $0.tag == 0x82 }) else {
             throw NFCError.secureMessagingError("PACE: Missing tag 0x82 in response")
+        }
+        return keyNode.value
+    }
+
+    /// Parse tag 0x84 (chip ephemeral public key) from Dynamic Authentication Data.
+    static func parseTag84FromDynamicAuth(_ data: Data) throws -> Data {
+        let nodes = try ASN1Parser.parseTLV(data)
+        guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
+            throw NFCError.secureMessagingError("PACE: Missing 0x7C wrapper in response")
+        }
+        let children = try ASN1Parser.parseTLV(wrapper.value)
+        guard let keyNode = children.first(where: { $0.tag == 0x84 }) else {
+            throw NFCError.secureMessagingError("PACE: Missing tag 0x84 in response")
         }
         return keyNode.value
     }
@@ -336,3 +462,282 @@ public enum PACEHandler {
         return tokenNode.value
     }
 }
+
+private extension SecurityProtocol {
+    var isGenericMapping: Bool {
+        switch self {
+        case .paceDHGM3DESCBCCBC, .paceDHGMAESCBCCMAC128,
+             .paceDHGMAESCBCCMAC192, .paceDHGMAESCBCCMAC256,
+             .paceECDHGM3DESCBCCBC, .paceECDHGMAESCBCCMAC128,
+             .paceECDHGMAESCBCCMAC192, .paceECDHGMAESCBCCMAC256:
+            true
+        default:
+            false
+        }
+    }
+}
+
+#if canImport(OpenSSL)
+    final class OpenSSLPACECurve {
+        private let group: OpaquePointer
+        private let order: OpaquePointer
+        private let ctx: OpaquePointer
+        private let coordinateLength: Int
+        private let scalarLength: Int
+
+        init(parameterID: PACEHandler.DomainParameterID) throws {
+            guard let group = EC_GROUP_new_by_curve_name(parameterID.opensslNID) else {
+                throw NFCError.cryptoError("PACE: failed to create elliptic-curve group")
+            }
+            guard let order = BN_new() else {
+                EC_GROUP_free(group)
+                throw NFCError.cryptoError("PACE: failed to allocate OpenSSL bignum for curve order")
+            }
+            guard let ctx = BN_CTX_new() else {
+                BN_free(order)
+                EC_GROUP_free(group)
+                throw NFCError.cryptoError("PACE: failed to allocate OpenSSL bignum context")
+            }
+            guard EC_GROUP_get_order(group, order, ctx) == 1 else {
+                BN_free(order)
+                BN_CTX_free(ctx)
+                EC_GROUP_free(group)
+                throw NFCError.cryptoError("PACE: failed to query curve order")
+            }
+
+            self.group = group
+            self.order = order
+            self.ctx = ctx
+            coordinateLength = (Int(EC_GROUP_get_degree(group)) + 7) / 8
+            scalarLength = (Int(BN_num_bits(order)) + 7) / 8
+        }
+
+        deinit {
+            BN_free(order)
+            BN_CTX_free(ctx)
+            EC_GROUP_free(group)
+        }
+
+        func generatePrivateScalar() throws -> Data {
+            while true {
+                var random = Data(count: scalarLength)
+                let status = random.withUnsafeMutableBytes { bytes in
+                    SecRandomCopyBytes(kSecRandomDefault, scalarLength, bytes.baseAddress!)
+                }
+                guard status == errSecSuccess else {
+                    throw NFCError.cryptoError("PACE: failed to generate random scalar")
+                }
+
+                let scalar = try makeScalar(random)
+                defer { BN_free(scalar) }
+                if BN_num_bits(scalar) > 0, BN_cmp(scalar, order) < 0 {
+                    return random
+                }
+            }
+        }
+
+        func publicPoint(privateScalar: Data, generator: Data?) throws -> Data {
+            let scalar = try makeScalar(privateScalar)
+            defer { BN_free(scalar) }
+
+            guard let result = EC_POINT_new(group) else {
+                throw NFCError.cryptoError("PACE: failed to allocate public point")
+            }
+            defer { EC_POINT_free(result) }
+
+            if let generator {
+                let mappedGenerator = try makePoint(generator)
+                defer { EC_POINT_free(mappedGenerator) }
+
+                guard EC_POINT_mul(group, result, nil, mappedGenerator, scalar, ctx) == 1 else {
+                    throw NFCError.cryptoError("PACE: failed to compute public point")
+                }
+            } else {
+                guard EC_POINT_mul(group, result, scalar, nil, nil, ctx) == 1 else {
+                    throw NFCError.cryptoError("PACE: failed to compute mapping public point")
+                }
+            }
+
+            return try exportPoint(result)
+        }
+
+        func sharedPoint(privateScalar: Data, peerPublic: Data) throws -> Data {
+            let scalar = try makeScalar(privateScalar)
+            defer { BN_free(scalar) }
+
+            let peerPoint = try makePoint(peerPublic)
+            defer { EC_POINT_free(peerPoint) }
+
+            guard let result = EC_POINT_new(group) else {
+                throw NFCError.cryptoError("PACE: failed to allocate shared point")
+            }
+            defer { EC_POINT_free(result) }
+
+            guard EC_POINT_mul(group, result, nil, peerPoint, scalar, ctx) == 1 else {
+                throw NFCError.cryptoError("PACE: failed to compute shared point")
+            }
+
+            return try exportPoint(result)
+        }
+
+        func mappedGenerator(nonce: Data, sharedPoint: Data) throws -> Data {
+            let nonceScalar = try makeReducedScalar(nonce)
+            defer { BN_free(nonceScalar) }
+
+            let hPoint = try makePoint(sharedPoint)
+            defer { EC_POINT_free(hPoint) }
+
+            guard let result = EC_POINT_new(group) else {
+                throw NFCError.cryptoError("PACE: failed to allocate mapped generator")
+            }
+            defer { EC_POINT_free(result) }
+
+            guard EC_POINT_mul(group, result, nonceScalar, nil, nil, ctx) == 1 else {
+                throw NFCError.cryptoError("PACE: failed to compute nonce contribution for mapped generator")
+            }
+            guard EC_POINT_add(group, result, result, hPoint, ctx) == 1 else {
+                throw NFCError.cryptoError("PACE: failed to compute mapped generator")
+            }
+
+            return try exportPoint(result)
+        }
+
+        func sharedSecretXCoordinate(privateScalar: Data, peerPublic: Data) throws -> Data {
+            let scalar = try makeScalar(privateScalar)
+            defer { BN_free(scalar) }
+
+            let peerPoint = try makePoint(peerPublic)
+            defer { EC_POINT_free(peerPoint) }
+
+            guard let result = EC_POINT_new(group) else {
+                throw NFCError.cryptoError("PACE: failed to allocate shared-secret point")
+            }
+            defer { EC_POINT_free(result) }
+
+            guard EC_POINT_mul(group, result, nil, peerPoint, scalar, ctx) == 1 else {
+                throw NFCError.cryptoError("PACE: failed to compute shared secret")
+            }
+
+            return try exportXCoordinate(result)
+        }
+
+        private func makeScalar(_ data: Data) throws -> OpaquePointer {
+            let scalar = data.withUnsafeBytes { bytes in
+                BN_bin2bn(
+                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    Int32(data.count),
+                    nil
+                )
+            }
+            guard let scalar else {
+                throw NFCError.cryptoError("PACE: failed to decode scalar value")
+            }
+            return scalar
+        }
+
+        private func makeReducedScalar(_ data: Data) throws -> OpaquePointer {
+            let input = try makeScalar(data)
+            guard let reduced = BN_new() else {
+                BN_free(input)
+                throw NFCError.cryptoError("PACE: failed to allocate reduced scalar")
+            }
+            guard BN_div(nil, reduced, input, order, ctx) == 1 else {
+                BN_free(reduced)
+                BN_free(input)
+                throw NFCError.cryptoError("PACE: failed to reduce nonce modulo curve order")
+            }
+            BN_free(input)
+            return reduced
+        }
+
+        private func makePoint(_ data: Data) throws -> OpaquePointer {
+            guard let point = EC_POINT_new(group) else {
+                throw NFCError.cryptoError("PACE: failed to allocate EC point")
+            }
+
+            let loaded = data.withUnsafeBytes { bytes in
+                EC_POINT_oct2point(
+                    group,
+                    point,
+                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    data.count,
+                    ctx
+                )
+            }
+            guard loaded == 1,
+                  EC_POINT_is_at_infinity(group, point) == 0,
+                  EC_POINT_is_on_curve(group, point, ctx) == 1
+            else {
+                EC_POINT_free(point)
+                throw NFCError.cryptoError("PACE: invalid elliptic-curve point")
+            }
+            return point
+        }
+
+        private func exportPoint(_ point: OpaquePointer) throws -> Data {
+            let form = POINT_CONVERSION_UNCOMPRESSED
+            let length = EC_POINT_point2oct(group, point, form, nil, 0, ctx)
+            guard length > 0 else {
+                throw NFCError.cryptoError("PACE: failed to export EC point")
+            }
+
+            var output = Data(count: length)
+            let written = output.withUnsafeMutableBytes { bytes in
+                EC_POINT_point2oct(
+                    group,
+                    point,
+                    form,
+                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    length,
+                    ctx
+                )
+            }
+            guard written == length else {
+                throw NFCError.cryptoError("PACE: failed to encode EC point")
+            }
+            return output
+        }
+
+        private func exportXCoordinate(_ point: OpaquePointer) throws -> Data {
+            guard let x = BN_new(), let y = BN_new() else {
+                throw NFCError.cryptoError("PACE: failed to allocate affine coordinates")
+            }
+            defer {
+                BN_free(x)
+                BN_free(y)
+            }
+
+            guard EC_POINT_get_affine_coordinates(group, point, x, y, ctx) == 1 else {
+                throw NFCError.cryptoError("PACE: failed to read shared-secret coordinates")
+            }
+
+            var output = Data(count: coordinateLength)
+            let written = output.withUnsafeMutableBytes { bytes in
+                BN_bn2binpad(
+                    x,
+                    bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    Int32(coordinateLength)
+                )
+            }
+            guard written == coordinateLength else {
+                throw NFCError.cryptoError("PACE: failed to encode shared-secret x-coordinate")
+            }
+            return output
+        }
+    }
+
+    private extension PACEHandler.DomainParameterID {
+        var opensslNID: Int32 {
+            switch self {
+            case .secp256r1:
+                Int32(NID_X9_62_prime256v1)
+            case .secp384r1:
+                Int32(NID_secp384r1)
+            case .secp521r1:
+                Int32(NID_secp521r1)
+            default:
+                Int32(NID_undef)
+            }
+        }
+    }
+#endif

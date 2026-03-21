@@ -454,6 +454,18 @@ struct Phase2Tests {
         #expect(key.count == 16)
     }
 
+    @Test("PACE password key derivation for CAN AES-256 uses password bytes")
+    func pacePasswordKeyDerivationCANAES256() throws {
+        let key = PACEHandler.derivePasswordKey(
+            password: "123456",
+            keyReference: .can,
+            mode: .aes256
+        )
+
+        let expected = try #require(Data(hexString: "8DF3278FB32026E66277357FCD6C826DBEB3DE32088B2531757D753940185923"))
+        #expect(key == expected)
+    }
+
     @Test("PACE session key derivation")
     func paceSessionKeyDerivation() {
         let sharedSecret = Data(repeating: 0xAB, count: 32)
@@ -495,6 +507,18 @@ struct Phase2Tests {
 
         #expect(token.count == 8) // Truncated AES-CMAC
     }
+
+    #if canImport(OpenSSL)
+        @Test("PACE OpenSSL helper rejects the point at infinity")
+        func paceRejectsPointAtInfinity() throws {
+            let curve = try OpenSSLPACECurve(parameterID: .secp256r1)
+            let scalar = try curve.generatePrivateScalar()
+
+            #expect(throws: NFCError.self) {
+                _ = try curve.sharedPoint(privateScalar: scalar, peerPublic: Data([0x00]))
+            }
+        }
+    #endif
 
     // MARK: - Chip Authentication Handler
 
