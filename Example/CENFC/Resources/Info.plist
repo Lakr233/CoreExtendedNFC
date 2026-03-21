@@ -120,6 +120,9 @@
 	</array>
 	<key>com.apple.developer.nfc.readersession.felica.systemcodes</key>
 	<array>
+		<string>0003</string>
+		<string>FE00</string>
+		<string>8008</string>
 		<string>88B4</string>
 		<string>12FC</string>
 	</array>
@@ -129,6 +132,11 @@
 		<string>A0000002471001</string>
 		<string>A0000002472001</string>
 		<string>A000000167455349474E</string>
+		<string>A000000291</string>
+		<string>A0000004520001</string>
+		<string>D4100000030001</string>
+		<string>D4100000140001</string>
+		<string>D410000029000001</string>
 	</array>
 </dict>
 </plist>
