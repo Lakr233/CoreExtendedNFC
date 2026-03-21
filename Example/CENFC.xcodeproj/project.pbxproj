@@ -25,11 +25,19 @@
 			remoteGlobalIDString = 501BBCFF2F5D768E00C52667;
 			remoteInfo = CENFC;
 		};
+		50BB000A2F80000100BB000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 501BBCF82F5D768E00C52667 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 501BBCFF2F5D768E00C52667;
+			remoteInfo = CENFC;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		501BBD002F5D768E00C52667 /* CENFC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CENFC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50AA00022F70000100AA0002 /* CENFCTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CENFCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		50BB00022F80000100BB0002 /* CENFCUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CENFCUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		50CF00A12F70CF010015F2E4 /* CENFC/Configuration/Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CENFC/Configuration/Development.xcconfig; sourceTree = "<group>"; };
 		50CF00A22F70CF020015F2E4 /* CENFC/Configuration/Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CENFC/Configuration/Release.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -63,6 +71,11 @@
 			path = CENFCTests;
 			sourceTree = "<group>";
 		};
+		50BB00092F80000100BB0009 /* CENFCUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CENFCUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +101,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		50BB00042F80000100BB0004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -96,6 +116,7 @@
 			children = (
 				501BBD022F5D768E00C52667 /* CENFC */,
 				50AA00092F70000100AA0009 /* CENFCTests */,
+				50BB00092F80000100BB0009 /* CENFCUITests */,
 				503A36B92F5D785B00C51966 /* Frameworks */,
 				501BBD012F5D768E00C52667 /* Products */,
 				5066B82B2F6178AD00469AB7 /* Recovered References */,
@@ -107,6 +128,7 @@
 			children = (
 				501BBD002F5D768E00C52667 /* CENFC.app */,
 				50AA00022F70000100AA0002 /* CENFCTests.xctest */,
+				50BB00022F80000100BB0002 /* CENFCUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -183,6 +205,29 @@
 			productReference = 50AA00022F70000100AA0002 /* CENFCTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		50BB00012F80000100BB0001 /* CENFCUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 50BB00082F80000100BB0008 /* Build configuration list for PBXNativeTarget "CENFCUITests" */;
+			buildPhases = (
+				50BB00032F80000100BB0003 /* Sources */,
+				50BB00042F80000100BB0004 /* Frameworks */,
+				50BB00052F80000100BB0005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				50BB000B2F80000100BB000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				50BB00092F80000100BB0009 /* CENFCUITests */,
+			);
+			name = CENFCUITests;
+			packageProductDependencies = (
+			);
+			productName = CENFCUITests;
+			productReference = 50BB00022F80000100BB0002 /* CENFCUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -197,6 +242,10 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					50AA00012F70000100AA0001 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 501BBCFF2F5D768E00C52667;
+					};
+					50BB00012F80000100BB0001 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 501BBCFF2F5D768E00C52667;
 					};
@@ -230,6 +279,7 @@
 			targets = (
 				501BBCFF2F5D768E00C52667 /* CENFC */,
 				50AA00012F70000100AA0001 /* CENFCTests */,
+				50BB00012F80000100BB0001 /* CENFCUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -243,6 +293,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		50AA00052F70000100AA0005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		50BB00052F80000100BB0005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -266,6 +323,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		50BB00032F80000100BB0003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -273,6 +337,11 @@
 			isa = PBXTargetDependency;
 			target = 501BBCFF2F5D768E00C52667 /* CENFC */;
 			targetProxy = 50AA000A2F70000100AA000A /* PBXContainerItemProxy */;
+		};
+		50BB000B2F80000100BB000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 501BBCFF2F5D768E00C52667 /* CENFC */;
+			targetProxy = 50BB000A2F80000100BB000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -511,6 +580,50 @@
 			};
 			name = Release;
 		};
+		50BB00062F80000100BB0006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 50CF00A12F70CF010015F2E4 /* CENFC/Configuration/Development.xcconfig */;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = wiki.qaq.nfc.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = CENFC;
+			};
+			name = Debug;
+		};
+		50BB00072F80000100BB0007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 50CF00A22F70CF020015F2E4 /* CENFC/Configuration/Release.xcconfig */;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = wiki.qaq.nfc.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = CENFC;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -537,6 +650,15 @@
 			buildConfigurations = (
 				50AA00062F70000100AA0006 /* Debug */,
 				50AA00072F70000100AA0007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		50BB00082F80000100BB0008 /* Build configuration list for PBXNativeTarget "CENFCUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				50BB00062F80000100BB0006 /* Debug */,
+				50BB00072F80000100BB0007 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,0 +1,38 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-tests:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Xcode Version
+        run: xcodebuild -version
+
+      - name: Run Swift Package Tests
+        run: xcodebuild -scheme CoreExtendedNFC -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' test
+
+  example-app-tests:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show Xcode Version
+        run: xcodebuild -version
+
+      - name: Run Example App Unit and UI Tests
+        run: xcodebuild -project Example/CENFC.xcodeproj -scheme CENFC -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' test CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=

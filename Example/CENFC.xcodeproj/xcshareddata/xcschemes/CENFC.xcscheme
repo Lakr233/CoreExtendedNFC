@@ -58,6 +58,16 @@
                ReferencedContainer = "container:CENFC.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "50BB00012F80000100BB0001"
+               BuildableName = "CENFCUITests.xctest"
+               BlueprintName = "CENFCUITests"
+               ReferencedContainer = "container:CENFC.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
