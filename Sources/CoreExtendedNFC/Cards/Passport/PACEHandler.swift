@@ -304,12 +304,18 @@ public enum PACEHandler {
         keyReference: KeyReference,
         mode: SMEncryptionMode
     ) -> Data {
-        let passwordData: Data = if keyReference == .mrz {
+        let passwordData: Data
+        if keyReference == .mrz {
             // For MRZ, use the existing Kseed derivation
-            KeyDerivation.generateKseed(mrzKey: password)
+            passwordData = KeyDerivation.generateKseed(mrzKey: password)
         } else {
             // ICAO 9303 encodes CAN/PIN/PUK as ISO-8859-1 character data.
-            Data(password.data(using: .isoLatin1) ?? Data(password.utf8))
+            guard let isoData = password.data(using: .isoLatin1, allowLossyConversion: false) else {
+                preconditionFailure(
+                    "PACE password for \(keyReference) contains characters that cannot be represented in ISO-8859-1."
+                )
+            }
+            passwordData = isoData
         }
 
         return deriveKey(
@@ -483,7 +489,12 @@ private extension SecurityProtocol {
             guard let group = EC_GROUP_new_by_curve_name(parameterID.opensslNID) else {
                 throw NFCError.cryptoError("PACE: failed to create elliptic-curve group")
             }
-            guard let order = BN_new(), let ctx = BN_CTX_new() else {
+            guard let order = BN_new() else {
+                EC_GROUP_free(group)
+                throw NFCError.cryptoError("PACE: failed to allocate OpenSSL bignum for curve order")
+            }
+            guard let ctx = BN_CTX_new() else {
+                BN_free(order)
                 EC_GROUP_free(group)
                 throw NFCError.cryptoError("PACE: failed to allocate OpenSSL bignum context")
             }
@@ -653,7 +664,10 @@ private extension SecurityProtocol {
                     ctx
                 )
             }
-            guard loaded == 1, EC_POINT_is_on_curve(group, point, ctx) == 1 else {
+            guard loaded == 1,
+                  EC_POINT_is_at_infinity(group, point) == 0,
+                  EC_POINT_is_on_curve(group, point, ctx) == 1
+            else {
                 EC_POINT_free(point)
                 throw NFCError.cryptoError("PACE: invalid elliptic-curve point")
             }

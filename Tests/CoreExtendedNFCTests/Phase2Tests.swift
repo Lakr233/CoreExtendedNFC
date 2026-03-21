@@ -508,6 +508,18 @@ struct Phase2Tests {
         #expect(token.count == 8) // Truncated AES-CMAC
     }
 
+    #if canImport(OpenSSL)
+        @Test("PACE OpenSSL helper rejects the point at infinity")
+        func paceRejectsPointAtInfinity() throws {
+            let curve = try OpenSSLPACECurve(parameterID: .secp256r1)
+            let scalar = try curve.generatePrivateScalar()
+
+            #expect(throws: NFCError.self) {
+                _ = try curve.sharedPoint(privateScalar: scalar, peerPublic: Data([0x00]))
+            }
+        }
+    #endif
+
     // MARK: - Chip Authentication Handler
 
     @Test("CA session key derivation")
