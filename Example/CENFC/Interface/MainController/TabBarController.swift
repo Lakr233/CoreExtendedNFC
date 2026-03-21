@@ -2,9 +2,13 @@ import UIKit
 
 class TabBarController: UITabBarController {
     private var hasScheduledWelcome = false
+    private enum Accessibility {
+        static let tabBar = "main.tabbar"
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tabBar.accessibilityIdentifier = Accessibility.tabBar
 
         let scannerVC = ScannerViewController()
         let dumpVC = DumpViewController()
@@ -12,15 +16,15 @@ class TabBarController: UITabBarController {
         let passportVC = PassportViewController()
         let toolsVC = ToolsViewController()
 
-        let tabs: [(UIViewController, String, String)] = [
-            (scannerVC, String(localized: "Scanner"), "sensor.tag.radiowaves.forward"),
-            (dumpVC, String(localized: "Dump"), "internaldrive"),
-            (ndefVC, String(localized: "NDEF"), "doc.text"),
-            (passportVC, String(localized: "Passport"), "person.text.rectangle"),
-            (toolsVC, String(localized: "Tools"), "wrench.and.screwdriver"),
+        let tabs: [(UIViewController, String, String, String)] = [
+            (scannerVC, String(localized: "Scanner"), "sensor.tag.radiowaves.forward", "scanner"),
+            (dumpVC, String(localized: "Dump"), "internaldrive", "dump"),
+            (ndefVC, String(localized: "NDEF"), "doc.text", "ndef"),
+            (passportVC, String(localized: "Passport"), "person.text.rectangle", "passport"),
+            (toolsVC, String(localized: "Tools"), "wrench.and.screwdriver", "tools"),
         ]
 
-        viewControllers = tabs.map { vc, title, icon in
+        viewControllers = tabs.map { vc, title, icon, identifier in
             vc.title = title
             vc.tabBarItem = UITabBarItem(
                 title: title,
@@ -29,6 +33,8 @@ class TabBarController: UITabBarController {
             )
             let nav = UINavigationController(rootViewController: vc)
             nav.navigationBar.prefersLargeTitles = true
+            nav.navigationBar.accessibilityIdentifier = "nav.\(identifier)"
+            nav.tabBarItem.accessibilityIdentifier = "tab.\(identifier)"
             return nav
         }
     }
