@@ -328,7 +328,7 @@ class PassportViewController: UIViewController {
         present(picker, animated: true)
     }
 
-    private func importFile(at url: URL) {
+    func importFile(at url: URL) {
         do {
             let record = try PassportDocument.importRecord(from: url)
             if let existing = PassportStore.shared.record(withDocumentNumber: record.passport.mrz?.documentNumber ?? "") {

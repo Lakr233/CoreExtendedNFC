@@ -30,13 +30,39 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func handleOpenURL(_ url: URL) {
-        guard url.pathExtension.lowercased() == "cenfc" else { return }
         guard let tabBar = window?.rootViewController as? TabBarController,
-              let nav = tabBar.viewControllers?.first as? UINavigationController,
-              let scanner = nav.viewControllers.first as? ScannerViewController
+              let destination = OpenURLRouter.destination(for: url)
         else { return }
-        tabBar.selectedIndex = 0
-        nav.popToRootViewController(animated: false)
-        scanner.importFile(at: url)
+
+        switch destination {
+        case .scanner:
+            guard let nav = navigationController(in: tabBar, at: 0),
+                  let scanner = nav.viewControllers.first as? ScannerViewController
+            else { return }
+            tabBar.selectedIndex = 0
+            nav.popToRootViewController(animated: false)
+            scanner.importFile(at: url)
+        case .ndef:
+            guard let nav = navigationController(in: tabBar, at: 2),
+                  let ndef = nav.viewControllers.first as? NDEFViewController
+            else { return }
+            tabBar.selectedIndex = 2
+            nav.popToRootViewController(animated: false)
+            ndef.importFile(at: url)
+        case .passport:
+            guard let nav = navigationController(in: tabBar, at: 3),
+                  let passport = nav.viewControllers.first as? PassportViewController
+            else { return }
+            tabBar.selectedIndex = 3
+            nav.popToRootViewController(animated: false)
+            passport.importFile(at: url)
+        }
+    }
+
+    private func navigationController(in tabBar: TabBarController, at index: Int) -> UINavigationController? {
+        guard let viewControllers = tabBar.viewControllers, viewControllers.indices.contains(index) else {
+            return nil
+        }
+        return viewControllers[index] as? UINavigationController
     }
 }
