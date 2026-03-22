@@ -7,10 +7,31 @@
       "layers" : [
         {
           "blend-mode" : "normal",
-          "fill" : "automatic",
-          "glass" : false,
-          "image-name" : "dot.radiowaves.right.svg",
-          "name" : "dot.radiowaves.right",
+          "fill" : "none",
+          "glass-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "tinted",
+              "value" : false
+            }
+          ],
+          "hidden" : false,
+          "image-name-specializations" : [
+            {
+              "value" : "dot.radiowaves.right.svg"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "dot.radiowaves.right.light.svg"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "dot.radiowaves.right.light.svg"
+            }
+          ],
+          "name" : "dot.radiowaves.right.light",
           "position" : {
             "scale" : 3.33,
             "translation-in-points" : [
