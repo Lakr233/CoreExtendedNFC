@@ -1,3 +1,4 @@
+import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
@@ -28,5 +29,13 @@ extension DumpRecord: Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+extension DumpRecord: ObjectListItem {
+    func matches(query: String) -> Bool {
+        dump.cardInfo.type.description.localizedCaseInsensitiveContains(query)
+            || dump.cardInfo.uid.hexString.localizedCaseInsensitiveContains(query)
+            || dump.cardInfo.uid.compactHexString.localizedCaseInsensitiveContains(query)
     }
 }

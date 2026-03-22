@@ -51,3 +51,4 @@ References/
 Example/CENFC/Configuration/*Developer*.xcconfig
 Example/CENFC/DerivedSources/*
 !Example/CENFC/DerivedSources/DerivedSourcesReadme.swift
+*.resolved

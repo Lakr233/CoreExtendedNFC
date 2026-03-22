@@ -1,7 +1,12 @@
+import Combine
+import ConfigurableKit
+import CoreExtendedNFC
 import Foundation
 import Then
+import UIKit
 
-class NDEFStore {
+@MainActor
+class NDEFStore: ObjectListDataSource {
     static let shared = NDEFStore()
 
     private let fileURL: URL = {
@@ -9,7 +14,11 @@ class NDEFStore {
         return documents.appendingPathComponent("ndef_records.json")
     }()
 
-    private(set) var records: [NDEFDataRecord] = []
+    private(set) var records: [NDEFDataRecord] = [] {
+        didSet { changeSubject.send() }
+    }
+
+    private let changeSubject = PassthroughSubject<Void, Never>()
 
     private let encoder = JSONEncoder().then {
         $0.dateEncodingStrategy = .iso8601
@@ -97,5 +106,51 @@ class NDEFStore {
 
     func record(withMessageData data: Data) -> NDEFDataRecord? {
         records.first { $0.messageData == data }
+    }
+
+    // MARK: - ObjectListDataSource
+
+    var items: [NDEFDataRecord] {
+        records
+    }
+
+    var dataDidChange: AnyPublisher<Void, Never> {
+        changeSubject.eraseToAnyPublisher()
+    }
+
+    func createItem(from _: UIViewController) async -> NDEFDataRecord? {
+        nil // Creation handled by VC (create menu / scan / import)
+    }
+
+    func removeItems(_ ids: Set<UUID>) {
+        records.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func moveItem(from sourceIndex: Int, to destinationIndex: Int) {
+        move(from: sourceIndex, to: destinationIndex)
+    }
+
+    func reorderItems(by orderedIDs: [UUID]) {
+        reorder(by: orderedIDs)
+    }
+
+    func configure(cell: ConfigurableView, for item: NDEFDataRecord) {
+        cell.configure(icon: UIImage(systemName: Self.iconName(for: item)))
+        cell.configure(title: String.LocalizationValue(stringLiteral: item.name))
+        cell.configure(description: String.LocalizationValue(stringLiteral: item.displayValue))
+    }
+
+    static func iconName(for record: NDEFDataRecord) -> String {
+        guard let parsed = record.parsedRecord else { return "circle.dashed" }
+        switch parsed.parsedPayload {
+        case .empty: return "circle.dashed"
+        case .text: return "doc.plaintext"
+        case .uri: return "link"
+        case .smartPoster: return "rectangle.and.text.magnifyingglass"
+        case .mime: return "doc.richtext"
+        case .external: return "puzzlepiece.extension"
+        case .unknown: return "questionmark.circle"
+        }
     }
 }

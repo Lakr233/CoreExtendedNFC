@@ -74,7 +74,7 @@ struct PassportReaderTests {
                     performActiveAuth: false
                 )
                 let instructions = transport.sentAPDUs.map(\.ins)
-                let generalAuthenticateCount = instructions.filter { $0 == 0x86 }.count
+                let generalAuthenticateCount = instructions.count(where: { $0 == 0x86 })
 
                 #expect(model.cardAccess?.supportsPACE == true, "\(scenario.name): CardAccess should advertise PACE")
                 #expect(model.securityReport.cardAccess.status == .succeeded, "\(scenario.name): CardAccess should succeed")
@@ -128,7 +128,7 @@ struct PassportReaderTests {
 }
 
 #if canImport(OpenSSL)
-    private struct PACEReaderScenario: Sendable {
+    private struct PACEReaderScenario {
         let name: String
         let securityProtocol: SecurityProtocol
         let parameterID: PACEHandler.DomainParameterID

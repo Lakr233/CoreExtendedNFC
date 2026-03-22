@@ -1,8 +1,12 @@
+import Combine
+import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 import Then
+import UIKit
 
-class DumpStore {
+@MainActor
+class DumpStore: ObjectListDataSource {
     static let shared = DumpStore()
 
     private let fileURL: URL = {
@@ -10,7 +14,11 @@ class DumpStore {
         return documents.appendingPathComponent("dump_records.json")
     }()
 
-    private(set) var records: [DumpRecord] = []
+    private(set) var records: [DumpRecord] = [] {
+        didSet { changeSubject.send() }
+    }
+
+    private let changeSubject = PassthroughSubject<Void, Never>()
 
     private let encoder = JSONEncoder().then {
         $0.dateEncodingStrategy = .iso8601
@@ -86,5 +94,53 @@ class DumpStore {
 
     func records(withUID uid: Data) -> [DumpRecord] {
         records.filter { $0.dump.cardInfo.uid == uid }
+    }
+
+    // MARK: - ObjectListDataSource
+
+    var items: [DumpRecord] {
+        records
+    }
+
+    var dataDidChange: AnyPublisher<Void, Never> {
+        changeSubject.eraseToAnyPublisher()
+    }
+
+    func createItem(from _: UIViewController) async -> DumpRecord? {
+        nil // Creation handled by VC (NFC dump / import)
+    }
+
+    func editItem(_ item: DumpRecord, from viewController: UIViewController) async -> DumpRecord? {
+        viewController.navigationController?.pushViewController(
+            DumpDetailViewController(record: item), animated: true
+        )
+        return nil
+    }
+
+    func removeItems(_ ids: Set<UUID>) {
+        records.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func moveItem(from sourceIndex: Int, to destinationIndex: Int) {
+        move(from: sourceIndex, to: destinationIndex)
+    }
+
+    func reorderItems(by orderedIDs: [UUID]) {
+        reorder(by: orderedIDs)
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    func configure(cell: ConfigurableView, for item: DumpRecord) {
+        let dateString = Self.dateFormatter.string(from: item.date)
+        cell.configure(icon: UIImage(systemName: ScanStore.iconName(for: String(describing: item.dump.cardInfo.type.family))))
+        cell.configure(title: String.LocalizationValue(stringLiteral: item.dump.cardInfo.type.description))
+        cell.configure(description: String.LocalizationValue(stringLiteral: "\(dateString) · \(item.dump.summary.technicalSummary)"))
     }
 }

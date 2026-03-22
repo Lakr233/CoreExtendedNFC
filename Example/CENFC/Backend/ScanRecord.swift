@@ -1,3 +1,4 @@
+import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
@@ -28,5 +29,13 @@ extension ScanRecord: Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
+    }
+}
+
+extension ScanRecord: ObjectListItem {
+    func matches(query: String) -> Bool {
+        cardInfo.type.description.localizedCaseInsensitiveContains(query)
+            || cardInfo.uid.hexString.localizedCaseInsensitiveContains(query)
+            || cardInfo.uid.compactHexString.localizedCaseInsensitiveContains(query)
     }
 }

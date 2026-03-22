@@ -262,7 +262,7 @@
 			mainGroup = 501BBCF72F5D768E00C52667;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				504CD4452F608CAC0015F2E4 /* XCRemoteSwiftPackageReference "ConfigurableKit" */,
+				504CD4452F608CAC0015F2E4 /* XCLocalSwiftPackageReference "ConfigurableKit" */,
 				504CD4482F608CC80015F2E4 /* XCRemoteSwiftPackageReference "MarkdownView" */,
 				504CD4572F608D290015F2E4 /* XCRemoteSwiftPackageReference "ColorfulX" */,
 				504CD45A2F608D360015F2E4 /* XCRemoteSwiftPackageReference "GlyphixTextFx" */,
@@ -668,6 +668,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		504CD4452F608CAC0015F2E4 /* XCLocalSwiftPackageReference "ConfigurableKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../ConfigurableKit;
+		};
 		504CD4682F608D8A0015F2E4 /* XCLocalSwiftPackageReference ".." */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ..;
@@ -675,14 +679,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		504CD4452F608CAC0015F2E4 /* XCRemoteSwiftPackageReference "ConfigurableKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Lakr233/ConfigurableKit";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 3.2.0;
-			};
-		};
 		504CD4482F608CC80015F2E4 /* XCRemoteSwiftPackageReference "MarkdownView" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Lakr233/MarkdownView";
@@ -744,7 +740,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		504CD4462F608CAC0015F2E4 /* ConfigurableKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 504CD4452F608CAC0015F2E4 /* XCRemoteSwiftPackageReference "ConfigurableKit" */;
+			package = 504CD4452F608CAC0015F2E4 /* XCLocalSwiftPackageReference "ConfigurableKit" */;
 			productName = ConfigurableKit;
 		};
 		504CD4582F608D290015F2E4 /* ColorfulX */ = {

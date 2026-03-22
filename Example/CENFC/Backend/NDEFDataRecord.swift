@@ -1,3 +1,4 @@
+import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
@@ -47,5 +48,13 @@ struct NDEFDataRecord: Codable, Hashable, Identifiable {
 
     func withMessageData(_ newData: Data) -> NDEFDataRecord {
         NDEFDataRecord(id: id, date: date, name: name, messageData: newData)
+    }
+}
+
+extension NDEFDataRecord: ObjectListItem {
+    func matches(query: String) -> Bool {
+        name.localizedCaseInsensitiveContains(query)
+            || displayType.localizedCaseInsensitiveContains(query)
+            || displayValue.localizedCaseInsensitiveContains(query)
     }
 }

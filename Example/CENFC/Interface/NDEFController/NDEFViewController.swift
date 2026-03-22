@@ -1,17 +1,14 @@
+import ConfigurableKit
 import CoreExtendedNFC
-import SnapKit
 import SPIndicator
-import Then
 import UIKit
 import UniformTypeIdentifiers
 
-class NDEFViewController: UIViewController {
-    nonisolated enum Section { case main }
-
-    private let tableView = UITableView(frame: .zero, style: .plain)
-    private var dataSource: ReorderableTableViewDiffableDataSource<Section, UUID>!
-    private var pendingSnapshotReload = false
-    private var pendingSnapshotAnimated = true
+class NDEFViewController: ObjectListViewController<NDEFStore>,
+    ObjectListViewControllerDelegate,
+    UIDocumentPickerDelegate
+{
+    // MARK: - Bar Buttons
 
     private lazy var addBarButton: UIBarButtonItem = {
         let addMenu = UIMenu(children: [
@@ -61,30 +58,22 @@ class NDEFViewController: UIViewController {
                         UIAction(
                             title: String(localized: "Date (Newest First)"),
                             image: UIImage(systemName: "calendar")
-                        ) { [weak self] _ in
-                            NDEFStore.shared.sort { $0.date > $1.date }
-                            self?.reloadSnapshot()
-                        },
+                        ) { _ in NDEFStore.shared.sort { $0.date > $1.date } },
                         UIAction(
                             title: String(localized: "Date (Oldest First)"),
                             image: UIImage(systemName: "calendar.badge.clock")
-                        ) { [weak self] _ in
-                            NDEFStore.shared.sort { $0.date < $1.date }
-                            self?.reloadSnapshot()
-                        },
+                        ) { _ in NDEFStore.shared.sort { $0.date < $1.date } },
                         UIAction(
                             title: String(localized: "Name"),
                             image: UIImage(systemName: "textformat")
-                        ) { [weak self] _ in
+                        ) { _ in
                             NDEFStore.shared.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                            self?.reloadSnapshot()
                         },
                         UIAction(
                             title: String(localized: "Type"),
                             image: UIImage(systemName: "tag")
-                        ) { [weak self] _ in
+                        ) { _ in
                             NDEFStore.shared.sort { $0.displayType.localizedCaseInsensitiveCompare($1.displayType) == .orderedAscending }
-                            self?.reloadSnapshot()
                         },
                     ]
                 ),
@@ -105,7 +94,7 @@ class NDEFViewController: UIViewController {
             image: UIImage(systemName: "trash"),
             style: .plain,
             target: self,
-            action: #selector(deleteSelected)
+            action: #selector(deleteSelectedRecords)
         )
         button.tintColor = .systemRed
         return button
@@ -126,8 +115,11 @@ class NDEFViewController: UIViewController {
         return UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: menu)
     }
 
-    private var currentSearchText: String {
-        navigationItem.searchController?.searchBar.text ?? ""
+    // MARK: - Init
+
+    init() {
+        super.init(dataSource: .shared)
+        delegate = self
     }
 
     // MARK: - Lifecycle
@@ -135,23 +127,11 @@ class NDEFViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         setupDismissKeyboardOnTap()
-        view.backgroundColor = .systemBackground
-
-        setupTableView()
-        setupDataSource()
-        setupNavBar()
-        setupSearch()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        reloadSnapshot()
         navigationController?.setToolbarHidden(true, animated: animated)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        flushPendingSnapshotReloadIfNeeded()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -159,71 +139,11 @@ class NDEFViewController: UIViewController {
         navigationController?.setToolbarHidden(true, animated: animated)
     }
 
-    // MARK: - Setup
-
-    private func setupTableView() {
-        tableView.do {
-            $0.separatorStyle = .singleLine
-            $0.separatorInset = .zero
-            $0.backgroundColor = .clear
-            $0.delegate = self
-            $0.dragDelegate = self
-            $0.dropDelegate = self
-            $0.dragInteractionEnabled = true
-            $0.allowsMultipleSelectionDuringEditing = true
-            $0.register(NDEFRecordCell.self, forCellReuseIdentifier: NDEFRecordCell.reuseIdentifier)
-        }
-        view.addSubview(tableView)
-        tableView.snp.makeConstraints { $0.edges.equalToSuperview() }
-    }
-
-    private func setupDataSource() {
-        dataSource = .init(tableView: tableView) { tableView, indexPath, recordID in
-            let cell = tableView.dequeueReusableCell(
-                withIdentifier: NDEFRecordCell.reuseIdentifier, for: indexPath
-            ) as! NDEFRecordCell
-            if let record = NDEFStore.shared.record(for: recordID) {
-                cell.update(with: record)
-            }
-            return cell
-        }
-        dataSource.canReorderItem = { [weak self] _ in
-            self?.currentSearchText.isEmpty == true
-        }
-        dataSource.onReorderedItems = { orderedIDs in
-            AppLogStore.shared.info(
-                "moveRow reconciled orderedIDs=\(orderedIDs.count)",
-                source: "NDEFReorder"
-            )
-            NDEFStore.shared.reorder(by: orderedIDs)
-        }
-        dataSource.defaultRowAnimation = .fade
-    }
-
-    private func setupNavBar() {
-        navigationItem.rightBarButtonItem = addBarButton
-    }
-
-    private func setupSearch() {
-        let search = UISearchController(searchResultsController: nil).then {
-            $0.delegate = self
-            $0.searchBar.placeholder = String(localized: "Search by name or content")
-            $0.searchBar.autocapitalizationType = .none
-            $0.searchBar.autocorrectionType = .no
-            $0.searchBar.delegate = self
-            $0.obscuresBackgroundDuringPresentation = false
-            $0.hidesNavigationBarDuringPresentation = false
-        }
-        navigationItem.searchController = search
-        navigationItem.preferredSearchBarPlacement = .stacked
-        navigationItem.hidesSearchBarWhenScrolling = false
-    }
-
-    // MARK: - Editing state (two-finger pan enters editing)
+    // MARK: - Editing
 
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
-        tableView.setEditing(editing, animated: animated)
+        navigationController?.setToolbarHidden(true, animated: false)
         updateEditingNavBar()
     }
 
@@ -248,56 +168,130 @@ class NDEFViewController: UIViewController {
     private func selectedRecords() -> [NDEFDataRecord] {
         guard let indexPaths = tableView.indexPathsForSelectedRows else { return [] }
         return indexPaths.compactMap { indexPath in
-            guard let id = dataSource.itemIdentifier(for: indexPath) else { return nil }
+            guard let id = diffableItemIdentifier(for: indexPath) else { return nil }
             return NDEFStore.shared.record(for: id)
         }
     }
 
-    // MARK: - Data Source
+    // MARK: - Row Selection
 
-    func reloadSnapshot(animatingDifferences: Bool = true) {
-        guard isViewLoaded, view.window != nil, tableView.window != nil else {
-            pendingSnapshotReload = true
-            pendingSnapshotAnimated = pendingSnapshotAnimated || animatingDifferences
-            AppLogStore.shared.debug(
-                "reloadSnapshot deferred animated=\(animatingDifferences) viewWindow=\(view.window != nil) tableWindow=\(tableView.window != nil)",
-                source: "NDEFReorder"
-            )
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        if tableView.isEditing {
+            updateEditingNavBar()
             return
         }
-        let query = currentSearchText
-        let filtered = NDEFStore.shared.records.filter { record in
-            query.isEmpty
-                || record.name.localizedCaseInsensitiveContains(query)
-                || record.displayType.localizedCaseInsensitiveContains(query)
-                || record.displayValue.localizedCaseInsensitiveContains(query)
-        }
-        AppLogStore.shared.debug(
-            "reloadSnapshot query='\(query)' total=\(NDEFStore.shared.records.count) filtered=\(filtered.count) window=\(view.window != nil)",
-            source: "NDEFReorder"
-        )
-        let previousItems = Set(dataSource.snapshot().itemIdentifiers)
-        var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
-        snapshot.appendSections([.main])
-        let ids = filtered.map(\.id)
-        snapshot.appendItems(ids)
-        let itemsToReconfigure = ids.filter { previousItems.contains($0) }
-        if !itemsToReconfigure.isEmpty {
-            snapshot.reconfigureItems(itemsToReconfigure)
-        }
-        dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard let recordID = diffableItemIdentifier(for: indexPath),
+              let record = NDEFStore.shared.record(for: recordID)
+        else { return }
+        pushEditor(for: record)
     }
 
-    private func flushPendingSnapshotReloadIfNeeded() {
-        guard pendingSnapshotReload, view.window != nil, tableView.window != nil else { return }
-        let animated = pendingSnapshotAnimated
-        pendingSnapshotReload = false
-        pendingSnapshotAnimated = true
-        AppLogStore.shared.debug(
-            "flushing deferred snapshot animated=\(animated)",
-            source: "NDEFReorder"
-        )
-        reloadSnapshot(animatingDifferences: animated)
+    override func tableView(_ tableView: UITableView, didDeselectRowAt _: IndexPath) {
+        if tableView.isEditing {
+            updateEditingNavBar()
+        }
+    }
+
+    // MARK: - Context Menu
+
+    override func tableView(
+        _: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point _: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard !tableView.isEditing else { return nil }
+        guard let recordID = diffableItemIdentifier(for: indexPath),
+              let record = NDEFStore.shared.record(for: recordID)
+        else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            UIMenu(children: [
+                UIAction(
+                    title: String(localized: "Write to Card"),
+                    image: UIImage(systemName: "square.and.arrow.down.on.square")
+                ) { _ in
+                    guard let message = record.parsedMessage else { return }
+                    self?.writeMessage(message, summary: record.name)
+                },
+                UIAction(
+                    title: String(localized: "Export"),
+                    image: UIImage(systemName: "square.and.arrow.up")
+                ) { _ in
+                    self?.exportRecord(record)
+                },
+                UIAction(
+                    title: String(localized: "Delete"),
+                    image: UIImage(systemName: "trash"),
+                    attributes: [.destructive]
+                ) { _ in
+                    NDEFStore.shared.removeItems([recordID])
+                },
+            ])
+        }
+    }
+
+    // MARK: - Drag (local reorder only)
+
+    override func tableView(
+        _: UITableView,
+        itemsForBeginning _: UIDragSession,
+        at indexPath: IndexPath
+    ) -> [UIDragItem] {
+        guard view.window != nil, tableView.window != nil else { return [] }
+        guard let recordID = diffableItemIdentifier(for: indexPath) else { return [] }
+        let provider = NSItemProvider(object: recordID.uuidString as NSString)
+        let item = UIDragItem(itemProvider: provider)
+        item.localObject = recordID
+        return [item]
+    }
+
+    override func tableView(
+        _: UITableView,
+        dropSessionDidUpdate session: UIDropSession,
+        withDestinationIndexPath _: IndexPath?
+    ) -> UITableViewDropProposal {
+        guard view.window != nil, tableView.window != nil else {
+            return UITableViewDropProposal(operation: .cancel)
+        }
+        guard session.localDragSession != nil else {
+            return UITableViewDropProposal(operation: .cancel)
+        }
+        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    override func tableView(
+        _: UITableView,
+        performDropWith _: UITableViewDropCoordinator
+    ) {
+        // local reorder handled by diffable data source
+    }
+
+    // MARK: - ObjectListViewControllerDelegate
+
+    func objectListViewControllerDidLoad(_: UIViewController) {
+        navigationItem.searchController?.searchBar.placeholder = String(localized: "Search by name or content")
+    }
+
+    func objectListViewController(
+        _: UIViewController,
+        configureTrailingBarButtonItems items: inout [UIBarButtonItem]
+    ) {
+        items.removeAll()
+        items.append(addBarButton)
+    }
+
+    func objectListViewController(
+        _: UIViewController,
+        configureToolbarItems items: inout [UIBarButtonItem]
+    ) {
+        items.removeAll()
+    }
+
+    func objectListViewController(
+        _: UIViewController,
+        contextMenuActionsForItemWith _: UUID
+    ) -> [UIMenuElement] {
+        []
     }
 
     // MARK: - Create
@@ -317,7 +311,6 @@ class NDEFViewController: UIViewController {
         let message = NDEFMessage(records: [ndefRecord])
         let record = NDEFDataRecord(name: name, messageData: message.data)
         NDEFStore.shared.add(record)
-        reloadSnapshot()
         pushEditor(for: record)
     }
 
@@ -348,7 +341,6 @@ class NDEFViewController: UIViewController {
                         imported += 1
                     }
                 }
-                reloadSnapshot()
                 showImportSummary(imported: imported, duplicated: duplicated)
             } catch is CancellationError {
                 return
@@ -410,7 +402,6 @@ class NDEFViewController: UIViewController {
         let records = selectedRecords()
         guard !records.isEmpty else { return }
 
-        // Combine all selected records into a single NDEF message
         let allNDEFRecords = records.compactMap(\.parsedMessage).flatMap(\.records)
         guard !allNDEFRecords.isEmpty else { return }
         let combined = NDEFMessage(records: allNDEFRecords)
@@ -468,7 +459,7 @@ class NDEFViewController: UIViewController {
 
     // MARK: - Delete
 
-    @objc private func deleteSelected() {
+    @objc private func deleteSelectedRecords() {
         let records = selectedRecords()
         guard !records.isEmpty else { return }
 
@@ -478,10 +469,7 @@ class NDEFViewController: UIViewController {
             preferredStyle: .actionSheet
         )
         alert.addAction(UIAlertAction(title: String(localized: "Delete"), style: .destructive) { [weak self] _ in
-            for record in records {
-                NDEFStore.shared.remove(id: record.id)
-            }
-            self?.reloadSnapshot()
+            NDEFStore.shared.removeItems(Set(records.map(\.id)))
             self?.setEditing(false, animated: true)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
@@ -505,7 +493,6 @@ class NDEFViewController: UIViewController {
                 showImportSummary(imported: 0, duplicated: 1)
             } else {
                 NDEFStore.shared.add(record)
-                reloadSnapshot()
                 showImportSummary(imported: 1, duplicated: 0)
             }
         } catch {
@@ -529,7 +516,6 @@ class NDEFViewController: UIViewController {
                 presentErrorAlert(for: error)
             }
         }
-        reloadSnapshot()
         showImportSummary(imported: imported, duplicated: duplicated)
     }
 
@@ -557,106 +543,6 @@ class NDEFViewController: UIViewController {
         }
     }
 
-    // MARK: - Errors
-
-    private func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
-    }
-}
-
-// MARK: - UITableViewDelegate
-
-extension NDEFViewController: UITableViewDelegate {
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        if tableView.isEditing {
-            updateEditingNavBar()
-            return
-        }
-        tableView.deselectRow(at: indexPath, animated: true)
-        guard let recordID = dataSource.itemIdentifier(for: indexPath),
-              let record = NDEFStore.shared.record(for: recordID)
-        else { return }
-        pushEditor(for: record)
-    }
-
-    func tableView(_ tableView: UITableView, didDeselectRowAt _: IndexPath) {
-        if tableView.isEditing {
-            updateEditingNavBar()
-        }
-    }
-
-    func tableView(
-        _: UITableView,
-        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
-    ) -> UISwipeActionsConfiguration? {
-        guard !tableView.isEditing else { return nil }
-        guard let recordID = dataSource.itemIdentifier(for: indexPath) else { return nil }
-        let delete = UIContextualAction(style: .destructive, title: String(localized: "Delete")) { [weak self] _, _, completion in
-            NDEFStore.shared.remove(id: recordID)
-            self?.reloadSnapshot()
-            completion(true)
-        }
-        delete.image = UIImage(systemName: "trash")
-        return UISwipeActionsConfiguration(actions: [delete])
-    }
-
-    func tableView(
-        _: UITableView,
-        contextMenuConfigurationForRowAt indexPath: IndexPath,
-        point _: CGPoint
-    ) -> UIContextMenuConfiguration? {
-        guard !tableView.isEditing else { return nil }
-        guard let recordID = dataSource.itemIdentifier(for: indexPath),
-              let record = NDEFStore.shared.record(for: recordID)
-        else { return nil }
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
-            UIMenu(children: [
-                UIAction(
-                    title: String(localized: "Write to Card"),
-                    image: UIImage(systemName: "square.and.arrow.down.on.square")
-                ) { _ in
-                    guard let message = record.parsedMessage else { return }
-                    self?.writeMessage(message, summary: record.name)
-                },
-                UIAction(
-                    title: String(localized: "Export"),
-                    image: UIImage(systemName: "square.and.arrow.up")
-                ) { _ in
-                    self?.exportRecord(record)
-                },
-                UIAction(
-                    title: String(localized: "Delete"),
-                    image: UIImage(systemName: "trash"),
-                    attributes: [.destructive]
-                ) { [weak self] _ in
-                    NDEFStore.shared.remove(id: recordID)
-                    self?.reloadSnapshot()
-                },
-            ])
-        }
-    }
-
-    // Two-finger pan gesture automatically enters editing mode on UITableView
-    // when allowsMultipleSelectionDuringEditing = true (iOS 13+).
-
-    func tableView(_: UITableView, shouldBeginMultipleSelectionInteractionAt _: IndexPath) -> Bool {
-        true
-    }
-
-    func tableView(_: UITableView, didBeginMultipleSelectionInteractionAt _: IndexPath) {
-        setEditing(true, animated: true)
-    }
-
-    func tableViewDidEndMultipleSelectionInteraction(_: UITableView) {
-        // Keep editing mode active until user explicitly exits
-    }
-
     // MARK: - Push Editor
 
     private func pushEditor(for record: NDEFDataRecord) {
@@ -664,9 +550,8 @@ extension NDEFViewController: UITableViewDelegate {
         guard let ndefRecord = record.parsedRecord else {
             editor = NDEFTextEditorViewController()
             editor.existingRecord = record
-            editor.onSave = { [weak self] updated in
+            editor.onSave = { updated in
                 NDEFStore.shared.update(updated)
-                self?.reloadSnapshot()
             }
             navigationController?.pushViewController(editor, animated: true)
             return
@@ -687,103 +572,27 @@ extension NDEFViewController: UITableViewDelegate {
             editor = NDEFTextEditorViewController()
         }
         editor.existingRecord = record
-        editor.onSave = { [weak self] updated in
+        editor.onSave = { updated in
             NDEFStore.shared.update(updated)
-            self?.reloadSnapshot()
         }
         navigationController?.pushViewController(editor, animated: true)
     }
-}
 
-// MARK: - Search
+    // MARK: - UIDocumentPickerDelegate
 
-extension NDEFViewController: UISearchControllerDelegate, UISearchBarDelegate {
-    func searchBar(_: UISearchBar, textDidChange _: String) {
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(commitSearch), object: nil)
-        perform(#selector(commitSearch), with: nil, afterDelay: 0.25)
-    }
-
-    @objc private func commitSearch() {
-        reloadSnapshot()
-    }
-}
-
-// MARK: - UIDocumentPickerDelegate
-
-extension NDEFViewController: UIDocumentPickerDelegate {
     func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         importFiles(at: urls)
     }
-}
 
-// MARK: - UITableViewDragDelegate
+    // MARK: - Errors
 
-extension NDEFViewController: UITableViewDragDelegate {
-    func tableView(
-        _: UITableView,
-        itemsForBeginning _: UIDragSession,
-        at indexPath: IndexPath
-    ) -> [UIDragItem] {
-        guard view.window != nil, tableView.window != nil else {
-            AppLogStore.shared.warning("drag begin blocked because table/view is not in a window", source: "NDEFReorder")
-            return []
-        }
-        guard currentSearchText.isEmpty else {
-            AppLogStore.shared.warning(
-                "drag begin blocked by active search query='\(currentSearchText)'",
-                source: "NDEFReorder"
-            )
-            return []
-        }
-        guard let recordID = dataSource.itemIdentifier(for: indexPath) else { return [] }
-        AppLogStore.shared.debug(
-            "drag begin row=\(indexPath.row) id=\(recordID.uuidString)",
-            source: "NDEFReorder"
+    private func presentErrorAlert(for error: Error) {
+        let alert = UIAlertController(
+            title: String(localized: "Error"),
+            message: String(describing: error),
+            preferredStyle: .alert
         )
-        let provider = NSItemProvider(object: recordID.uuidString as NSString)
-        let item = UIDragItem(itemProvider: provider)
-        item.localObject = recordID
-        return [item]
-    }
-}
-
-// MARK: - UITableViewDropDelegate
-
-extension NDEFViewController: UITableViewDropDelegate {
-    func tableView(
-        _: UITableView,
-        canHandle session: UIDropSession
-    ) -> Bool {
-        session.localDragSession != nil
-    }
-
-    func tableView(
-        _: UITableView,
-        dropSessionDidUpdate session: UIDropSession,
-        withDestinationIndexPath _: IndexPath?
-    ) -> UITableViewDropProposal {
-        guard view.window != nil, tableView.window != nil else {
-            AppLogStore.shared.warning("drop update cancelled because table/view is not in a window", source: "NDEFReorder")
-            return UITableViewDropProposal(operation: .cancel)
-        }
-        guard session.localDragSession != nil else {
-            return UITableViewDropProposal(operation: .cancel)
-        }
-        guard currentSearchText.isEmpty else {
-            AppLogStore.shared.warning(
-                "drop update forbidden due to active search query='\(currentSearchText)'",
-                source: "NDEFReorder"
-            )
-            return UITableViewDropProposal(operation: .forbidden)
-        }
-        AppLogStore.shared.debug("drop update local move", source: "NDEFReorder")
-        return UITableViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
-    }
-
-    func tableView(
-        _: UITableView,
-        performDropWith _: UITableViewDropCoordinator
-    ) {
-        AppLogStore.shared.debug("performDrop local noop; datasource handles reorder", source: "NDEFReorder")
+        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
+        present(alert, animated: true)
     }
 }

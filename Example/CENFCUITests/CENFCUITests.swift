@@ -5,7 +5,7 @@ final class CENFCUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testLaunchShowsPrimaryTabs() throws {
+    func testLaunchShowsPrimaryTabs() {
         let app = XCUIApplication()
         app.launchEnvironment["CENFC_UI_TESTING"] = "1"
         app.launch()

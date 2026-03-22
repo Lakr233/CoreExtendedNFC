@@ -1,8 +1,12 @@
+import Combine
+import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 import Then
+import UIKit
 
-class ScanStore {
+@MainActor
+class ScanStore: ObjectListDataSource {
     static let shared = ScanStore()
 
     private let fileURL: URL = {
@@ -10,7 +14,11 @@ class ScanStore {
         return documents.appendingPathComponent("scan_records.json")
     }()
 
-    private(set) var records: [ScanRecord] = []
+    private(set) var records: [ScanRecord] = [] {
+        didSet { changeSubject.send() }
+    }
+
+    private let changeSubject = PassthroughSubject<Void, Never>()
 
     private let encoder = JSONEncoder().then {
         $0.dateEncodingStrategy = .iso8601
@@ -92,5 +100,61 @@ class ScanStore {
 
     func record(withUID uid: Data) -> ScanRecord? {
         records.first { $0.cardInfo.uid == uid }
+    }
+
+    // MARK: - ObjectListDataSource
+
+    var items: [ScanRecord] {
+        records
+    }
+
+    var dataDidChange: AnyPublisher<Void, Never> {
+        changeSubject.eraseToAnyPublisher()
+    }
+
+    func createItem(from _: UIViewController) async -> ScanRecord? {
+        nil // Creation handled by VC (NFC scan / import)
+    }
+
+    func editItem(_ item: ScanRecord, from viewController: UIViewController) async -> ScanRecord? {
+        viewController.navigationController?.pushViewController(
+            CardDetailViewController(record: item), animated: true
+        )
+        return nil
+    }
+
+    func removeItems(_ ids: Set<UUID>) {
+        records.removeAll { ids.contains($0.id) }
+        save()
+    }
+
+    func moveItem(from sourceIndex: Int, to destinationIndex: Int) {
+        move(from: sourceIndex, to: destinationIndex)
+    }
+
+    func reorderItems(by orderedIDs: [UUID]) {
+        reorder(by: orderedIDs)
+    }
+
+    func configure(cell: ConfigurableView, for item: ScanRecord) {
+        cell.configure(icon: UIImage(systemName: Self.iconName(for: String(describing: item.cardInfo.type.family))))
+        cell.configure(title: String.LocalizationValue(stringLiteral: item.cardInfo.type.description))
+        cell.configure(description: String.LocalizationValue(stringLiteral: item.cardInfo.uid.hexString))
+    }
+
+    static func iconName(for family: String) -> String {
+        switch family {
+        case "mifareUltralight", "ntag": "creditcard"
+        case "mifareClassic": "creditcard.trianglebadge.exclamationmark"
+        case "mifarePlus": "creditcard.and.123"
+        case "mifareDesfire": "lock.shield"
+        case "type4": "doc.text"
+        case "felica": "wave.3.right"
+        case "iso15693": "barcode"
+        case "passport": "person.text.rectangle"
+        case "jewelTopaz": "diamond"
+        case "iso14443B": "rectangle.on.rectangle"
+        default: "questionmark.circle"
+        }
     }
 }
