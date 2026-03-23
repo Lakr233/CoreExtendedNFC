@@ -3457,6 +3457,16 @@
         }
       }
     },
+    "NDEF Records" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NDEF 记录"
+          }
+        }
+      }
+    },
     "NDEF written to %@" : {
       "localizations" : {
         "en" : {
