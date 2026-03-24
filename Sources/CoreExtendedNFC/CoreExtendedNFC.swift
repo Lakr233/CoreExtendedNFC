@@ -10,10 +10,10 @@ public enum CoreExtendedNFC {
     /// The returned ``NFCSessionManager`` keeps the NFC session alive.
     /// Call ``NFCSessionManager/invalidate()`` when you are done with the transport.
     public static func scan(
-        message: String = String(localized: "Hold your iPhone near the NFC tag")
+        message: String? = nil
     ) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager) {
         let manager = NFCSessionManager()
-        let (info, transport) = try await manager.scan(message: message)
+        let (info, transport) = try await manager.scan(message: message ?? String(localized: "Hold your iPhone near the NFC tag", bundle: .module))
 
         let refinedInfo = try await refineCardInfo(info, transport: transport)
         manager.setAlertMessage("\(refinedInfo.type.description)")
@@ -22,9 +22,9 @@ public enum CoreExtendedNFC {
 
     /// Scan and automatically dump the card's full memory.
     public static func scanAndDump(
-        message: String = String(localized: "Hold your iPhone near the NFC tag")
+        message: String? = nil
     ) async throws -> (CardInfo, MemoryDump) {
-        let (info, transport, manager) = try await scan(message: message)
+        let (info, transport, manager) = try await scan(message: message ?? String(localized: "Hold your iPhone near the NFC tag", bundle: .module))
 
         // Non-operable cards (Classic, etc.) — return identification only
         guard info.type.isOperableOnIOS else {
@@ -34,9 +34,9 @@ public enum CoreExtendedNFC {
         }
 
         do {
-            manager.setAlertMessage("Reading...")
+            manager.setAlertMessage(String(localized: "Reading...", bundle: .module))
             let dump = try await dumpCard(info: info, transport: transport)
-            manager.setAlertMessage("Done")
+            manager.setAlertMessage(String(localized: "Done", bundle: .module))
             manager.invalidate()
             return (info, dump)
         } catch {
@@ -199,11 +199,11 @@ public enum CoreExtendedNFC {
         dataGroups: [DataGroupId] = [.com, .dg1, .dg2, .sod],
         performActiveAuth: Bool = true,
         trustAnchorsDER: [Data] = [],
-        message: String = String(localized: "Hold your iPhone near your passport"),
+        message: String? = nil,
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> PassportModel {
         let manager = NFCSessionManager()
-        let (_, transport) = try await manager.scan(for: [.iso14443], message: message)
+        let (_, transport) = try await manager.scan(for: [.iso14443], message: message ?? String(localized: "Hold your iPhone near your passport", bundle: .module))
 
         do {
             let reader = PassportReader(transport: transport)
@@ -217,7 +217,7 @@ public enum CoreExtendedNFC {
                     onProgress?(msg)
                 }
             )
-            manager.setAlertMessage("Done")
+            manager.setAlertMessage(String(localized: "Done", bundle: .module))
             manager.invalidate()
             return passport
         } catch {
