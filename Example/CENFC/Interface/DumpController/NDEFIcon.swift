@@ -7,8 +7,8 @@
 
 import Foundation
 
-extension NDEFRecord.Payload{
-    var icon: String{
+extension NDEFRecord.Payload {
+    var icon: String {
         switch self {
         case .text:
             "doc.plaintext"
@@ -21,7 +21,7 @@ extension NDEFRecord.Payload{
         case .external:
             "puzzlepiece.extension"
         default:
-            ""
+            "questionmark"
         }
     }
 }

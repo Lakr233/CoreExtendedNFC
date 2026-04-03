@@ -162,11 +162,11 @@ class DumpDetailViewController: StackScrollController {
     // MARK: - NDEF Records
 
     private func buildNDEFRecordsSection() {
-        guard let NDEFMessage=record.dump.parsedNDEFMessage, !NDEFMessage.records.isEmpty else { return }
+        guard let ndefMessage = record.dump.parsedNDEFMessage, !ndefMessage.records.isEmpty else { return }
 
         addSectionHeader(String(localized: "NDEF Records"))
 
-        for record in NDEFMessage.records {
+        for record in ndefMessage.records {
             addInfoRow(icon: record.parsedPayload.icon, title: record.displayType, value: record.displayValue)
         }
     }
