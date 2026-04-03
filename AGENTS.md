@@ -120,7 +120,6 @@ PACE and Chip Authentication stubs exist but ECDH key agreement is not yet imple
 | NIST FIPS 197/180-4     | AES, SHA-1/256                            |
 | NXP datasheets          | NTAG, Ultralight, DESFire, Classic, ICODE |
 
-
 ## What NOT to Do
 
 - **Never** attempt MIFARE Classic authentication (0x60/0x61) — iOS cannot handle Crypto1 parity bits. Classic is identification-only.
@@ -128,4 +127,3 @@ PACE and Chip Authentication stubs exist but ECDH key agreement is not yet imple
 - **Never** block the main thread — all NFC ops are async.
 - **Never** hardcode session timeout handling — let CoreNFC manage it, catch the error.
 - **Never** add external crypto dependencies unless implementing DESFire auth or PACE ECDH.
-

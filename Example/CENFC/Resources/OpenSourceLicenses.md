@@ -1,7 +1,5 @@
 # Open Source Licenses
 
-
-
 ## Choreographer
 
 MIT License
@@ -586,10 +584,7 @@ SOFTWARE.
     See the License for the specific language governing permissions and
     limitations under the License.
 
-
-
-## Runtime Library Exception to the Apache 2.0 License: ##
-
+## Runtime Library Exception to the Apache 2.0 License:
 
     As an exception, if you use this Software to compile your source code and
     portions of this Software are embedded into the binary product as a result,
@@ -697,7 +692,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
------
+---
 
 houdini.h, houdini_href_e.c, houdini_html_e.c, houdini_html_u.c
 
@@ -723,7 +718,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
------
+---
 
 buffer.h, buffer.c, chunk.h
 
@@ -747,7 +742,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
------
+---
 
 utf8.c and utf8.c
 
@@ -773,7 +768,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
------
+---
 
 The normalization code in normalize.py was derived from the
 markdowntest project, Copyright 2013 Karl Dubost:
@@ -801,7 +796,7 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
------
+---
 
 The CommonMark spec (test/spec.txt) is
 
@@ -810,7 +805,7 @@ Copyright (C) 2014-15 John MacFarlane
 Released under the Creative Commons CC-BY-SA 4.0 license:
 <http://creativecommons.org/licenses/by-sa/4.0/>.
 
------
+---
 
 The test software in test/ is
 
