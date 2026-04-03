@@ -20,7 +20,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
     /// Call ``invalidate()`` when follow-up operations are finished.
     public func scan(
         for targets: [PollingTarget] = [.all],
-        message: String = "Hold your iPhone near the NFC tag"
+        message: String? = nil
     ) async throws -> (CardInfo, any NFCTagTransport) {
         try await withCheckedThrowingContinuation { continuation in
             guard NFCTagReaderSession.readingAvailable else {
@@ -39,7 +39,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
             }
             self.continuation = continuation
             self.session = session
-            session.alertMessage = message
+            session.alertMessage = message ?? String(localized: "Hold your iPhone near the NFC tag", bundle: .module)
             session.begin()
         }
     }

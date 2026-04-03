@@ -81,6 +81,13 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         ])
         return UIBarButtonItem(image: UIImage(systemName: "plus"), menu: addMenu)
     }()
+    
+    private lazy var editingBarButton = UIBarButtonItem(
+        image: UIImage(systemName: "list.bullet.circle"),
+        style: .plain,
+        target: self,
+        action: #selector(enterEditingMode)
+    )
 
     private lazy var doneBarButton = UIBarButtonItem(
         image: UIImage(systemName: "checkmark.circle"),
@@ -150,6 +157,10 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     @objc private func exitEditingMode() {
         setEditing(false, animated: true)
     }
+    
+    @objc private func enterEditingMode() {
+        setEditing(true, animated: true)
+    }
 
     private func updateEditingNavBar() {
         if tableView.isEditing {
@@ -161,7 +172,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             )
         } else {
             navigationItem.setLeftBarButton(nil, animated: true)
-            navigationItem.setRightBarButtonItems([addBarButton], animated: true)
+            navigationItem.setRightBarButtonItems([editingBarButton, addBarButton], animated: true)
         }
     }
 
@@ -277,6 +288,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         configureTrailingBarButtonItems items: inout [UIBarButtonItem]
     ) {
         items.removeAll()
+        items.append(editingBarButton)
         items.append(addBarButton)
     }
 

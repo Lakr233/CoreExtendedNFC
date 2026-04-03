@@ -1,0 +1,49 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+      "shouldTranslate" : false
+    },
+    "Done" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
+    "Hold your iPhone near the NFC tag" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 iPhone 靠近 NFC 标签"
+          }
+        }
+      }
+    },
+    "Hold your iPhone near your passport" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 iPhone 靠近您的护照"
+          }
+        }
+      }
+    },
+    "Reading..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取..."
+          }
+        }
+      }
+    },
+  },
+  "version" : "1.1"
+}

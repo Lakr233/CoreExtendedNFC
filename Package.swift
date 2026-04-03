@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "CoreExtendedNFC",
+    defaultLocalization: "en",
     platforms: [
         .iOS(.v15),
     ],
@@ -22,7 +23,8 @@ let package = Package(
             name: "CoreExtendedNFC",
             dependencies: [
                 .product(name: "OpenSSL", package: "openssl-spm"),
-            ]
+            ],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "CoreExtendedNFCTests",
