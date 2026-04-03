@@ -158,7 +158,7 @@ class DumpDetailViewController: StackScrollController {
 
         addSectionFooter(String(localized: "Family-specific parameters detected during the dump."))
     }
-    
+
     // MARK: - NDEF Records
 
     private func buildNDEFRecordsSection() {

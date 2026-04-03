@@ -81,7 +81,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         ])
         return UIBarButtonItem(image: UIImage(systemName: "plus"), menu: addMenu)
     }()
-    
+
     private lazy var editingBarButton = UIBarButtonItem(
         image: UIImage(systemName: "list.bullet.circle"),
         style: .plain,
@@ -157,7 +157,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     @objc private func exitEditingMode() {
         setEditing(false, animated: true)
     }
-    
+
     @objc private func enterEditingMode() {
         setEditing(true, animated: true)
     }
