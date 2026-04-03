@@ -136,6 +136,7 @@ Your host app needs:
 - `NFCReaderUsageDescription` in Info.plist
 - `com.apple.developer.nfc.readersession.formats` set to `TAG`
 - FeliCa system codes and ISO 7816 AIDs in Info.plist as needed
+- See `docs/NFC-InfoPlist-Reference.md` for copy-paste values, meanings, and public GitHub examples
 
 See `Example/` for a working configuration.
 
