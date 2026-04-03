@@ -29,12 +29,14 @@ struct TabBarControllerTests {
             "nav.passport",
             "nav.tools",
         ])
-        #expect(navigationControllers.compactMap { $0.topViewController?.title } == [
-            "Scanner",
-            "Dump",
-            "NDEF",
-            "Passport",
-            "Tools",
+        let titles = navigationControllers.compactMap { $0.topViewController?.title }
+        #expect(titles.count == 5)
+        #expect(titles == [
+            String(localized: "Scanner"),
+            String(localized: "Dump"),
+            String(localized: "NDEF"),
+            String(localized: "Passport"),
+            String(localized: "Tools"),
         ])
     }
 }

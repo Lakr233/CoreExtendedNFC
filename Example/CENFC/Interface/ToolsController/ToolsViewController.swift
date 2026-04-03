@@ -42,6 +42,12 @@ class ToolsViewController: StackScrollController {
             subtitle: String(localized: "Parse and display TLV tree structure"),
             viewController: { TLVParserViewController() }
         ),
+        ToolItem(
+            icon: "creditcard",
+            title: String(localized: "Transit Balance"),
+            subtitle: String(localized: "Read balance from transit cards (Suica, T-Money, T-Union)"),
+            viewController: { TransitBalanceViewController() }
+        ),
     ]
 
     override func viewDidLoad() {

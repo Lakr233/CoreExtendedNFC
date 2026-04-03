@@ -113,6 +113,22 @@
         }
       }
     },
+    "%lld transaction(s)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld transaction(s)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 笔交易"
+          }
+        }
+      }
+    },
     "A card with this UID already exists in the history. What would you like to do?" : {
       "localizations" : {
         "en" : {
@@ -529,6 +545,22 @@
         }
       }
     },
+    "Balance" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "余额"
+          }
+        }
+      }
+    },
     "Basic identification from ATQA/SAK lookup and card probing." : {
       "localizations" : {
         "en" : {
@@ -737,6 +769,22 @@
         }
       }
     },
+    "Card" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Card"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片"
+          }
+        }
+      }
+    },
     "Card Access" : {
       "localizations" : {
         "en" : {
@@ -813,6 +861,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "基于 NXP AN10833 ATQA/SAK 查询表的卡片识别。部分芯片共享相同的 ATQA/SAK，需要通过 GET_VERSION 进行精确识别。"
+          }
+        }
+      }
+    },
+    "Card Info" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Card Info"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片信息"
           }
         }
       }
@@ -4369,6 +4433,38 @@
         }
       }
     },
+    "Purchase" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchase"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消费"
+          }
+        }
+      }
+    },
+    "Raw" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raw"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原始值"
+          }
+        }
+      }
+    },
     "Raw binary data for this data group." : {
       "localizations" : {
         "en" : {
@@ -4477,6 +4573,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "读取可访问的内存"
+          }
+        }
+      }
+    },
+    "Read balance from transit cards (Suica, T-Money, T-Union)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read balance from transit cards (Suica, T-Money, T-Union)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取交通卡余额（Suica、T-Money、T-Union）"
           }
         }
       }
@@ -5121,6 +5233,22 @@
         }
       }
     },
+    "Scan Transit Card" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scan Transit Card"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扫描交通卡"
+          }
+        }
+      }
+    },
     "Scanner" : {
       "localizations" : {
         "en" : {
@@ -5332,6 +5460,22 @@
         }
       }
     },
+    "Serial Number" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Serial Number"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "序列号"
+          }
+        }
+      }
+    },
     "Session timed out. Hold the phone steady and try again." : {
       "localizations" : {
         "en" : {
@@ -5536,6 +5680,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "摘要"
+          }
+        }
+      }
+    },
+    "Supports Japan IC (Suica, PASMO, ICOCA…), Korea T-Money/Cashbee, China T-Union." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supports Japan IC (Suica, PASMO, ICOCA…), Korea T-Money/Cashbee, China T-Union."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持日本交通卡（Suica、PASMO、ICOCA…）、韩国 T-Money/Cashbee、中国交通联合。"
           }
         }
       }
@@ -6055,6 +6215,22 @@
         }
       }
     },
+    "Top-up" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Top-up"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "充值"
+          }
+        }
+      }
+    },
     "Topaz / Type 1 low-level read primitives are not implemented in this demo." : {
       "localizations" : {
         "en" : {
@@ -6099,6 +6275,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "原始数据总大小"
+          }
+        }
+      }
+    },
+    "Transaction History" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transaction History"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交易记录"
+          }
+        }
+      }
+    },
+    "Transit Balance" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transit Balance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交通卡余额"
+          }
+        }
+      }
+    },
+    "Trip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trip"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "乘车"
           }
         }
       }
@@ -6275,6 +6499,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "URI"
+          }
+        }
+      }
+    },
+    "Valid From" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valid From"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期自"
+          }
+        }
+      }
+    },
+    "Valid Until" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valid Until"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至"
           }
         }
       }

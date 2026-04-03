@@ -2,7 +2,9 @@
 import Foundation
 
 /// Mock transport for unit testing card commands without NFC hardware.
-final class MockTransport: NFCTagTransport, @unchecked Sendable {
+final class MockTransport: ISO7816TagTransporting, @unchecked Sendable {
+    let initialAID: String = ""
+
     let identifier: Data
     var responses: [Data] = []
     var apduResponses: [ResponseAPDU] = []
@@ -33,6 +35,10 @@ final class MockTransport: NFCTagTransport, @unchecked Sendable {
         let response = apduResponses[apduResponseIndex]
         apduResponseIndex += 1
         return response
+    }
+
+    func sendAPDUWithChaining(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+        try await sendAPDU(apdu)
     }
 
     func reset() {
