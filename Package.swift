@@ -16,7 +16,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/Lakr233/openssl-spm.git", branch: "main"),
+        .package(url: "https://github.com/Lakr233/openssl-spm.git", from: "3.6.1"),
     ],
     targets: [
         .target(

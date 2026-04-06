@@ -1,5 +1,5 @@
 {
-  "originHash" : "2889570732f99dd7c18a85bb5d329602e888153c4e6725b522a726075d05a3a2",
+  "originHash" : "43572e4e910c415a756d0484ad9601a0f12f0c89bceb4c12123d7babbfa1eab6",
   "pins" : [
     {
       "identity" : "choreographer",
@@ -96,8 +96,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Lakr233/openssl-spm.git",
       "state" : {
-        "branch" : "main",
-        "revision" : "09590115403c32a23734fe6e6338887cdcf9165e"
+        "revision" : "1c80e946c000ae5b5af17b290bcb6e81fd2638d8",
+        "version" : "3.6.1"
       }
     },
     {
