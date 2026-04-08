@@ -1,6 +1,6 @@
 import UIKit
 
-MainActor.assumeIsolated {
+MainActor.isolated {
     _ = UIApplicationMain(
         CommandLine.argc,
         CommandLine.unsafeArgv,

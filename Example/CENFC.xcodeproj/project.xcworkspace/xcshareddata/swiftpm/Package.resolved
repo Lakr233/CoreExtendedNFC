@@ -1,15 +1,6 @@
 {
-  "originHash" : "43572e4e910c415a756d0484ad9601a0f12f0c89bceb4c12123d7babbfa1eab6",
+  "originHash" : "fc57485334522f64c5d5dc832d284f2dd45200f4528cae9c2e1aa851dc799b06",
   "pins" : [
-    {
-      "identity" : "choreographer",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/unixzii/Choreographer",
-      "state" : {
-        "revision" : "fa8cf25b0a16c499b299d357c1a64db6760a83ef",
-        "version" : "0.1.0"
-      }
-    },
     {
       "identity" : "colorfulx",
       "kind" : "remoteSourceControl",
@@ -38,51 +29,6 @@
       }
     },
     {
-      "identity" : "glyphixtextfx",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ktiays/GlyphixTextFx/",
-      "state" : {
-        "revision" : "e1d0aa71c1849363a1bbef061d3d92f10481e62c",
-        "version" : "2.3.6"
-      }
-    },
-    {
-      "identity" : "highlightr",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/raspu/Highlightr",
-      "state" : {
-        "revision" : "05e7fcc63b33925cd0c1faaa205cdd5681e7bbef",
-        "version" : "2.3.0"
-      }
-    },
-    {
-      "identity" : "litext",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Lakr233/Litext",
-      "state" : {
-        "revision" : "a2ed9b63ae623a20591effc72f9db7d04e41a64c",
-        "version" : "1.2.1"
-      }
-    },
-    {
-      "identity" : "lrucache",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/nicklockwood/LRUCache",
-      "state" : {
-        "revision" : "cb5b2bd0da83ad29c0bec762d39f41c8ad0eaf3e",
-        "version" : "1.2.1"
-      }
-    },
-    {
-      "identity" : "markdownview",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Lakr233/MarkdownView",
-      "state" : {
-        "revision" : "37f97345a108e95f66b6671c317b43063c7f2de1",
-        "version" : "3.8.2"
-      }
-    },
-    {
       "identity" : "msdisplaylink",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Lakr233/MSDisplayLink.git",
@@ -98,15 +44,6 @@
       "state" : {
         "revision" : "1c80e946c000ae5b5af17b290bcb6e81fd2638d8",
         "version" : "3.6.1"
-      }
-    },
-    {
-      "identity" : "respring",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ktiays/Respring",
-      "state" : {
-        "revision" : "5efa8274a25dc44e418b3695f9fcfea9ef771087",
-        "version" : "1.0.0"
       }
     },
     {
@@ -137,15 +74,6 @@
       }
     },
     {
-      "identity" : "swift-cmark",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftlang/swift-cmark",
-      "state" : {
-        "revision" : "5d9bdaa4228b381639fff09403e39a04926e2dbe",
-        "version" : "0.7.1"
-      }
-    },
-    {
       "identity" : "swift-collections",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-collections",
@@ -164,30 +92,12 @@
       }
     },
     {
-      "identity" : "swiftmath",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mgriebling/SwiftMath",
-      "state" : {
-        "revision" : "fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7",
-        "version" : "1.7.3"
-      }
-    },
-    {
       "identity" : "then",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/devxoul/Then",
       "state" : {
         "revision" : "d41ef523faef0f911369f79c0b96815d9dbb6d7a",
         "version" : "3.0.0"
-      }
-    },
-    {
-      "identity" : "with",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/ktiays/With",
-      "state" : {
-        "revision" : "a45e2f39e82322eb663a256941c06edd520a82e1",
-        "version" : "2.1.1"
       }
     }
   ],
