@@ -182,6 +182,22 @@ struct TopLevelIntegrationTests {
     }
 
     @Test
+    func `ISO 7816 refiner classifies My Number card from initial AID`() async throws {
+        let aid = "D3921000310001010408"
+        let transport = QueuedISO7816Transport(initialAID: aid)
+        let info = CardInfo(
+            type: .smartMX,
+            uid: transport.identifier,
+            initialSelectedAID: aid
+        )
+
+        let refined = try await CardInfoRefiner.refine(info, transport: transport)
+
+        #expect(refined.type == .myNumberCard)
+        #expect(transport.sentAPDUs.isEmpty)
+    }
+
+    @Test
     func `ISO 7816 refiner probes Type 4 when metadata is absent`() async throws {
         let transport = QueuedISO7816Transport(
             responses: [

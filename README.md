@@ -22,6 +22,7 @@ This library does.
 - **Memory operations** — Read, write, and dump tag memory across Ultralight, NTAG, DESFire, FeliCa, ISO 15693, and Type 4 NDEF tags
 - **DESFire application layer** — Enumerate apps and files, handle Additional Frame chaining, authenticated reads (ISO & EV2)
 - **Passport / eMRTD reading** — BAC key exchange, Secure Messaging, data group parsing (MRZ, face photo), Passive & Active Authentication
+- **My Number card (Japan)** — JPKI token read, individual-number read with card-info-input-support PIN, PIN-attempt lookup
 - **Crypto primitives** — CRC_A/CRC_B, AES-CMAC, 3DES, ISO 9797-1 MAC, key derivation — all built-in, no external dependencies
 - **Dump export** — Hex, JSON, Flipper NFC, and Proxmark3 formats
 - **Testability** — `MockTransport` lets you unit-test all card logic without NFC hardware
@@ -54,6 +55,7 @@ This library does.
 | ISO 15693 (ICODE, ST25) |   yes    | yes  |  yes  | yes  |
 | Type 4 NDEF (ISO 7816)  |   yes    | yes  |  yes  |      |
 | eMRTD / ePassport       |   yes    | yes  |       |      |
+| My Number card (Japan)  |   yes    | yes  |       |      |
 | MIFARE Classic 1K/4K    |   yes    |      |       |      |
 
 > DESFire write is limited to free-access files. Classic is ID-only — iOS hardware can't do Crypto1.
@@ -115,6 +117,18 @@ let ndef   = try await reader.readNDEF()
 try await reader.writeNDEF(message)
 ```
 
+**My Number Card (Japan)**
+
+```swift
+let data = try await CoreExtendedNFC.readMyNumberCard(
+    items: [.tokenInfo, .individualNumber],
+    cardInfoInputSupportPIN: "1234"
+)
+print(data.tokenInfo ?? "-", data.individualNumber ?? "-")
+```
+
+Official applet/data layout reference: `docs/MyNumber-Card-Data-Format.md`
+
 **Card Identification (pure logic, no hardware)**
 
 ```swift
@@ -155,6 +169,7 @@ Sources/CoreExtendedNFC/
 │   ├── FeliCa/             Service probing, Type 3 NDEF, frame assembly
 │   ├── ISO15693/           System info, block R/W, lock status
 │   ├── Type4/              CC parsing, NDEF via SELECT/READ BINARY
+│   ├── IndividualNumber/   Japanese My Number APDU flows
 │   └── Passport/           BAC, PACE, Secure Messaging, DG parsers, AA/PA
 ├── Crypto/        AES-CMAC, ISO 9797 MAC, key derivation, SHA, 3DES
 ├── Models/        CardType, CardInfo, MemoryDump, MRZ, PassportModel

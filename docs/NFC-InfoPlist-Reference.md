@@ -63,6 +63,10 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 	<string>A000000308</string>
 	<string>A000000527200101</string>
 	<string>A000000151000000</string>
+	<string>D392F000260100000001</string>
+	<string>D3921000310001010408</string>
+	<string>D3921000310001010100</string>
+	<string>D3921000310001010401</string>
 </array>
 ```
 
@@ -108,6 +112,10 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 | `A000000308`                       | PIV application                                               | Used for PIV smart-card access, including YubiKey PIV.                                                 |
 | `A000000527200101`                 | YubiKey OTP / HMAC-SHA1 application                           | Used for OTP and challenge-response flows.                                                             |
 | `A000000151000000`                 | YubiKey Security Domain                                       | Used for management and secure-element administration flows.                                           |
+| `D392F000260100000001`             | Japan My Number JPKI application                              | Used for token/certificate related flows on Japanese Individual Number cards.                          |
+| `D3921000310001010408`             | Japan My Number card-info input support application           | Used to verify the card-info-input-support PIN before protected reads.                                 |
+| `D3921000310001010100`             | Japan My Number individual-number application                 | Used in resident-registry / individual-number related flows.                                           |
+| `D3921000310001010401`             | Japan My Number card-info input check application             | Companion applet observed in My Number card reader configurations.                                     |
 
 ## Public GitHub Sources
 
@@ -130,6 +138,8 @@ These repositories were used to verify real-world iOS NFC plist values:
 
 - `A0000002471001` and `D2760000850101` map cleanly to concrete library workflows today (`ePassport` and `Type 4 NDEF`).
 - `315041592E5359532E4444463031`, `A00000000386980701`, and `F049442E43484E` are useful to include in `Info.plist` so the system can surface `initialSelectedAID`, but they should remain generic ISO 7816 cards unless your app implements issuer-specific APDU flows.
+- `D392F000260100000001`, `D3921000310001010408`, `D3921000310001010100`, and `D3921000310001010401` are required for My Number card workflows on iOS; including all four mirrors working production reader configurations.
+- For official My Number card APDU/payload layout details (`EF 0006` / `EF 0001`), see `docs/MyNumber-Card-Data-Format.md`.
 - The example app now surfaces these AIDs as “Known ISO 7816 Application” hints in the scan detail UI, while keeping unsupported payment / document cards on the safe generic path.
 
 ## Recommended Usage

@@ -9,6 +9,10 @@ public enum ISO7816Application: String, Sendable, Codable, CaseIterable {
     case paymentSystemEnvironment = "315041592E5359532E4444463031"
     case unionPayPayment = "A00000000386980701"
     case chinaDocument = "F049442E43484E"
+    case myNumberJPKI = "D392F000260100000001"
+    case myNumberCardInfoInputSupport = "D3921000310001010408"
+    case myNumberIndividualNumber = "D3921000310001010100"
+    case myNumberCardInfoInputCheck = "D3921000310001010401"
     case issuerPlaceholder = "00000000000000"
 
     public static func match(aid: String?) -> ISO7816Application? {
@@ -32,6 +36,14 @@ public enum ISO7816Application: String, Sendable, Codable, CaseIterable {
             "UnionPay Payment Application"
         case .chinaDocument:
             "China Document Application (observed)"
+        case .myNumberJPKI:
+            "Japan My Number JPKI Application"
+        case .myNumberCardInfoInputSupport:
+            "Japan My Number Card-Info Input Support Application"
+        case .myNumberIndividualNumber:
+            "Japan My Number Individual Number Application"
+        case .myNumberCardInfoInputCheck:
+            "Japan My Number Card-Info Input Check Application"
         case .issuerPlaceholder:
             "Issuer Placeholder / Catch-All AID"
         }
@@ -53,6 +65,14 @@ public enum ISO7816Application: String, Sendable, Codable, CaseIterable {
             "Observed in UnionPay-family app configurations. The exact payment flow remains issuer-specific after SELECT succeeds."
         case .chinaDocument:
             "Observed in public Chinese app packages. The label is inferred from the ASCII tail “ID.CHN”, not from a published standard."
+        case .myNumberJPKI:
+            "The Japanese public personal authentication (JPKI) applet used by My Number cards for token/certificate-related workflows."
+        case .myNumberCardInfoInputSupport:
+            "The Japanese card-info input support applet used to verify a PIN before reading protected My Number fields."
+        case .myNumberIndividualNumber:
+            "Observed in My Number card app configurations for individual-number / resident-registry related access control."
+        case .myNumberCardInfoInputCheck:
+            "Observed in My Number card app configurations as a companion card-info applet."
         case .issuerPlaceholder:
             "A broad fallback selector seen in some document-reading apps when the real applet responds from a proprietary root context."
         }
@@ -64,6 +84,8 @@ public enum ISO7816Application: String, Sendable, Codable, CaseIterable {
             .type4NDEF
         case .eMRTDLDS:
             .ePassport
+        case .myNumberJPKI, .myNumberCardInfoInputSupport, .myNumberIndividualNumber, .myNumberCardInfoInputCheck:
+            .myNumberCard
         default:
             nil
         }

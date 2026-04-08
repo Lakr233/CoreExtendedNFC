@@ -25,6 +25,15 @@ struct ISO7816ApplicationTests {
     }
 
     @Test
+    func `Match My Number AIDs`() {
+        #expect(ISO7816Application.match(aid: "D392F000260100000001") == .myNumberJPKI)
+        #expect(ISO7816Application.match(aid: "D3921000310001010408") == .myNumberCardInfoInputSupport)
+        #expect(ISO7816Application.match(aid: "D3921000310001010100") == .myNumberIndividualNumber)
+        #expect(ISO7816Application.match(aid: "D3921000310001010401") == .myNumberCardInfoInputCheck)
+        #expect(ISO7816Application.match(aid: "D392F000260100000001")?.hintedCardType == .myNumberCard)
+    }
+
+    @Test
     func `CardInfo exposes known ISO 7816 application hint`() {
         let info = CardInfo(
             type: .smartMX,
