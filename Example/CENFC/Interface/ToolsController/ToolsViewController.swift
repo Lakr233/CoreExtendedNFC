@@ -198,11 +198,18 @@ class ToolsViewController: StackScrollController {
             return "Version \(marketing) (\(build))"
         }()
 
-        let commitShort = String(BuildInfo.commitID.prefix(7))
+        let info = Bundle.main.infoDictionary
+        let buildTime = (info?["BuildTime"] as? String) ?? "Build time unknown"
+        let commit = (
+            info?["BuildGitCommit"] as? String ??
+                info?["BuildCommitID"] as? String ??
+                "unknown"
+        )
+        let commitShort = String(commit.prefix(7))
 
         let lines = [
             version,
-            BuildInfo.buildTime,
+            buildTime,
             commitShort,
         ]
 
