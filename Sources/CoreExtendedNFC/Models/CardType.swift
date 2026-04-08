@@ -65,6 +65,8 @@ public enum CardType: Sendable, Equatable, Codable {
 
     /// Passport / eMRTD
     case ePassport
+    /// Japanese Individual Number Card (My Number Card).
+    case myNumberCard
 
     // Other
     case jewelTopaz
@@ -100,6 +102,8 @@ public enum CardType: Sendable, Equatable, Codable {
             .iso14443B
         case .ePassport:
             .passport
+        case .myNumberCard:
+            .iso14443B
         case .smartMX, .unknown:
             .unknown
         }
@@ -155,6 +159,7 @@ public enum CardType: Sendable, Equatable, Codable {
         case .iso15693_generic: "ISO 15693"
         case .jewelTopaz: "Jewel/Topaz (Type 1)"
         case .ePassport: "ePassport (eMRTD)"
+        case .myNumberCard: "Japanese My Number Card"
         case .iso14443B_generic: "ISO 14443-B"
         case .smartMX: "SmartMX / Generic ISO 7816"
         case let .unknown(atqa, sak):

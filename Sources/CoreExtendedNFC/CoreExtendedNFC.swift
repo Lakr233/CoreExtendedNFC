@@ -70,6 +70,14 @@ public enum CoreExtendedNFC {
         case .iso15693:
             return try await dumpISO15693(info: info, transport: transport)
 
+        case .iso14443B:
+            if info.type == .myNumberCard {
+                return try await dumpMyNumberCard(info: info, transport: transport)
+            }
+            throw NFCError.unsupportedOperation(
+                "Automatic dump not yet supported for \(info.type.description)"
+            )
+
         case .mifareClassic:
             throw NFCError.notOperableOnIOS(info.type)
 
@@ -315,6 +323,35 @@ public enum CoreExtendedNFC {
                 .init(key: "Write Access", value: capabilityContainer.writeAccess == 0x00 ? "Writable" : "Read-only"),
             ],
             capabilities: capabilityContainer.writeAccess == 0x00 ? [.readable, .writable] : [.readable]
+        )
+    }
+
+    private static func dumpMyNumberCard(
+        info: CardInfo,
+        transport: any NFCTagTransport
+    ) async throws -> MemoryDump {
+        guard let iso7816Transport = transport as? any ISO7816TagTransporting else {
+            throw NFCError.unsupportedOperation("My Number card reading requires an ISO 7816 transport")
+        }
+
+        let reader = MyNumberCardReader(transport: iso7816Transport)
+        let tokenInfo = try await reader.readTokenInfo()
+        let tokenData = Data(tokenInfo.utf8)
+
+        return MemoryDump(
+            cardInfo: info,
+            files: [
+                .init(
+                    identifier: MyNumberCardConstants.jpkiTokenEFID,
+                    data: tokenData,
+                    name: "JPKI Token"
+                ),
+            ],
+            facts: [
+                .init(key: "JPKI Token", value: tokenInfo, monospaced: true),
+                .init(key: "Protected Data", value: "Individual number requires the card-info-input-support PIN"),
+            ],
+            capabilities: [.readable, .authenticationRequired]
         )
     }
 
