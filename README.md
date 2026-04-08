@@ -127,6 +127,8 @@ let data = try await CoreExtendedNFC.readMyNumberCard(
 print(data.tokenInfo ?? "-", data.individualNumber ?? "-")
 ```
 
+Official applet/data layout reference: `docs/MyNumber-Card-Data-Format.md`
+
 **Card Identification (pure logic, no hardware)**
 
 ```swift

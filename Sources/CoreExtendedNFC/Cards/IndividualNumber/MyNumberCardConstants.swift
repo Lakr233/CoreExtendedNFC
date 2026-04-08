@@ -34,4 +34,17 @@ enum MyNumberCardConstants {
 
     static let tokenLength: UInt8 = 20
     static let individualNumberLength: UInt8 = 17
+
+    // MARK: - Official data format (EF 0001, individual number)
+
+    /// Leading marker byte in the official EF 0001 payload.
+    static let individualNumberHeaderByte: UInt8 = 0x10
+    /// BER-TLV tag for individual number digits.
+    static let individualNumberTag: UInt8 = 0x01
+    /// BER-TLV length for the 12-digit individual number.
+    static let individualNumberDigitsLength: UInt8 = 0x0C
+    /// Number of numeric ASCII digits in the individual number field.
+    static let individualNumberDigitsCount = 12
+    /// Trailing status/reserved bytes in the official payload.
+    static let individualNumberTrailerCount = 2
 }

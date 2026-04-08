@@ -52,6 +52,52 @@ struct MyNumberCardReaderTests {
     }
 
     @Test
+    func `Read My Number individual number rejects malformed official payload`() async {
+        let transport = MockTransport()
+        // Official frame shape but invalid TLV tag (0x02 instead of 0x01).
+        let payload = Data([0x10, 0x02, 0x0C]) + Data("123456789012".utf8) + Data([0x00, 0x00])
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: payload, sw1: 0x90, sw2: 0x00),
+        ]
+
+        let reader = MyNumberCardReader(transport: transport)
+
+        do {
+            _ = try await reader.readIndividualNumber(cardInfoInputSupportPIN: "1234")
+            #expect(Bool(false), "Expected malformed official payload to throw")
+        } catch let error as NFCError {
+            if case .invalidResponse = error {
+                #expect(Bool(true))
+            } else {
+                #expect(Bool(false), "Unexpected error type: \(error)")
+            }
+        } catch {
+            #expect(Bool(false), "Unexpected error: \(error)")
+        }
+    }
+
+    @Test
+    func `Read My Number individual number supports legacy ascii payload fallback`() async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data("123456789012".utf8), sw1: 0x90, sw2: 0x00),
+        ]
+
+        let reader = MyNumberCardReader(transport: transport)
+        let number = try await reader.readIndividualNumber(cardInfoInputSupportPIN: "1234")
+
+        #expect(number == "123456789012")
+    }
+
+    @Test
     func `Read individual number rejects invalid PIN format`() async {
         let reader = MyNumberCardReader(transport: MockTransport())
 

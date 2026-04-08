@@ -58,6 +58,9 @@ public struct MyNumberCardReader: Sendable {
     /// Read the 12-digit individual number.
     ///
     /// Requires the 4-digit card-info-input-support PIN.
+    ///
+    /// Official EF 0001 payload layout:
+    /// `[0x10, 0x01, 0x0C, 12 ASCII digits, trailer(2 bytes)]` (17 bytes total).
     public func readIndividualNumber(cardInfoInputSupportPIN: String) async throws -> String {
         let pinData = try validateCardInfoInputSupportPIN(cardInfoInputSupportPIN)
 
@@ -174,12 +177,18 @@ public struct MyNumberCardReader: Sendable {
     }
 
     private static func parseIndividualNumber(_ data: Data) -> String? {
+        if data.count == Int(MyNumberCardConstants.individualNumberLength),
+           data.first == MyNumberCardConstants.individualNumberHeaderByte
+        {
+            return parseOfficialIndividualNumberPayload(data)
+        }
+
         let tlvPayload = data.count > 1 ? Data(data.dropFirst()) : data
 
         if let nodes = try? ASN1Parser.parseTLV(tlvPayload),
            let firstValue = nodes.first?.value,
            let candidate = String(data: firstValue, encoding: .utf8),
-           candidate.count == 12,
+           candidate.count == MyNumberCardConstants.individualNumberDigitsCount,
            candidate.allSatisfy(\.isNumber)
         {
             return candidate
@@ -191,5 +200,21 @@ public struct MyNumberCardReader: Sendable {
         }
 
         return nil
+    }
+
+    private static func parseOfficialIndividualNumberPayload(_ data: Data) -> String? {
+        let bytes = [UInt8](data)
+        let requiredCount = 1 + 1 + 1 + MyNumberCardConstants.individualNumberDigitsCount + MyNumberCardConstants.individualNumberTrailerCount
+        guard bytes.count == requiredCount else { return nil }
+        guard bytes[0] == MyNumberCardConstants.individualNumberHeaderByte else { return nil }
+        guard bytes[1] == MyNumberCardConstants.individualNumberTag else { return nil }
+        guard bytes[2] == MyNumberCardConstants.individualNumberDigitsLength else { return nil }
+
+        let digitsStart = 3
+        let digitsEnd = digitsStart + MyNumberCardConstants.individualNumberDigitsCount
+        let digitsBytes = bytes[digitsStart ..< digitsEnd]
+        guard digitsBytes.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else { return nil }
+
+        return String(decoding: digitsBytes, as: UTF8.self)
     }
 }
