@@ -11,7 +11,19 @@ import Testing
 
 struct OctopusTests {
     @Test
-    func `Read Octopus balance`() async throws {
+    func `Read Octopus balance defaults to physical card offset`() async throws {
+        let transport = octopusTransport(rawValue: 920)
+
+        let result = try await OctopusReader(transport: transport).readBalance()
+
+        #expect(result.balanceRaw == 5700)
+        #expect(result.currencyCode == "HKD")
+        #expect(result.cardName == "Octopus")
+        #expect(result.formattedBalance == "HK$57.00")
+    }
+
+    @Test
+    func `Read Octopus balance with expanded convenience limit offset`() async throws {
         var block = Data(repeating: 0x00, count: 16)
         block[0] = 0x00
         block[1] = 0x00
@@ -26,7 +38,7 @@ struct OctopusTests {
 
         let result = try await OctopusReader(
             transport: transport,
-            scanDate: date(year: 2026, month: 5, day: 9),
+            balanceOffset: OctopusConstants.expandedConvenienceLimitBalanceRawOffset,
         ).readBalance()
 
         #expect(result.balanceRaw == 41190)
@@ -36,9 +48,9 @@ struct OctopusTests {
     }
 
     @Test
-    func `Octopus offset follows scan date`() {
-        #expect(OctopusConstants.balanceRawOffset(for: date(year: 2017, month: 9, day: 30)) == 350)
-        #expect(OctopusConstants.balanceRawOffset(for: date(year: 2017, month: 10, day: 1)) == 500)
+    func `Octopus offset follows card issue date`() {
+        #expect(OctopusConstants.balanceRawOffset(cardIssuedAt: date(year: 2017, month: 9, day: 30)) == 350)
+        #expect(OctopusConstants.balanceRawOffset(cardIssuedAt: date(year: 2017, month: 10, day: 1)) == 500)
     }
 
     @Test
@@ -61,6 +73,20 @@ struct OctopusTests {
         await #expect(throws: NFCError.self) {
             _ = try await OctopusReader(transport: transport).readBalance()
         }
+    }
+
+    private func octopusTransport(rawValue: UInt32) -> MockFeliCaServiceTransport {
+        var block = Data(repeating: 0x00, count: 16)
+        block[0] = UInt8((rawValue >> 24) & 0xFF)
+        block[1] = UInt8((rawValue >> 16) & 0xFF)
+        block[2] = UInt8((rawValue >> 8) & 0xFF)
+        block[3] = UInt8(rawValue & 0xFF)
+
+        return MockFeliCaServiceTransport(
+            serviceVersions: [Data([0x17, 0x01]): Data([0x00, 0x10])],
+            serviceBlocks: [Data([0x17, 0x01]): [block]],
+            systemCode: Data([0x80, 0x08]),
+        )
     }
 
     private func date(year: Int, month: Int, day: Int) -> Date {

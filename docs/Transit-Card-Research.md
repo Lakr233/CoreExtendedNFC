@@ -8,10 +8,11 @@ This note captures the CardBal IDA findings, public implementation checks, and t
 
 The transit readers are cross-checked against these open-source projects:
 
-| Project    | Local clone           | Revision inspected                         | Useful areas                                                                                          |
-| ---------- | --------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Metrodroid | `/tmp/metrodroid-src` | `04a603ba639f7a270b7bdbf24158c7d601087c29` | EasyCard Classic layout, Octopus date-based offset, T-Union balance bit layout, KSX6924 card support. |
-| FareBot    | `/tmp/farebot-src`    | `dc09f6f014ea3675b64bcd38335b4b78d77fa374` | Octopus offset tests, ISO 7816 transit-card scaffolding, China and KSX6924 card modules.              |
+| Project    | Local clone           | Revision inspected                         | Useful areas                                                                                   |
+| ---------- | --------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Metrodroid | `/tmp/metrodroid-src` | `04a603ba639f7a270b7bdbf24158c7d601087c29` | EasyCard Classic layout, Octopus raw layout, T-Union balance bit layout, KSX6924 card support. |
+| FareBot    | `/tmp/farebot-src`    | `dc09f6f014ea3675b64bcd38335b4b78d77fa374` | Octopus raw-layout tests, ISO 7816 transit-card scaffolding, China and KSX6924 card modules.   |
+| Octopus HK | Public FAQ            | Inspected 2026-05-09                       | Official HK$35/HK$50 convenience-limit eligibility by card issue class.                        |
 
 ## CardBal IDA Source
 
@@ -23,18 +24,18 @@ CardBal was inspected through the local IDA MCP instance:
 
 Useful CardBal addresses:
 
-| Area                     |       Address | Finding                                                                                                                   |
-| ------------------------ | ------------: | ------------------------------------------------------------------------------------------------------------------------- |
-| FeliCa profile table     | `0x1002DD064` | Builds FeliCa transit-card profiles.                                                                                      |
-| Japan Transit IC balance | `0x1002DD7E4` | Parses service `008B` balance from bytes 11-12, little-endian.                                                            |
-| Octopus balance          | `0x1002DDC08` | Parses service `0117` block 0 first four bytes, big-endian raw value.                                                     |
-| Octopus offset           | `0x1001A1AEC` | Returns raw offset `350` from 2010-12-01, legacy offset `35`; runtime code follows the public 2017 offset schedule below. |
-| Japan brand mapping      | `0x1002DB5D8` | Maps issuer/operator hints such as `JE` to Suica, `JW` to ICOCA, `NR` to Nimoca.                                          |
-| Japan activity view      | `0x100195994` | Shows `108F` history layout details.                                                                                      |
-| T-Union AID gate         | `0x1001D6A98` | Checks initial selected AID `A000000632010105`.                                                                           |
-| T-Union primary purse    | `0x1001D7318` | Sends `80 5C 00 02`, `Le=04`.                                                                                             |
-| T-Union negative purse   | `0x1001D794C` | Sends `80 5C 01 02`, `Le=04`.                                                                                             |
-| KSX6924 AID set          | `0x1001726B8` | Includes Hyundai, T-Money, Cashbee, EB Card, Snapper/MOIBA, and K-Cash AIDs.                                              |
+| Area                     |       Address | Finding                                                                                                                 |
+| ------------------------ | ------------: | ----------------------------------------------------------------------------------------------------------------------- |
+| FeliCa profile table     | `0x1002DD064` | Builds FeliCa transit-card profiles.                                                                                    |
+| Japan Transit IC balance | `0x1002DD7E4` | Parses service `008B` balance from bytes 11-12, little-endian.                                                          |
+| Octopus balance          | `0x1002DDC08` | Parses service `0117` block 0 first four bytes, big-endian raw value.                                                   |
+| Octopus offset           | `0x1001A1AEC` | Returns raw offset `350` from 2010-12-01 and legacy offset `35`; this matches old physical-card scans seen in practice. |
+| Japan brand mapping      | `0x1002DB5D8` | Maps issuer/operator hints such as `JE` to Suica, `JW` to ICOCA, `NR` to Nimoca.                                        |
+| Japan activity view      | `0x100195994` | Shows `108F` history layout details.                                                                                    |
+| T-Union AID gate         | `0x1001D6A98` | Checks initial selected AID `A000000632010105`.                                                                         |
+| T-Union primary purse    | `0x1001D7318` | Sends `80 5C 00 02`, `Le=04`.                                                                                           |
+| T-Union negative purse   | `0x1001D794C` | Sends `80 5C 01 02`, `Le=04`.                                                                                           |
+| KSX6924 AID set          | `0x1001726B8` | Includes Hyundai, T-Money, Cashbee, EB Card, Snapper/MOIBA, and K-Cash AIDs.                                            |
 
 ## Implemented Fixes
 
@@ -58,11 +59,13 @@ CardBal, Metrodroid, FareBot, and TRETJapanNFCReader agree on the card path:
 - Balance service: `0117`, encoded for CoreNFC as `17 01`
 - Balance block: block 0
 - Raw value: first four bytes, big-endian
-- Pre-2017 offset: `350`
-- Current offset from 2017-10-01: `500`
+- Default physical-card offset: `350`
+- Expanded HK$50 convenience-limit offset: `500`
 - Formula in HKD cents: `(raw - offset) * 10`
 
-CoreExtendedNFC now adds `OctopusReader`, dispatches FeliCa system code `8008` to that reader, formats HKD balances, and logs raw block details. The unified `TransitBalance.balanceRaw` value stores cents, and the reader chooses the raw offset from the scan date.
+Octopus' official FAQ states the HK$50 convenience limit applies to On-Loan Octopus cards issued on or after 2017-10-01 and mobile Octopus products. Older physical cards retain the HK$35 convenience limit. This makes card issue class the deciding signal for the balance offset. Metrodroid and FareBot use scan time as a proxy, which is useful for synthetic tests and weaker for live physical-card reads.
+
+CoreExtendedNFC adds `OctopusReader`, dispatches FeliCa system code `8008` to that reader, formats HKD balances, and logs raw block details. The unified `TransitBalance.balanceRaw` value stores cents. The reader defaults to offset `350` because iOS live reads currently expose service `0117` without a reliable issue-class signal. Callers with confirmed post-2017/mobile card context can pass offset `500` explicitly.
 
 ### China T-Union, Shenzhen Tong, Nanjing
 

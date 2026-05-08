@@ -7,15 +7,15 @@ public struct OctopusReader: Sendable {
 
     public init(transport: any FeliCaTagTransporting) {
         self.transport = transport
-        balanceOffset = OctopusConstants.balanceRawOffset(for: Date())
+        balanceOffset = OctopusConstants.defaultBalanceRawOffset
     }
 
     public init(
         transport: any FeliCaTagTransporting,
-        scanDate: Date,
+        cardIssueDate: Date,
     ) {
         self.transport = transport
-        balanceOffset = OctopusConstants.balanceRawOffset(for: scanDate)
+        balanceOffset = OctopusConstants.balanceRawOffset(cardIssuedAt: cardIssueDate)
     }
 
     public init(
@@ -64,7 +64,7 @@ public struct OctopusReader: Sendable {
         )
     }
 
-    static func balanceCents(rawValue: Int, offset: Int = OctopusConstants.currentBalanceRawOffset) -> Int {
+    static func balanceCents(rawValue: Int, offset: Int = OctopusConstants.defaultBalanceRawOffset) -> Int {
         (rawValue - offset) * 10
     }
 

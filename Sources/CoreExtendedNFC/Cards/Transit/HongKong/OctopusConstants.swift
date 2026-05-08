@@ -4,8 +4,8 @@ import Foundation
 ///
 /// References:
 /// - TRETJapanNFCReader OctopusCardItemType / OctopusCardData
-/// - Metrodroid OctopusData
-/// - FareBot OctopusData
+/// - Octopus official FAQ for post-2017 HK$50 convenience-limit eligibility
+/// - Metrodroid OctopusData and FareBot OctopusData for raw value layout
 /// - System code 0x8008, balance service 0x0117
 enum OctopusConstants {
     /// Octopus FeliCa system code.
@@ -14,17 +14,17 @@ enum OctopusConstants {
     /// Balance service code 0x0117, encoded little-endian for CoreNFC.
     static let balanceServiceCode = Data([0x17, 0x01])
 
-    /// Raw offset used for Octopus cards before the 2017 negative-balance change.
-    static let pre2017BalanceRawOffset = 350
+    /// Default raw offset for physical Octopus cards when the issue class is unknown.
+    static let defaultBalanceRawOffset = 350
 
-    /// Raw offset used for Octopus cards from 2017-10-01 onward.
-    static let currentBalanceRawOffset = 500
+    /// Raw offset for On-Loan Octopus cards issued from 2017-10-01 and mobile Octopus products.
+    static let expandedConvenienceLimitBalanceRawOffset = 500
 
-    /// Compatibility alias for callers that explicitly request the older offset.
-    static let legacyBalanceRawOffset = pre2017BalanceRawOffset
+    /// Compatibility alias for callers that explicitly request the older physical-card offset.
+    static let legacyBalanceRawOffset = defaultBalanceRawOffset
 
-    /// Effective date of the Octopus maximum negative-balance change, in Hong Kong time.
-    static let currentOffsetStartDate: Date = {
+    /// Effective issue date for Octopus cards eligible for the HK$50 convenience limit, in Hong Kong time.
+    static let expandedConvenienceLimitIssueDate: Date = {
         var components = DateComponents()
         components.calendar = Calendar(identifier: .gregorian)
         components.timeZone = TimeZone(identifier: "Asia/Hong_Kong")
@@ -34,7 +34,7 @@ enum OctopusConstants {
         return components.date ?? Date(timeIntervalSince1970: 1_506_787_200)
     }()
 
-    static func balanceRawOffset(for scanDate: Date) -> Int {
-        scanDate >= currentOffsetStartDate ? currentBalanceRawOffset : pre2017BalanceRawOffset
+    static func balanceRawOffset(cardIssuedAt issueDate: Date) -> Int {
+        issueDate >= expandedConvenienceLimitIssueDate ? expandedConvenienceLimitBalanceRawOffset : defaultBalanceRawOffset
     }
 }
