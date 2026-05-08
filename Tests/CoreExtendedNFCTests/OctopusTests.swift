@@ -30,7 +30,7 @@ struct OctopusTests {
                 Data([0x17, 0x01]): [hexToData("00000398000000000000000000000003")],
             ],
             systemCode: Data([0x80, 0x08]),
-            identifier: hexToData("010107015823C200"),
+            identifier: hexToData("010107015823C200")
         )
 
         let result = try await OctopusReader(transport: transport).readBalance()
@@ -51,12 +51,12 @@ struct OctopusTests {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x17, 0x01]): Data([0x00, 0x10])],
             serviceBlocks: [Data([0x17, 0x01]): [block]],
-            systemCode: Data([0x80, 0x08]),
+            systemCode: Data([0x80, 0x08])
         )
 
         let result = try await OctopusReader(
             transport: transport,
-            balanceOffset: OctopusConstants.defaultBalanceRawOffset,
+            balanceOffset: OctopusConstants.defaultBalanceRawOffset
         ).readBalance()
 
         #expect(result.balanceRaw == 42690)
@@ -69,7 +69,7 @@ struct OctopusTests {
     func `Octopus pre-2017 offset remains available`() {
         let cents = OctopusReader.balanceCents(
             rawValue: 4557,
-            offset: OctopusConstants.legacyBalanceRawOffset,
+            offset: OctopusConstants.legacyBalanceRawOffset
         )
 
         #expect(cents == 42070)
@@ -79,7 +79,7 @@ struct OctopusTests {
     func `Octopus system code mismatch throws error`() async {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [:],
-            systemCode: Data([0x00, 0x03]),
+            systemCode: Data([0x00, 0x03])
         )
 
         await #expect(throws: NFCError.self) {
@@ -97,7 +97,7 @@ struct OctopusTests {
         return MockFeliCaServiceTransport(
             serviceVersions: [Data([0x17, 0x01]): Data([0x00, 0x10])],
             serviceBlocks: [Data([0x17, 0x01]): [block]],
-            systemCode: Data([0x80, 0x08]),
+            systemCode: Data([0x80, 0x08])
         )
     }
 

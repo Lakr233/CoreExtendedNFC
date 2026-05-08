@@ -33,7 +33,7 @@ public struct KSX6924Reader: Sendable {
             currencyCode: "KRW",
             cardName: cardName,
             validFrom: purseInfo.issueDate,
-            validUntil: purseInfo.expiryDate,
+            validUntil: purseInfo.expiryDate
         )
     }
 
@@ -53,7 +53,7 @@ public struct KSX6924Reader: Sendable {
             cardName: cardName,
             validFrom: purseInfo.issueDate,
             validUntil: purseInfo.expiryDate,
-            transactions: transactions,
+            transactions: transactions
         )
     }
 
@@ -85,7 +85,7 @@ public struct KSX6924Reader: Sendable {
             ins: KSX6924Constants.INS_GET_BALANCE,
             p1: 0x00,
             p2: 0x00,
-            le: KSX6924Constants.BALANCE_RESP_LEN,
+            le: KSX6924Constants.BALANCE_RESP_LEN
         )
         let response = try await transport.sendAPDUWithChaining(apdu)
         NFCLog.debug("KSX6924 GET BALANCE sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "KSX6924")
@@ -105,7 +105,7 @@ public struct KSX6924Reader: Sendable {
                     ins: KSX6924Constants.INS_GET_RECORD,
                     p1: UInt8(i),
                     p2: 0x00,
-                    le: 0x10,
+                    le: 0x10
                 )
                 let response = try await transport.sendAPDUWithChaining(apdu)
                 guard response.isSuccess, response.data.count >= 14 else { break }
@@ -200,7 +200,7 @@ public struct KSX6924Reader: Sendable {
             type: txType,
             amount: amount,
             balanceAfter: balance,
-            date: date,
+            date: date
         )
     }
 }

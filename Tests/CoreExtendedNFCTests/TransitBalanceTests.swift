@@ -8,7 +8,7 @@ struct TransitBalanceTests {
             serialNumber: "",
             balanceRaw: 245,
             currencyCode: "TWD",
-            cardName: "EasyCard",
+            cardName: "EasyCard"
         )
 
         #expect(balance.formattedBalance == "NT$245")

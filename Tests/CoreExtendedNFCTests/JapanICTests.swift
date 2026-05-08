@@ -22,7 +22,7 @@ struct JapanICTests {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0x00, 0x10])],
             serviceBlocks: [Data([0x8B, 0x00]): [balanceBlock]],
-            systemCode: Data([0x00, 0x03]),
+            systemCode: Data([0x00, 0x03])
         )
 
         let reader = JapanICReader(transport: transport)
@@ -64,7 +64,7 @@ struct JapanICTests {
                 Data([0x8B, 0x00]): [balanceBlock],
                 Data([0x0F, 0x09]): [historyBlock],
             ],
-            systemCode: Data([0x00, 0x03]),
+            systemCode: Data([0x00, 0x03])
         )
 
         let reader = JapanICReader(transport: transport)
@@ -178,7 +178,7 @@ struct JapanICTests {
     func `System code mismatch throws error`() async {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [:],
-            systemCode: Data([0x88, 0xB4]), // wrong system code
+            systemCode: Data([0x88, 0xB4]) // wrong system code
         )
 
         let reader = JapanICReader(transport: transport)
@@ -191,7 +191,7 @@ struct JapanICTests {
     func `Balance service unavailable throws error`() async {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0xFF, 0xFF])], // service not found
-            systemCode: Data([0x00, 0x03]),
+            systemCode: Data([0x00, 0x03])
         )
 
         let reader = JapanICReader(transport: transport)
@@ -216,7 +216,7 @@ struct JapanICTests {
         let calendar = Calendar(identifier: .gregorian)
         let components = try calendar.dateComponents(
             in: #require(TimeZone(identifier: "Asia/Tokyo")),
-            from: #require(date),
+            from: #require(date)
         )
         #expect(components.year == 2025)
         #expect(components.month == 1)
@@ -283,7 +283,7 @@ struct JapanICTests {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0x00, 0x10])],
             serviceBlocks: [Data([0x8B, 0x00]): [balanceBlock]],
-            systemCode: Data([0x00, 0x03]),
+            systemCode: Data([0x00, 0x03])
         )
 
         let reader = JapanICReader(transport: transport)
@@ -306,7 +306,7 @@ struct JapanICTests {
                 JapanICConstants.historyServiceCode: historyBlocks.map(hexToData),
             ],
             systemCode: JapanICConstants.systemCode,
-            identifier: hexToData(identifier),
+            identifier: hexToData(identifier)
         )
     }
 

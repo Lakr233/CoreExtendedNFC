@@ -28,7 +28,7 @@ public struct TUnionReader: Sendable {
         NFCLog.info("T-Union balance read start", source: "TUnion")
         // 1. SELECT T-Union AID
         let selectResponse = try await transport.sendAPDUWithChaining(
-            CommandAPDU.select(aid: TUnionConstants.tUnionAID),
+            CommandAPDU.select(aid: TUnionConstants.tUnionAID)
         )
         guard selectResponse.isSuccess else {
             throw NFCError.unsupportedOperation("T-Union AID not found on this card")
@@ -59,7 +59,7 @@ public struct TUnionReader: Sendable {
                 "primaryPurseFen": "\(balance0)",
                 "negativePurseFen": "\(balance1)",
                 "fileInfoSource": fileInfo.source,
-            ],
+            ]
         )
     }
 
@@ -76,7 +76,7 @@ public struct TUnionReader: Sendable {
         let response = try await transport.sendAPDUWithChaining(Self.balanceAPDU(p1: p1))
         NFCLog.debug(
             "T-Union GET BALANCE p1=\(String(format: "%02X", p1)) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)",
-            source: "TUnion",
+            source: "TUnion"
         )
         guard response.isSuccess, response.data.count >= 4 else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
@@ -100,7 +100,7 @@ public struct TUnionReader: Sendable {
             ins: TUnionConstants.GET_BALANCE_INS,
             p1: p1,
             p2: TUnionConstants.GET_BALANCE_P2,
-            le: TUnionConstants.GET_BALANCE_LE,
+            le: TUnionConstants.GET_BALANCE_LE
         )
     }
 
@@ -117,7 +117,7 @@ public struct TUnionReader: Sendable {
         do {
             // SELECT file 0x15
             let selectFile = try await transport.sendAPDUWithChaining(
-                Self.selectFileAPDU(id: TUnionConstants.balanceFileID),
+                Self.selectFileAPDU(id: TUnionConstants.balanceFileID)
             )
             NFCLog.debug("T-Union SELECT file 0015 sw=\(String(format: "%02X%02X", selectFile.sw1, selectFile.sw2)) data=\(selectFile.data.hexString)", source: "TUnion")
             guard selectFile.isSuccess else {
@@ -126,7 +126,7 @@ public struct TUnionReader: Sendable {
 
             // READ BINARY: need at least 28 bytes (offset 0, covers through validity dates)
             let readResponse = try await transport.sendAPDUWithChaining(
-                CommandAPDU.readBinary(offset: 0, length: 30),
+                CommandAPDU.readBinary(offset: 0, length: 30)
             )
             NFCLog.debug("T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(readResponse.data.hexString)", source: "TUnion")
             guard readResponse.isSuccess, readResponse.data.count >= 28 else {
@@ -183,7 +183,7 @@ public struct TUnionReader: Sendable {
             ins: 0xB2,
             p1: recordNumber,
             p2: (sfi << 3) | 0x04,
-            le: length,
+            le: length
         )
     }
 
@@ -192,13 +192,13 @@ public struct TUnionReader: Sendable {
             sfi: TUnionConstants.transactionSFI,
             length: TUnionConstants.transactionRecordLength,
             maxRecords: TUnionConstants.maxTransactionRecords,
-            parser: Self.parseTransactionRecord,
+            parser: Self.parseTransactionRecord
         )
         let trips = await readRecords(
             sfi: TUnionConstants.transitActivitySFI,
             length: TUnionConstants.transitActivityRecordLength,
             maxRecords: TUnionConstants.maxTransitActivityRecords,
-            parser: Self.parseTransitActivityRecord,
+            parser: Self.parseTransitActivityRecord
         )
         let merged = (transactions + trips).sorted { lhs, rhs in
             switch (lhs.date, rhs.date) {
@@ -220,7 +220,7 @@ public struct TUnionReader: Sendable {
         sfi: UInt8,
         length: UInt8,
         maxRecords: Int,
-        parser: (Data, Int) -> TransitTransaction?,
+        parser: (Data, Int) -> TransitTransaction?
     ) async -> [TransitTransaction] {
         var records: [TransitTransaction] = []
         for recordNumber in 1 ... maxRecords {
@@ -229,7 +229,7 @@ public struct TUnionReader: Sendable {
                 let response = try await transport.sendAPDUWithChaining(apdu)
                 NFCLog.debug(
                     "T-Union READ RECORD sfi=\(String(format: "%02X", sfi)) record=\(recordNumber) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)",
-                    source: "TUnion",
+                    source: "TUnion"
                 )
                 guard response.isSuccess else {
                     if response.statusWord == 0x6A83 || response.statusWord == 0x6A82 {
@@ -276,7 +276,7 @@ public struct TUnionReader: Sendable {
                 "source": "TUnion SFI 18",
                 "transactionType": String(format: "%02X", transactionType),
                 "station": station,
-            ],
+            ]
         )
     }
 
@@ -297,7 +297,7 @@ public struct TUnionReader: Sendable {
             metadata: [
                 "source": "TUnion SFI 1E",
                 "raw": data.hexString,
-            ],
+            ]
         )
     }
 

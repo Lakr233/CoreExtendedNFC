@@ -118,7 +118,7 @@ struct KSX6924Tests {
         let calendar = Calendar(identifier: .gregorian)
         let components = try calendar.dateComponents(
             in: #require(TimeZone(identifier: "Asia/Seoul")),
-            from: #require(date),
+            from: #require(date)
         )
         #expect(components.year == 2025)
         #expect(components.month == 12)

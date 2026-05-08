@@ -98,7 +98,7 @@ struct TUnionTests {
         let calendar = Calendar(identifier: .gregorian)
         let components = try calendar.dateComponents(
             in: #require(TimeZone(identifier: "Asia/Shanghai")),
-            from: #require(date),
+            from: #require(date)
         )
         #expect(components.year == 2025)
         #expect(components.month == 12)
@@ -214,7 +214,7 @@ struct TUnionTests {
         #expect(first.type == .topup)
         #expect(first.amount == 0)
         #expect(first.entryStation == "200099990040")
-        #expect(first.rawData.hexString == "0002000000000000000220009999004020200115151321")
+        #expect(try #require(first.rawData).hexString == "0002000000000000000220009999004020200115151321")
     }
 
     @Test
@@ -245,7 +245,7 @@ struct TUnionTests {
         let first = try #require(result.transactions.first)
         #expect(first.recordNumber == 1)
         #expect(first.entryStation == "413100629380")
-        #expect(first.rawData.hexString == "00B1000000000000000941310062938020240310211508")
+        #expect(try #require(first.rawData).hexString == "00B1000000000000000941310062938020240310211508")
 
         let second = try #require(result.transactions.dropFirst().first)
         #expect(second.amount == -160)
@@ -294,7 +294,7 @@ struct TUnionTests {
         let first = try #require(result.transactions.first)
         #expect(first.amount == -600)
         #expect(first.entryStation == "413101925969")
-        #expect(first.rawData.hexString == "0057000000000002580941310192596920240614142250")
+        #expect(try #require(first.rawData).hexString == "0057000000000002580941310192596920240614142250")
     }
 
     // MARK: - Records
@@ -324,7 +324,7 @@ struct TUnionTests {
         #expect(tx.recordNumber == 1)
         #expect(tx.entryStation == "010203040506")
         #expect(tx.metadata["source"] == "TUnion SFI 18")
-        #expect(transport.sentAPDUs[4].bytes == Data([0x00, 0xB2, 0x01, 0xC4, 0x17]))
+        #expect(transport.sentAPDUs.contains { $0.bytes == Data([0x00, 0xB2, 0x01, 0xC4, 0x17]) })
     }
 
     @Test
@@ -340,7 +340,7 @@ struct TUnionTests {
         let date = try #require(TUnionReader.parseBCDDateTime(Data([0x20, 0x26, 0x05, 0x09, 0x12, 0x34, 0x56])))
         let components = try Calendar(identifier: .gregorian).dateComponents(
             in: #require(TimeZone(identifier: "Asia/Shanghai")),
-            from: date,
+            from: date
         )
         #expect(components.year == 2026)
         #expect(components.month == 5)

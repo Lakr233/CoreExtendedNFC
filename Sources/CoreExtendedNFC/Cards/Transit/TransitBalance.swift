@@ -27,7 +27,7 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         validFrom: Date? = nil,
         validUntil: Date? = nil,
         transactions: [TransitTransaction] = [],
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         self.serialNumber = serialNumber
         self.balanceRaw = balanceRaw
@@ -96,7 +96,7 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
         exitStation: String? = nil,
         recordNumber: Int? = nil,
         rawData: Data? = nil,
-        metadata: [String: String] = [:],
+        metadata: [String: String] = [:]
     ) {
         self.type = type
         self.amount = amount

@@ -149,6 +149,7 @@ NSLayoutConstraint.activate([...])
 ### Empty States
 
 List view controllers (Scanner, Dump, NDEF, Passport) use `EmptyStateView` for empty-list placeholders:
+
 - Installed as a subview of the table view via `emptyState.install(on: tableView)`.
 - Visibility toggled by checking the data store's `records.isEmpty`.
 - Fades on scroll via `emptyState.updateAlpha(for: scrollView)` in `scrollViewDidScroll`.

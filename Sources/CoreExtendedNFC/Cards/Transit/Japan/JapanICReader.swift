@@ -28,7 +28,7 @@ public struct JapanICReader: Sendable {
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: "Japan IC",
+            cardName: "Japan IC"
         )
     }
 
@@ -44,7 +44,7 @@ public struct JapanICReader: Sendable {
             balanceRaw: balance,
             currencyCode: "JPY",
             cardName: "Japan IC",
-            transactions: transactions,
+            transactions: transactions
         )
     }
 
@@ -54,7 +54,7 @@ public struct JapanICReader: Sendable {
         NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString) expected=\(JapanICConstants.systemCode.hexString)", source: "JapanIC")
         guard transport.systemCode == JapanICConstants.systemCode else {
             throw NFCError.unsupportedOperation(
-                "Expected FeliCa system code 0x0003 (CJRC), got \(transport.systemCode.hexString)",
+                "Expected FeliCa system code 0x0003 (CJRC), got \(transport.systemCode.hexString)"
             )
         }
     }
@@ -63,7 +63,7 @@ public struct JapanICReader: Sendable {
         // Verify balance service exists
         NFCLog.debug("Japan IC request service balance=\(JapanICConstants.balanceServiceCode.hexString)", source: "JapanIC")
         let versions = try await transport.requestService(
-            nodeCodeList: [JapanICConstants.balanceServiceCode],
+            nodeCodeList: [JapanICConstants.balanceServiceCode]
         )
         NFCLog.debug("Japan IC balance service versions=\(versions.map(\.hexString).joined(separator: ","))", source: "JapanIC")
         guard let version = versions.first,
@@ -75,7 +75,7 @@ public struct JapanICReader: Sendable {
         // Read single balance block
         let blocks = try await transport.readWithoutEncryption(
             serviceCode: JapanICConstants.balanceServiceCode,
-            blockList: [FeliCaFrame.blockListElement(blockNumber: 0)],
+            blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
         )
         guard let block = blocks.first,
               block.count >= JapanICConstants.balanceOffset + 2
@@ -88,7 +88,7 @@ public struct JapanICReader: Sendable {
         let balance = Int(balanceBytes.uint16LE)
         NFCLog.debug(
             "Japan IC balance block=\(block.hexString) offset=\(JapanICConstants.balanceOffset) bytes=\(balanceBytes.hexString) value=\(balance)",
-            source: "JapanIC",
+            source: "JapanIC"
         )
         return balance
     }
@@ -102,7 +102,7 @@ public struct JapanICReader: Sendable {
             do {
                 let blocks = try await transport.readWithoutEncryption(
                     serviceCode: JapanICConstants.historyServiceCode,
-                    blockList: [FeliCaFrame.blockListElement(blockNumber: UInt16(i))],
+                    blockList: [FeliCaFrame.blockListElement(blockNumber: UInt16(i))]
                 )
                 guard let block = blocks.first, block.count == 16 else {
                     NFCLog.debug("Japan IC history block #\(i) invalid=\((blocks.first ?? Data()).hexString)", source: "JapanIC")
@@ -163,7 +163,7 @@ public struct JapanICReader: Sendable {
             balanceAfter: balanceAfter,
             date: date,
             entryStation: entryStation,
-            exitStation: exitStation,
+            exitStation: exitStation
         )
     }
 

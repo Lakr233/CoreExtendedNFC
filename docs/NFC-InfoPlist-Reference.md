@@ -107,7 +107,7 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 | `A0000002472001`                   | ICAO travel document auxiliary application                    | Commonly included by ID verification SDKs for passports and national ID cards.                         |
 | `A000000167455349474E`             | eSign application                                             | The ASCII tail decodes to `ESIGN`. Common in European eID / signing-card configs.                      |
 | `A000000291`                       | Calypso transit AID prefix                                    | Often used as a prefix-style match for Calypso transit cards.                                          |
-| `A000000404`                       | CardBal transit / stored-value application                    | Included to mirror CardBal's ISO 7816 polling list.                                                   |
+| `A000000404`                       | CardBal transit / stored-value application                    | Included to mirror CardBal's ISO 7816 polling list.                                                    |
 | `A00000000386980701`               | UnionPay payment application                                  | Observed in packaged UnionPay-family iOS apps; exact post-select APDUs are issuer-specific.            |
 | `A0000004520001`                   | Korean transit / stored-value ecosystem application           | Seen in public mobile NFC configs used for Korean transit cards.                                       |
 | `D4100000030001`                   | Korean transit application                                    | Included by passport / identity apps that also support common transit-card detection.                  |
@@ -116,7 +116,7 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 | `D4100000300001`                   | KSX6924 Snapper / MOIBA-compatible transit application        | Present in CardBal and used by the KSX6924 reader's Snapper / MOIBA probing path.                      |
 | `D4106509900020`                   | KSX6924 K-Cash transit application                            | Present in CardBal and used by the KSX6924 reader's K-Cash probing path.                               |
 | `A000000632010105`                 | China T-Union transit application                             | Required for the implemented T-Union balance reader and for CoreNFC ISO 7816 APDU access.              |
-| `A000000341000101`                 | Singapore CEPAS / EZ-Link discovery value                     | Included for transit-card discovery and logging while detailed balance support is researched.           |
+| `A000000341000101`                 | Singapore CEPAS / EZ-Link discovery value                     | Included for transit-card discovery and logging while detailed balance support is researched.          |
 | `5041592E535A54`                   | Legacy Shenzhen Tong application (`PAY.SZT`)                  | Included for discovery and logging; confirmed T-Union balance support uses `A000000632010105`.         |
 | `F049442E43484E`                   | China document application (observed)                         | Seen in packaged Chinese iOS apps; likely document-related, inferred from the ASCII tail `ID.CHN`.     |
 | `A000000812010208`                 | Tangem card application                                       | Documented by `tangem-sdk-ios`.                                                                        |
