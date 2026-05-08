@@ -80,7 +80,7 @@ CardBal includes the KSX6924-family AID set:
 - Snapper / MOIBA: `D4100000300001`
 - K-Cash: `D4106509900020`
 
-CoreExtendedNFC now tries these AIDs in that order and logs SELECT outcomes, balance APDU responses, and record reads. The balance APDU remains the KSX6924 command `90 4C 00 00`, `Le=04`.
+CoreExtendedNFC now tries these AIDs in that order and logs SELECT outcomes, balance APDU responses, and record reads. The sample app `Info.plist` mirrors these AIDs so CoreNFC can surface and transceive with those ISO 7816 applications. The balance APDU remains the KSX6924 command `90 4C 00 00`, `Le=04`.
 
 ## Researched Cards
 

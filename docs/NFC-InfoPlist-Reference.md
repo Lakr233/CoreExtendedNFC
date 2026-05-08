@@ -31,6 +31,9 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 	<string>90B7</string>
 	<string>927A</string>
 	<string>86A7</string>
+	<string>80DE</string>
+	<string>865E</string>
+	<string>8592</string>
 </array>
 ```
 
@@ -45,11 +48,14 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 	<string>A0000002472001</string>
 	<string>A000000167455349474E</string>
 	<string>A000000291</string>
+	<string>A000000404</string>
 	<string>A00000000386980701</string>
 	<string>A0000004520001</string>
 	<string>D4100000030001</string>
 	<string>D4100000140001</string>
 	<string>D410000029000001</string>
+	<string>D4100000300001</string>
+	<string>D4106509900020</string>
 	<string>A000000632010105</string>
 	<string>A000000341000101</string>
 	<string>5041592E535A54</string>
@@ -86,6 +92,9 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 | `90B7` | Public sample value from iOS NFC OSS apps        | Included in `react-native-nfc-manager`; exact card family not clearly documented in that repo. |
 | `927A` | Public sample value from iOS NFC OSS apps        | Included in `react-native-nfc-manager`; exact card family not clearly documented in that repo. |
 | `86A7` | Additional Suica-related community value         | Included in `react-native-nfc-manager`; often reported alongside Suica support.                |
+| `80DE` | CardBal transit-card system code                 | Included to mirror CardBal's FeliCa polling list.                                              |
+| `865E` | CardBal transit-card system code                 | Included to mirror CardBal's FeliCa polling list.                                              |
+| `8592` | CardBal transit-card system code                 | Included to mirror CardBal's FeliCa polling list.                                              |
 
 ## ISO 7816 AIDs
 
@@ -98,11 +107,14 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 | `A0000002472001`                   | ICAO travel document auxiliary application                    | Commonly included by ID verification SDKs for passports and national ID cards.                         |
 | `A000000167455349474E`             | eSign application                                             | The ASCII tail decodes to `ESIGN`. Common in European eID / signing-card configs.                      |
 | `A000000291`                       | Calypso transit AID prefix                                    | Often used as a prefix-style match for Calypso transit cards.                                          |
+| `A000000404`                       | CardBal transit / stored-value application                    | Included to mirror CardBal's ISO 7816 polling list.                                                   |
 | `A00000000386980701`               | UnionPay payment application                                  | Observed in packaged UnionPay-family iOS apps; exact post-select APDUs are issuer-specific.            |
 | `A0000004520001`                   | Korean transit / stored-value ecosystem application           | Seen in public mobile NFC configs used for Korean transit cards.                                       |
 | `D4100000030001`                   | Korean transit application                                    | Included by passport / identity apps that also support common transit-card detection.                  |
 | `D4100000140001`                   | Korean transit application                                    | Commonly associated with Cashbee-family cards in public NFC examples.                                  |
 | `D410000029000001`                 | Public sample AID from iOS NFC app configs                    | Preserved because it appears in community NFC setups; exact issuer mapping is still unclear.           |
+| `D4100000300001`                   | KSX6924 Snapper / MOIBA-compatible transit application        | Present in CardBal and used by the KSX6924 reader's Snapper / MOIBA probing path.                      |
+| `D4106509900020`                   | KSX6924 K-Cash transit application                            | Present in CardBal and used by the KSX6924 reader's K-Cash probing path.                               |
 | `A000000632010105`                 | China T-Union transit application                             | Required for the implemented T-Union balance reader and for CoreNFC ISO 7816 APDU access.              |
 | `A000000341000101`                 | Singapore CEPAS / EZ-Link discovery value                     | Included for transit-card discovery and logging while detailed balance support is researched.           |
 | `5041592E535A54`                   | Legacy Shenzhen Tong application (`PAY.SZT`)                  | Included for discovery and logging; confirmed T-Union balance support uses `A000000632010105`.         |
