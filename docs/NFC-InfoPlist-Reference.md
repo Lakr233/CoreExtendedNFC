@@ -50,6 +50,9 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 	<string>D4100000030001</string>
 	<string>D4100000140001</string>
 	<string>D410000029000001</string>
+	<string>A000000632010105</string>
+	<string>A000000341000101</string>
+	<string>5041592E535A54</string>
 	<string>D2760000850100</string>
 	<string>F049442E43484E</string>
 	<string>A000000812010208</string>
@@ -100,6 +103,9 @@ These are the merged values collected from public iOS NFC apps and SDKs on GitHu
 | `D4100000030001`                   | Korean transit application                                    | Included by passport / identity apps that also support common transit-card detection.                  |
 | `D4100000140001`                   | Korean transit application                                    | Commonly associated with Cashbee-family cards in public NFC examples.                                  |
 | `D410000029000001`                 | Public sample AID from iOS NFC app configs                    | Preserved because it appears in community NFC setups; exact issuer mapping is still unclear.           |
+| `A000000632010105`                 | China T-Union transit application                             | Required for the implemented T-Union balance reader and for CoreNFC ISO 7816 APDU access.              |
+| `A000000341000101`                 | Singapore CEPAS / EZ-Link discovery value                     | Included for transit-card discovery and logging while detailed balance support is researched.           |
+| `5041592E535A54`                   | Legacy Shenzhen Tong application (`PAY.SZT`)                  | Included for discovery and logging; confirmed T-Union balance support uses `A000000632010105`.         |
 | `F049442E43484E`                   | China document application (observed)                         | Seen in packaged Chinese iOS apps; likely document-related, inferred from the ASCII tail `ID.CHN`.     |
 | `A000000812010208`                 | Tangem card application                                       | Documented by `tangem-sdk-ios`.                                                                        |
 | `A00000045645444C2D3031`           | Dutch driving licence application                             | Used by public ID verification SDKs for Dutch mobile document reading.                                 |

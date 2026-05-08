@@ -67,7 +67,7 @@ CardBal confirms the T-Union balance flow:
 
 CoreExtendedNFC now reads both purse slots and logs SELECT, each purse APDU response, and the final parsed value. Existing Shenzhen and Nanjing T-Union cards should follow this same AID path when the card exposes the national transport application.
 
-The older Shenzhen Tong AID `5041592E535A54` has been added to the sample app polling identifiers for discovery and logging. Confirmed balance support uses the T-Union AID path above.
+The T-Union AID `A000000632010105` is required in the sample app polling identifiers for CoreNFC ISO 7816 APDU access. The older Shenzhen Tong AID `5041592E535A54` is also present for discovery and logging. Confirmed balance support uses the T-Union AID path above.
 
 ### Snapper / KSX6924
 
