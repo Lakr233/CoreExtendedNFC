@@ -55,6 +55,10 @@ Useful Y Mobile addresses:
 | Octopus balance formula | `0x24A910` | Parses response data, then computes `(raw - 350) / 10` as HKD.           |
 | Raw offset instruction  | `0x24A9C0` | `SUB X1, X0, #0x15E`, where `0x15E` is decimal `350`.                    |
 
+Y Mobile's Dart AOT code gives the strongest live-read evidence for the current Octopus path. The loaded `Runner` binary is the Flutter shell, while `App.framework/App` contains the Dart AOT snapshot with the Octopus reader strings and balance arithmetic. The balance function at `0x24A910` calls the response parser, subtracts `350`, converts to double, divides by `10`, and stores the resulting HKD value.
+
+The `500` constant appears elsewhere in the Dart AOT image, including Flutter/runtime-style code and generated object-pool setup. The Octopus balance call chain found from `OctopusReader.dart`, `060080080117`, and the balance formula uses `350`.
+
 ## Implemented Fixes
 
 ### Japan IC, ICOCA, Nimoca
@@ -83,6 +87,13 @@ CardBal, Metrodroid, FareBot, and TRETJapanNFCReader agree on the card path:
 Octopus' official FAQ states the HK$50 convenience limit applies to On-Loan Octopus cards issued on or after 2017-10-01 and mobile Octopus products. CardBal and Y Mobile both still use raw offset `350` for service `0117` live balance arithmetic. Metrodroid and FareBot use scan time as a `350`/`500` proxy, which is useful for synthetic tests and weaker for live physical-card reads.
 
 CoreExtendedNFC adds `OctopusReader`, dispatches FeliCa system code `8008` to that reader, formats HKD balances, and logs raw block details. The unified `TransitBalance.balanceRaw` value stores cents. The reader uses offset `350`, matching CardBal, Y Mobile, and the physical-card scan where raw `920` displays HK$57.00.
+
+Octopus offset decision:
+
+- Live service `0117` balance reads use offset `350`.
+- Raw `920` yields `(920 - 350) * 10 = 5700` HKD cents, displayed as HK$57.00.
+- Applying offset `500` to the same raw value displays HK$42.00, which is HK$15.00 below the observed card balance.
+- CoreExtendedNFC keeps a single live-read offset constant until a reliable card-side signal identifies a different raw-value encoding.
 
 ### China T-Union, Shenzhen Tong, Nanjing
 
