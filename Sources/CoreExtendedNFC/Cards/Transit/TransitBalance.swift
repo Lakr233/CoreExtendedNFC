@@ -16,6 +16,8 @@ public struct TransitBalance: Sendable, Equatable, Codable {
     public let validUntil: Date?
     /// Recent transaction history (newest first).
     public let transactions: [TransitTransaction]
+    /// Reader-specific decoded fields.
+    public let metadata: [String: String]
 
     public init(
         serialNumber: String,
@@ -25,6 +27,7 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         validFrom: Date? = nil,
         validUntil: Date? = nil,
         transactions: [TransitTransaction] = [],
+        metadata: [String: String] = [:],
     ) {
         self.serialNumber = serialNumber
         self.balanceRaw = balanceRaw
@@ -33,6 +36,7 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         self.validFrom = validFrom
         self.validUntil = validUntil
         self.transactions = transactions
+        self.metadata = metadata
     }
 
     /// Human-readable formatted balance.

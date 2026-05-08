@@ -23,6 +23,24 @@ struct OctopusTests {
     }
 
     @Test
+    func `Logged Octopus card replays physical card balance block`() async throws {
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [Data([0x17, 0x01]): Data([0x07, 0x00])],
+            serviceBlocks: [
+                Data([0x17, 0x01]): [hexToData("00000398000000000000000000000003")],
+            ],
+            systemCode: Data([0x80, 0x08]),
+            identifier: hexToData("010107015823C200"),
+        )
+
+        let result = try await OctopusReader(transport: transport).readBalance()
+
+        #expect(result.serialNumber == "010107015823C200")
+        #expect(result.balanceRaw == 5700)
+        #expect(result.formattedBalance == "HK$57.00")
+    }
+
+    @Test
     func `Read Octopus balance uses Y Mobile and CardBal raw offset`() async throws {
         var block = Data(repeating: 0x00, count: 16)
         block[0] = 0x00
@@ -81,5 +99,16 @@ struct OctopusTests {
             serviceBlocks: [Data([0x17, 0x01]): [block]],
             systemCode: Data([0x80, 0x08]),
         )
+    }
+
+    private func hexToData(_ hex: String) -> Data {
+        var data = Data()
+        var chars = hex.makeIterator()
+        while let c1 = chars.next(), let c2 = chars.next() {
+            if let byte = UInt8(String([c1, c2]), radix: 16) {
+                data.append(byte)
+            }
+        }
+        return data
     }
 }

@@ -135,7 +135,7 @@ struct TUnionTests {
     }
 
     @Test
-    func `Display balance uses primary purse when populated`() async throws {
+    func `Display balance subtracts negative purse`() async throws {
         let transport = MockTransport()
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
@@ -147,11 +147,11 @@ struct TUnionTests {
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
 
-        #expect(result.balanceRaw == 5000)
+        #expect(result.balanceRaw == 4000)
     }
 
     @Test
-    func `Display balance falls back to negative purse when primary is zero`() async throws {
+    func `Display balance can be negative`() async throws {
         let transport = MockTransport()
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
@@ -166,6 +166,137 @@ struct TUnionTests {
         #expect(result.balanceRaw == -1000)
     }
 
+    @Test
+    func `Shanghai public transit card uses purse delta`() async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(
+                data: hexToData("6F318408A000000632010105A5259F0801029F0C1E02002900FFFFFFFF02010310477004006744280220200115204012310114"),
+                sw1: 0x90,
+                sw2: 0x00
+            ),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x03, 0x20]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x03, 0x20]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x86),
+            ResponseAPDU(data: buildFile15Data(serial: "31234567890123456789"), sw1: 0x90, sw2: 0x00),
+        ]
+
+        let reader = TUnionReader(transport: transport)
+        let result = try await reader.readBalance()
+
+        #expect(result.balanceRaw == 0)
+        #expect(result.formattedBalance == "¥0.00")
+        #expect(result.serialNumber == "1234567890123456789")
+        #expect(result.metadata["balanceSource"] == "TUnion dual purse")
+        #expect(result.metadata["primaryPurseFen"] == "800")
+        #expect(result.metadata["negativePurseFen"] == "800")
+        #expect(result.metadata["fileInfoSource"] == "SFI 15 READ BINARY")
+        #expect(transport.sentAPDUs[4].bytes == Data([0x00, 0xB0, 0x95, 0x00, 0x00]))
+    }
+
+    @Test
+    func `Logged Shanghai T-Union card replays balance and transactions`() async throws {
+        let transport = loggedTUnionTransport(
+            selectFCI: "6F318408A000000632010105A5259F0801029F0C1E02002900FFFFFFFF02010310477004006744280220200115204012310114",
+            balance0: "00000320",
+            balance1: "00000320",
+            sfi18: [
+                "0002000000000000000220009999004020200115151321",
+                "0001000000000000000220009299004020200115151321",
+            ]
+        )
+
+        let result = try await TUnionReader(transport: transport).readBalance()
+
+        #expect(result.balanceRaw == 0)
+        #expect(result.transactions.count == 2)
+        let first = try #require(result.transactions.first)
+        #expect(first.type == .topup)
+        #expect(first.amount == 0)
+        #expect(first.entryStation == "200099990040")
+        #expect(first.rawData.hexString == "0002000000000000000220009999004020200115151321")
+    }
+
+    @Test
+    func `Logged Beijing T-Union card replays balance and ten transactions`() async throws {
+        let transport = loggedTUnionTransport(
+            selectFCI: "6F318408A000000632010105A5259F0801029F0C1E00083010FFFFFFFF02010310483001000641250720220301204912310000",
+            balance0: "000002E4",
+            balance1: "00000000",
+            sfi18: [
+                "00B1000000000000000941310062938020240310211508",
+                "00B0000000000000A00941310062938820240310195719",
+                "00AF0000000000017C0941310040552720240308200056",
+                "00AE000000000000000941310043483620240308192014",
+                "00AD000000000000BE0941310043484320240308171554",
+                "00AC000000000000000941310043501520240308170331",
+                "00AB000000000001DB0941310043502920240308140501",
+                "00AA000000000000000941310004150620240308131356",
+                "00A9000000000000BE0941310040552720240223210850",
+                "00A8000000000000000941310064192120240223205019",
+            ]
+        )
+
+        let result = try await TUnionReader(transport: transport).readBalance()
+
+        #expect(result.balanceRaw == 740)
+        #expect(result.formattedBalance == "¥7.40")
+        #expect(result.transactions.count == 10)
+        let first = try #require(result.transactions.first)
+        #expect(first.recordNumber == 1)
+        #expect(first.entryStation == "413100629380")
+        #expect(first.rawData.hexString == "00B1000000000000000941310062938020240310211508")
+
+        let second = try #require(result.transactions.dropFirst().first)
+        #expect(second.amount == -160)
+        #expect(second.entryStation == "413100629388")
+    }
+
+    @Test
+    func `Logged zero-balance T-Union card keeps empty records empty`() async throws {
+        let transport = loggedTUnionTransport(
+            selectFCI: "6F368408A000000632010105A5269F080200309F0C1E02215840FFFFFFFF0201031048704040106424182024110720541107000000000000",
+            balance0: "00000000",
+            balance1: "00000000",
+            sfi18: Array(repeating: "0000000000000000000000000000000000000000000000", count: 10)
+        )
+
+        let result = try await TUnionReader(transport: transport).readBalance()
+
+        #expect(result.balanceRaw == 0)
+        #expect(result.transactions.isEmpty)
+    }
+
+    @Test
+    func `Logged Shenzhen T-Union card replays stored balance and station data`() async throws {
+        let transport = loggedTUnionTransport(
+            selectFCI: "6F318408A000000632010105A5259F0801029F0C1E00083010FFFFFFFF02010310483001000732696420230828209912310000",
+            balance0: "000000FA",
+            balance1: "00000000",
+            sfi18: [
+                "0057000000000002580941310192596920240614142250",
+                "0056000000000000000941310614805320240614133122",
+                "0055000000000000BE0941310043546620240613120710",
+                "0054000000000000000941310040553220240613115300",
+                "0053000000000000000930100500319220240612180513",
+                "0052000000000000A00941310062938120240612162245",
+                "0051000000000000BE0941310040552120240611181322",
+                "0050000000000000000941310004193920240611180136",
+                "004F000000000000BE0941310004156920240604195201",
+                "004E000000000000000941310004150620240604194012",
+            ]
+        )
+
+        let result = try await TUnionReader(transport: transport).readBalance()
+
+        #expect(result.balanceRaw == 250)
+        #expect(result.transactions.count == 10)
+        let first = try #require(result.transactions.first)
+        #expect(first.amount == -600)
+        #expect(first.entryStation == "413101925969")
+        #expect(first.rawData.hexString == "0057000000000002580941310192596920240614142250")
+    }
+
     // MARK: - Records
 
     @Test
@@ -175,6 +306,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data([0x00, 0x00, 0x02, 0xE4]), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
             ResponseAPDU(data: buildTransactionRecord(amount: 260, type: 0x06), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83),
@@ -261,6 +393,40 @@ struct TUnionTests {
         data[21] = 0x34
         data[22] = 0x56
         return data
+    }
+
+    private func loggedTUnionTransport(
+        selectFCI: String,
+        balance0: String,
+        balance1: String,
+        sfi18: [String],
+        sfi1E: [String] = []
+    ) -> MockTransport {
+        let transport = MockTransport()
+        var responses: [ResponseAPDU] = [
+            ResponseAPDU(data: hexToData(selectFCI), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: hexToData(balance0), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: hexToData(balance1), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x86),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
+        ]
+
+        responses.append(contentsOf: sfi18.map {
+            ResponseAPDU(data: hexToData($0), sw1: 0x90, sw2: 0x00)
+        })
+        if sfi18.count < TUnionConstants.maxTransactionRecords {
+            responses.append(ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83))
+        }
+
+        responses.append(contentsOf: sfi1E.map {
+            ResponseAPDU(data: hexToData($0), sw1: 0x90, sw2: 0x00)
+        })
+        if sfi1E.count < TUnionConstants.maxTransitActivityRecords {
+            responses.append(ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83))
+        }
+
+        transport.apduResponses = responses
+        return transport
     }
 
     private func hexToData(_ hex: String) -> Data {

@@ -35,9 +35,8 @@ public struct TUnionReader: Sendable {
         }
         NFCLog.debug("T-Union SELECT AID ok data=\(selectResponse.data.hexString)", source: "TUnion")
 
-        // 2. GET BALANCE. CardBal reads both purse slots. The card preview uses
-        // slot 0 when it is populated, and falls back to slot0 - slot1 for cards
-        // that encode the primary purse as zero.
+        // 2. GET BALANCE. T-Union exposes two purse registers; the displayed
+        // value is the signed delta between the primary and negative purse.
         let balance0 = try await readBalanceSlot(p1: TUnionConstants.GET_BALANCE_P1)
         let balance1 = await readOptionalBalanceSlot(p1: TUnionConstants.GET_NEGATIVE_BALANCE_P1)
         let balanceFen = Self.displayBalance(primary: balance0, negative: balance1)
@@ -55,6 +54,12 @@ public struct TUnionReader: Sendable {
             validFrom: fileInfo.validFrom,
             validUntil: fileInfo.validUntil,
             transactions: transactions,
+            metadata: [
+                "balanceSource": "TUnion dual purse",
+                "primaryPurseFen": "\(balance0)",
+                "negativePurseFen": "\(balance1)",
+                "fileInfoSource": fileInfo.source,
+            ],
         )
     }
 
@@ -64,6 +69,7 @@ public struct TUnionReader: Sendable {
         let serial: String
         let validFrom: Date?
         let validUntil: Date?
+        let source: String
     }
 
     private func readBalanceSlot(p1: UInt8) async throws -> Int {
@@ -104,7 +110,7 @@ public struct TUnionReader: Sendable {
     }
 
     static func displayBalance(primary: Int, negative: Int) -> Int {
-        primary > 0 ? primary : primary - negative
+        primary - negative
     }
 
     private func readFileInfo() async -> FileInfo {
@@ -115,7 +121,7 @@ public struct TUnionReader: Sendable {
             )
             NFCLog.debug("T-Union SELECT file 0015 sw=\(String(format: "%02X%02X", selectFile.sw1, selectFile.sw2)) data=\(selectFile.data.hexString)", source: "TUnion")
             guard selectFile.isSuccess else {
-                return FileInfo(serial: "", validFrom: nil, validUntil: nil)
+                return await readFileInfoFromSFI()
             }
 
             // READ BINARY: need at least 28 bytes (offset 0, covers through validity dates)
@@ -124,31 +130,51 @@ public struct TUnionReader: Sendable {
             )
             NFCLog.debug("T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(readResponse.data.hexString)", source: "TUnion")
             guard readResponse.isSuccess, readResponse.data.count >= 28 else {
-                return FileInfo(serial: "", validFrom: nil, validUntil: nil)
+                return await readFileInfoFromSFI()
             }
 
-            let fileData = readResponse.data
-
-            // Serial: bytes 10-19, skip first nibble (convention from Metrodroid)
-            let serialData = Data(fileData[TUnionConstants.serialOffset ..< TUnionConstants.serialOffset + TUnionConstants.serialLength])
-            let serialHex = serialData.hexString
-            let serial = String(serialHex.dropFirst()) // skip first nibble
-
-            // Validity dates: 4 bytes hex YYYYMMDD
-            let validFromData = Data(fileData[TUnionConstants.validFromOffset ..< TUnionConstants.validFromOffset + TUnionConstants.validFromLength])
-            let validFrom = Self.parseHexDate(validFromData)
-
-            let validUntilData = Data(fileData[TUnionConstants.validUntilOffset ..< TUnionConstants.validUntilOffset + TUnionConstants.validUntilLength])
-            let validUntil = Self.parseHexDate(validUntilData)
-
-            return FileInfo(serial: serial, validFrom: validFrom, validUntil: validUntil)
+            return Self.parseFileInfo(readResponse.data, source: "SELECT 0015 + READ BINARY")
         } catch {
-            return FileInfo(serial: "", validFrom: nil, validUntil: nil)
+            return await readFileInfoFromSFI()
         }
     }
 
     private static func selectFileAPDU(id: Data) -> CommandAPDU {
         CommandAPDU(cla: 0x00, ins: 0xA4, p1: 0x00, p2: 0x00, data: id, le: 0x00)
+    }
+
+    private func readFileInfoFromSFI() async -> FileInfo {
+        do {
+            let response = try await transport.sendAPDUWithChaining(Self.readFile15BySFIAPDU())
+            NFCLog.debug("T-Union READ BINARY SFI 15 sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "TUnion")
+            guard response.isSuccess, response.data.count >= 28 else {
+                return FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable")
+            }
+            return Self.parseFileInfo(response.data, source: "SFI 15 READ BINARY")
+        } catch {
+            NFCLog.debug("T-Union READ BINARY SFI 15 skipped: \(error.localizedDescription)", source: "TUnion")
+            return FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable")
+        }
+    }
+
+    private static func readFile15BySFIAPDU() -> CommandAPDU {
+        CommandAPDU(cla: 0x00, ins: 0xB0, p1: TUnionConstants.file15SFIReadP1, p2: 0x00, le: 0x00)
+    }
+
+    private static func parseFileInfo(_ fileData: Data, source: String) -> FileInfo {
+        // Serial: bytes 10-19, skip first nibble (convention from Metrodroid)
+        let serialData = Data(fileData[TUnionConstants.serialOffset ..< TUnionConstants.serialOffset + TUnionConstants.serialLength])
+        let serialHex = serialData.hexString
+        let serial = String(serialHex.dropFirst()) // skip first nibble
+
+        // Validity dates: 4 bytes hex YYYYMMDD
+        let validFromData = Data(fileData[TUnionConstants.validFromOffset ..< TUnionConstants.validFromOffset + TUnionConstants.validFromLength])
+        let validFrom = Self.parseHexDate(validFromData)
+
+        let validUntilData = Data(fileData[TUnionConstants.validUntilOffset ..< TUnionConstants.validUntilOffset + TUnionConstants.validUntilLength])
+        let validUntil = Self.parseHexDate(validUntilData)
+
+        return FileInfo(serial: serial, validFrom: validFrom, validUntil: validUntil, source: source)
     }
 
     private static func readRecordAPDU(sfi: UInt8, recordNumber: UInt8, length: UInt8) -> CommandAPDU {

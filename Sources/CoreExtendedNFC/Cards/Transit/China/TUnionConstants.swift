@@ -19,6 +19,7 @@ enum TUnionConstants {
 
     /// Main file containing serial and validity info.
     static let balanceFileID = Data([0x00, 0x15])
+    static let file15SFIReadP1: UInt8 = 0x95
 
     /// T-Union transaction record SFI. CardBal documents this as a circular
     /// 0x17-byte transaction/top-up record file.

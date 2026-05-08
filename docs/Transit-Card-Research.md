@@ -103,10 +103,18 @@ CardBal confirms the T-Union balance flow:
 - Primary purse APDU: `80 5C 00 02`, `Le=04`
 - Negative purse APDU: `80 5C 01 02`, `Le=04`
 - Balance bytes: low 31 bits of the big-endian 4-byte response
-- Final balance: primary purse when populated, otherwise primary purse minus negative purse
+- Final balance: primary purse minus negative purse
 - Unit: CNY fen
 
-Metrodroid documents the top bit as a spare/garbage bit, so CoreExtendedNFC masks with `0x7FFFFFFF` before displaying the value. CoreExtendedNFC reads both purse slots and logs SELECT, each purse APDU response, and the final parsed value. Existing Shenzhen and Nanjing T-Union cards should follow this same AID path when the card exposes the national transport application.
+Shanghai Public Transportation Card official app IDA findings:
+
+- Binary: `/Users/qaq/Desktop/Payload/上海交通卡.app/上海交通卡`, SHA-256 `67cd64bbc104382c727c086de4c567a7fc39ad8a4291e8e49ce3fced9a211c6f`
+- `JYNFCManager` drives ISO 7816 NFC reads through `NFCISO7816APDU(initWithData:)` and `sendCommandAPDU:completionHandler:`.
+- `sub_1008DDE0C` sends `00A4040008A000000632010105`, selecting the T-Union AID.
+- `sub_1008DE030` and related card-info paths send `00B0950000`, a READ BINARY command for SFI `0x15`.
+- `sub_1008DED78` parses one balance response by taking `data[0..<4]` as the primary value and `data[6..<9]` as the negative value, converting both from hex-coded decimal text, then storing `primary - negative` through `setBalance:`.
+
+Metrodroid documents the top bit as a spare/garbage bit, so CoreExtendedNFC masks with `0x7FFFFFFF` before displaying the value. CoreExtendedNFC reads both purse slots and logs SELECT, each purse APDU response, and the final parsed value. A confirmed Shanghai Public Transportation Card returned `00000320` from both purse slots and has a displayed balance of CNY 0.00, which validates the purse-delta formula. For file `0x15` metadata, CoreExtendedNFC first tries `SELECT 0015` plus READ BINARY and then falls back to the official app's `00B0950000` SFI direct-read path when the explicit file SELECT fails. Existing Shenzhen and Nanjing T-Union cards should follow this same AID path when the card exposes the national transport application.
 
 The T-Union AID `A000000632010105` is required in the sample app polling identifiers for CoreNFC ISO 7816 APDU access. The older Shenzhen Tong AID `5041592E535A54` is also present for discovery and logging. Confirmed balance support uses the T-Union AID path above.
 
