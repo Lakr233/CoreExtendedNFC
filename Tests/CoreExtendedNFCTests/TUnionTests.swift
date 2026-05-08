@@ -18,7 +18,8 @@ struct TUnionTests {
         // Balance = 5000 fen (50 yuan). Shifted left by 1: 5000 << 1 = 10000 = 0x00002710
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT AID
-            ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00), // GET BALANCE
+            ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 0
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT file 0x15
             ResponseAPDU(data: buildFile15Data(), sw1: 0x90, sw2: 0x00), // READ BINARY
         ]
@@ -53,7 +54,8 @@ struct TUnionTests {
         // 12345 fen → shifted: 12345 << 1 = 24690 = 0x00006072
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT
-            ResponseAPDU(data: Data([0x00, 0x00, 0x60, 0x72]), sw1: 0x90, sw2: 0x00), // GET BALANCE
+            ResponseAPDU(data: Data([0x00, 0x00, 0x60, 0x72]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 0
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT file fails (no file info)
         ]
 
@@ -68,7 +70,8 @@ struct TUnionTests {
         let transport = MockTransport()
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT
-            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 0
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // no file info
         ]
 
@@ -111,7 +114,8 @@ struct TUnionTests {
         let transport = MockTransport()
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT AID
-            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x02]), sw1: 0x90, sw2: 0x00), // GET BALANCE: 1 fen
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x02]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 0: 1 fen
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT file
             ResponseAPDU(data: buildFile15Data(serial: "31234567890123456789"), sw1: 0x90, sw2: 0x00),
         ]
@@ -122,6 +126,22 @@ struct TUnionTests {
         // Serial is hex of bytes 10-19, with first nibble skipped
         // "31234567890123456789" → skip first char → "1234567890123456789"
         #expect(result.serialNumber == "1234567890123456789")
+    }
+
+    @Test
+    func `Final balance subtracts slot 1 from slot 0`() async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00), // 5000
+            ResponseAPDU(data: Data([0x00, 0x00, 0x03, 0xE8]), sw1: 0x90, sw2: 0x00), // 500
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
+        ]
+
+        let reader = TUnionReader(transport: transport)
+        let result = try await reader.readBalance()
+
+        #expect(result.balanceRaw == 4500)
     }
 
     // MARK: - Helpers

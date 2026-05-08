@@ -45,6 +45,15 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         case "CNY":
             let yuan = Double(balanceRaw) / 100.0
             return String(format: "¥%.2f", yuan)
+        case "HKD":
+            let dollars = Double(balanceRaw) / 100.0
+            return String(format: "HK$%.2f", dollars)
+        case "SGD":
+            let dollars = Double(balanceRaw) / 100.0
+            return String(format: "S$%.2f", dollars)
+        case "NZD":
+            let dollars = Double(balanceRaw) / 100.0
+            return String(format: "NZ$%.2f", dollars)
         default:
             return "\(balanceRaw) \(currencyCode)"
         }

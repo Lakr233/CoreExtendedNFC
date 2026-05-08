@@ -19,13 +19,13 @@ enum JapanICConstants {
     /// Transaction history service (cyclic read-only, up to 20 blocks).
     static let historyServiceCode = Data([0x0F, 0x09]) // 0x090F
 
-    /// Maximum history blocks to read per session (safe limit).
-    static let maxHistoryBlocks = 10
+    /// Maximum transaction history blocks stored by common CJRC cards.
+    static let maxHistoryBlocks = 20
 
     // MARK: - Balance Block Layout (16 bytes)
 
-    /// Byte offset of the 2-byte LE balance within a balance block.
-    static let balanceOffset = 0x0A
+    /// Byte offset of the 2-byte LE balance within the 0x008B balance block.
+    static let balanceOffset = 0x0B
 
     // MARK: - History Block Layout (16 bytes)
 

@@ -2,22 +2,27 @@ import Foundation
 
 public extension CoreExtendedNFC {
     /// Read transit card balance from a connected tag.
-    /// Automatically detects Japan IC (FeliCa), T-Money/Cashbee (KS X 6924), or T-Union cards.
+    /// Automatically detects Japan IC (FeliCa), Octopus, T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
     ///
     /// Detection order:
     /// 1. FeliCa with system code 0x0003 → Japan IC
-    /// 2. ISO 7816 → try KS X 6924 AIDs (T-Money, Cashbee, MOIBA, K-Cash)
+    /// 2. ISO 7816 → try KS X 6924 AIDs (T-Money, Cashbee, Snapper/MOIBA, K-Cash)
     /// 3. ISO 7816 → try T-Union AID
     static func readTransitBalance(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> TransitBalance {
-        // Japan FeliCa IC cards
         if info.type.family == .felica {
             guard let felicaTransport = transport as? any FeliCaTagTransporting else {
                 throw NFCError.unsupportedOperation("FeliCa transit reading requires a FeliCa transport")
             }
-            return try await readJapanICBalance(transport: felicaTransport)
+            if felicaTransport.systemCode == JapanICConstants.systemCode {
+                return try await readJapanICBalance(transport: felicaTransport)
+            }
+            if felicaTransport.systemCode == OctopusConstants.systemCode {
+                return try await readOctopusBalance(transport: felicaTransport)
+            }
+            throw NFCError.unsupportedOperation("Unsupported FeliCa transit system code \(felicaTransport.systemCode.hexString)")
         }
 
         // ISO 7816 cards: try Korea then China
@@ -55,6 +60,13 @@ public extension CoreExtendedNFC {
         try await JapanICReader(transport: transport).readBalanceAndHistory()
     }
 
+    /// Read Hong Kong Octopus balance.
+    static func readOctopusBalance(
+        transport: any FeliCaTagTransporting
+    ) async throws -> TransitBalance {
+        try await OctopusReader(transport: transport).readBalance()
+    }
+
     /// Read Korea T-Money/Cashbee balance + history (KS X 6924).
     static func readKoreaTransitBalance(
         transport: any ISO7816TagTransporting
@@ -64,7 +76,7 @@ public extension CoreExtendedNFC {
 
     /// Read China T-Union balance.
     ///
-    /// Note: Beijing Yikatong is not supported on iOS (short AID restriction).
+    /// Note: Beijing Yikatong uses a short AID outside iOS CoreNFC's selectable AID path.
     static func readChinaTransitBalance(
         transport: any ISO7816TagTransporting
     ) async throws -> TransitBalance {

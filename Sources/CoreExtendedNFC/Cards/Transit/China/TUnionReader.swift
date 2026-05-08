@@ -8,9 +8,9 @@ import Foundation
 ///    Balance = bits 1-31 as signed integer (CNY fen, divide by 100 for yuan)
 /// 3. SELECT file 0x15 + READ BINARY for serial number and validity dates
 ///
-/// ## Limitations
-/// - Beijing Yikatong is NOT supported (short AID blocked by iOS CoreNFC)
-/// - Only T-Union branded cards with the full AID work on iOS
+/// ## iOS Scope
+/// - T-Union branded cards with the full AID work on iOS.
+/// - Beijing Yikatong uses a short AID outside iOS CoreNFC's selectable AID path.
 ///
 /// ## References
 /// - Metrodroid ChinaTransitData
@@ -24,6 +24,7 @@ public struct TUnionReader: Sendable {
 
     /// Read T-Union card balance and info.
     public func readBalance() async throws -> TransitBalance {
+        NFCLog.info("T-Union balance read start", source: "TUnion")
         // 1. SELECT T-Union AID
         let selectResponse = try await transport.sendAPDUWithChaining(
             CommandAPDU.select(aid: TUnionConstants.tUnionAID)
@@ -31,22 +32,13 @@ public struct TUnionReader: Sendable {
         guard selectResponse.isSuccess else {
             throw NFCError.unsupportedOperation("T-Union AID not found on this card")
         }
+        NFCLog.debug("T-Union SELECT AID ok data=\(selectResponse.data.hexString)", source: "TUnion")
 
-        // 2. GET BALANCE
-        let balanceResponse = try await transport.sendAPDUWithChaining(CommandAPDU(
-            cla: TUnionConstants.GET_BALANCE_CLA,
-            ins: TUnionConstants.GET_BALANCE_INS,
-            p1: TUnionConstants.GET_BALANCE_P1,
-            p2: TUnionConstants.GET_BALANCE_P2,
-            le: TUnionConstants.GET_BALANCE_LE
-        ))
-        guard balanceResponse.isSuccess, balanceResponse.data.count >= 4 else {
-            throw NFCError.unexpectedStatusWord(balanceResponse.sw1, balanceResponse.sw2)
-        }
-
-        let rawValue = Data(balanceResponse.data.prefix(4)).uint32BE
-        // Balance: bits 1-31 as signed integer (bit 0 is sign flag)
-        let balanceFen = Int(rawValue >> 1)
+        // 2. GET BALANCE. CardBal reads balance slot 0 and slot 1, then uses slot0 - slot1.
+        let balance0 = try await readBalanceSlot(p1: TUnionConstants.GET_BALANCE_P1)
+        let balance1 = await readOptionalBalanceSlot(p1: TUnionConstants.GET_NEGATIVE_BALANCE_P1)
+        let balanceFen = balance0 - balance1
+        NFCLog.info("T-Union balance read complete balance0=\(balance0) balance1=\(balance1) final=\(balanceFen)", source: "TUnion")
 
         // 3. Read file 0x15 for serial and validity
         let fileInfo = await readFileInfo()
@@ -67,6 +59,43 @@ public struct TUnionReader: Sendable {
         let serial: String
         let validFrom: Date?
         let validUntil: Date?
+    }
+
+    private func readBalanceSlot(p1: UInt8) async throws -> Int {
+        let response = try await transport.sendAPDUWithChaining(Self.balanceAPDU(p1: p1))
+        NFCLog.debug(
+            "T-Union GET BALANCE p1=\(String(format: "%02X", p1)) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)",
+            source: "TUnion"
+        )
+        guard response.isSuccess, response.data.count >= 4 else {
+            throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
+        }
+
+        return Self.parseBalanceFen(response.data)
+    }
+
+    private func readOptionalBalanceSlot(p1: UInt8) async -> Int {
+        do {
+            return try await readBalanceSlot(p1: p1)
+        } catch {
+            NFCLog.debug("T-Union optional balance slot p1=\(String(format: "%02X", p1)) skipped: \(error.localizedDescription)", source: "TUnion")
+            return 0
+        }
+    }
+
+    private static func balanceAPDU(p1: UInt8) -> CommandAPDU {
+        CommandAPDU(
+            cla: TUnionConstants.GET_BALANCE_CLA,
+            ins: TUnionConstants.GET_BALANCE_INS,
+            p1: p1,
+            p2: TUnionConstants.GET_BALANCE_P2,
+            le: TUnionConstants.GET_BALANCE_LE
+        )
+    }
+
+    static func parseBalanceFen(_ data: Data) -> Int {
+        let rawValue = Data(data.prefix(4)).uint32BE
+        return Int(rawValue >> 1)
     }
 
     private func readFileInfo() async -> FileInfo {

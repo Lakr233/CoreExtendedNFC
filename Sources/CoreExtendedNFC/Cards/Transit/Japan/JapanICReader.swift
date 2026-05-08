@@ -20,8 +20,10 @@ public struct JapanICReader: Sendable {
 
     /// Read balance only (fast — single block read).
     public func readBalance() async throws -> TransitBalance {
+        NFCLog.info("Japan IC balance read start idm=\(transport.identifier.hexString)", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
+        NFCLog.info("Japan IC balance read complete balance=\(balance) JPY", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
@@ -32,9 +34,11 @@ public struct JapanICReader: Sendable {
 
     /// Read balance + transaction history.
     public func readBalanceAndHistory() async throws -> TransitBalance {
+        NFCLog.info("Japan IC balance/history read start idm=\(transport.identifier.hexString)", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
         let transactions = await readHistory()
+        NFCLog.info("Japan IC balance/history read complete balance=\(balance) JPY transactions=\(transactions.count)", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
@@ -47,6 +51,7 @@ public struct JapanICReader: Sendable {
     // MARK: - Private
 
     private func validateSystemCode() throws {
+        NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString) expected=\(JapanICConstants.systemCode.hexString)", source: "JapanIC")
         guard transport.systemCode == JapanICConstants.systemCode else {
             throw NFCError.unsupportedOperation(
                 "Expected FeliCa system code 0x0003 (CJRC), got \(transport.systemCode.hexString)"
@@ -56,9 +61,11 @@ public struct JapanICReader: Sendable {
 
     private func readRawBalance() async throws -> Int {
         // Verify balance service exists
+        NFCLog.debug("Japan IC request service balance=\(JapanICConstants.balanceServiceCode.hexString)", source: "JapanIC")
         let versions = try await transport.requestService(
             nodeCodeList: [JapanICConstants.balanceServiceCode]
         )
+        NFCLog.debug("Japan IC balance service versions=\(versions.map(\.hexString).joined(separator: ","))", source: "JapanIC")
         guard let version = versions.first,
               version != Data([0xFF, 0xFF])
         else {
@@ -70,15 +77,25 @@ public struct JapanICReader: Sendable {
             serviceCode: JapanICConstants.balanceServiceCode,
             blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
         )
-        guard let block = blocks.first, block.count >= 12 else {
+        guard let block = blocks.first,
+              block.count >= JapanICConstants.balanceOffset + 2
+        else {
+            NFCLog.error("Japan IC invalid balance block=\((blocks.first ?? Data()).hexString)", source: "JapanIC")
             throw NFCError.invalidResponse(blocks.first ?? Data())
         }
 
-        return Int(Data(block[JapanICConstants.balanceOffset ..< JapanICConstants.balanceOffset + 2]).uint16LE)
+        let balanceBytes = Data(block[JapanICConstants.balanceOffset ..< JapanICConstants.balanceOffset + 2])
+        let balance = Int(balanceBytes.uint16LE)
+        NFCLog.debug(
+            "Japan IC balance block=\(block.hexString) offset=\(JapanICConstants.balanceOffset) bytes=\(balanceBytes.hexString) value=\(balance)",
+            source: "JapanIC"
+        )
+        return balance
     }
 
     private func readHistory() async -> [TransitTransaction] {
         var transactions: [TransitTransaction] = []
+        NFCLog.debug("Japan IC history read start service=\(JapanICConstants.historyServiceCode.hexString) maxBlocks=\(JapanICConstants.maxHistoryBlocks)", source: "JapanIC")
 
         // Read history blocks one at a time; stop on first failure
         for i in 0 ..< JapanICConstants.maxHistoryBlocks {
@@ -87,18 +104,30 @@ public struct JapanICReader: Sendable {
                     serviceCode: JapanICConstants.historyServiceCode,
                     blockList: [FeliCaFrame.blockListElement(blockNumber: UInt16(i))]
                 )
-                guard let block = blocks.first, block.count == 16 else { break }
+                guard let block = blocks.first, block.count == 16 else {
+                    NFCLog.debug("Japan IC history block #\(i) invalid=\((blocks.first ?? Data()).hexString)", source: "JapanIC")
+                    break
+                }
+                NFCLog.debug("Japan IC history block #\(i)=\(block.hexString)", source: "JapanIC")
 
                 // Skip empty blocks (all zeros)
-                if block.allSatisfy({ $0 == 0 }) { continue }
+                if block.allSatisfy({ $0 == 0 }) {
+                    NFCLog.debug("Japan IC history block #\(i) empty", source: "JapanIC")
+                    continue
+                }
 
                 if let tx = parseHistoryBlock(block) {
+                    NFCLog.debug("Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter) entry=\(tx.entryStation ?? "") exit=\(tx.exitStation ?? "")", source: "JapanIC")
                     transactions.append(tx)
+                } else {
+                    NFCLog.debug("Japan IC history block #\(i) skipped by parser", source: "JapanIC")
                 }
             } catch {
+                NFCLog.debug("Japan IC history block #\(i) read stopped: \(error.localizedDescription)", source: "JapanIC")
                 break
             }
         }
+        NFCLog.debug("Japan IC history read complete transactions=\(transactions.count)", source: "JapanIC")
 
         return transactions
     }

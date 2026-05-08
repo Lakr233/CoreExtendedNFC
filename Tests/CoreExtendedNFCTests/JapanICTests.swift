@@ -14,10 +14,10 @@ struct JapanICTests {
 
     @Test
     func `Read balance from Japan IC card`() async throws {
-        // Build a 16-byte balance block with 1,234 yen at offset 0x0A (LE)
+        // Build a 16-byte balance block with 1,234 yen at offset 0x0B (LE)
         var balanceBlock = Data(repeating: 0x00, count: 16)
-        balanceBlock[0x0A] = 0xD2 // 1234 & 0xFF
-        balanceBlock[0x0B] = 0x04 // 1234 >> 8
+        balanceBlock[0x0B] = 0xD2 // 1234 & 0xFF
+        balanceBlock[0x0C] = 0x04 // 1234 >> 8
 
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0x00, 0x10])],
@@ -38,9 +38,8 @@ struct JapanICTests {
     @Test
     func `Read balance and history`() async throws {
         var balanceBlock = Data(repeating: 0x00, count: 16)
-        balanceBlock[0x0A] = 0xE8 // 500 & 0xFF = 0xF4... wait, 500 = 0x01F4
-        balanceBlock[0x0A] = 0xF4
-        balanceBlock[0x0B] = 0x01
+        balanceBlock[0x0B] = 0xF4
+        balanceBlock[0x0C] = 0x01
 
         // History block: usage=0x01 (trip), date=2024-03-15, balance=500
         var historyBlock = Data(repeating: 0x00, count: 16)

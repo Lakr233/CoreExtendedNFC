@@ -18,6 +18,7 @@ struct KSX6924Tests {
         // SELECT succeeds with FCI containing purse info
         let fci = buildFCI(serial: "1234567890ABCDEF", issueDate: "20200101", expiryDate: "20301231")
         transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // Hyundai SELECT fails
             ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00), // SELECT
             ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00), // GET BALANCE: 10000 KRW
         ]
@@ -36,6 +37,7 @@ struct KSX6924Tests {
         let transport = MockTransport()
         let fci = buildFCI(serial: "AABBCCDD11223344", issueDate: "20210601", expiryDate: "20310601")
         transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // Hyundai SELECT fails
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // T-Money SELECT fails
             ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00), // Cashbee SELECT succeeds
             ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00), // GET BALANCE: 5000 KRW
@@ -51,8 +53,10 @@ struct KSX6924Tests {
     @Test
     func `All AIDs fail throws error`() async {
         let transport = MockTransport()
-        // All 4 SELECTs fail
+        // All SELECTs fail
         transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
@@ -72,6 +76,7 @@ struct KSX6924Tests {
         let transport = MockTransport()
         let fci = buildMinimalFCI()
         transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // Hyundai SELECT fails
             ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00), // SELECT
             ResponseAPDU(data: Data([0x00, 0x01, 0x86, 0xA0]), sw1: 0x90, sw2: 0x00), // 100000 KRW
         ]

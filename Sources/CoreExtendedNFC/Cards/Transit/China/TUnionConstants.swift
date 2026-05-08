@@ -25,6 +25,7 @@ enum TUnionConstants {
     static let GET_BALANCE_CLA: UInt8 = 0x80
     static let GET_BALANCE_INS: UInt8 = 0x5C
     static let GET_BALANCE_P1: UInt8 = 0x00
+    static let GET_NEGATIVE_BALANCE_P1: UInt8 = 0x01
     static let GET_BALANCE_P2: UInt8 = 0x02
     static let GET_BALANCE_LE: UInt8 = 0x04
 

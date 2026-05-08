@@ -21,9 +21,11 @@ public struct KSX6924Reader: Sendable {
 
     /// Try all known KS X 6924 AIDs and read balance from the first match.
     public func readBalance() async throws -> TransitBalance {
+        NFCLog.info("KSX6924 balance read start", source: "KSX6924")
         let (cardName, fciData) = try await selectCard()
         let purseInfo = parsePurseInfo(fciData)
         let balance = try await readRawBalance()
+        NFCLog.info("KSX6924 balance read complete card=\(cardName) balance=\(balance)", source: "KSX6924")
 
         return TransitBalance(
             serialNumber: purseInfo.serial,
@@ -37,10 +39,12 @@ public struct KSX6924Reader: Sendable {
 
     /// Read balance + transaction records.
     public func readBalanceAndHistory() async throws -> TransitBalance {
+        NFCLog.info("KSX6924 balance/history read start", source: "KSX6924")
         let (cardName, fciData) = try await selectCard()
         let purseInfo = parsePurseInfo(fciData)
         let balance = try await readRawBalance()
         let transactions = await readRecords()
+        NFCLog.info("KSX6924 balance/history read complete card=\(cardName) balance=\(balance) transactions=\(transactions.count)", source: "KSX6924")
 
         return TransitBalance(
             serialNumber: purseInfo.serial,
@@ -58,10 +62,13 @@ public struct KSX6924Reader: Sendable {
     /// Try each known AID until one succeeds. Returns (cardName, fciResponseData).
     private func selectCard() async throws -> (String, Data) {
         for (name, aid) in KSX6924Constants.allAIDs {
+            NFCLog.debug("KSX6924 SELECT AID \(aid.hexString) (\(name))", source: "KSX6924")
             let response = try await transport.sendAPDUWithChaining(CommandAPDU.select(aid: aid))
             if response.isSuccess {
+                NFCLog.debug("KSX6924 SELECT AID success card=\(name) data=\(response.data.hexString)", source: "KSX6924")
                 return (name, response.data)
             }
+            NFCLog.debug("KSX6924 SELECT AID rejected card=\(name) sw=\(String(format: "%02X%02X", response.sw1, response.sw2))", source: "KSX6924")
         }
         throw NFCError.unsupportedOperation("No supported KS X 6924 AID found on this card")
     }
@@ -75,6 +82,7 @@ public struct KSX6924Reader: Sendable {
             le: KSX6924Constants.BALANCE_RESP_LEN
         )
         let response = try await transport.sendAPDUWithChaining(apdu)
+        NFCLog.debug("KSX6924 GET BALANCE sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "KSX6924")
         guard response.isSuccess, response.data.count >= 4 else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
@@ -95,6 +103,7 @@ public struct KSX6924Reader: Sendable {
                 )
                 let response = try await transport.sendAPDUWithChaining(apdu)
                 guard response.isSuccess, response.data.count >= 14 else { break }
+                NFCLog.debug("KSX6924 record #\(i)=\(response.data.hexString)", source: "KSX6924")
 
                 if let tx = Self.parseRecord(response.data) {
                     transactions.append(tx)
