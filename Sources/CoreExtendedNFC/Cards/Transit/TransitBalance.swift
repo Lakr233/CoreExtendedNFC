@@ -4,9 +4,9 @@ import Foundation
 public struct TransitBalance: Sendable, Equatable, Codable {
     /// Card identifier / serial number (hex string).
     public let serialNumber: String
-    /// Current balance in the smallest currency unit (yen, won, fen).
+    /// Current balance in the card currency's stored unit, such as yen, won, dollars, cents, or fen.
     public let balanceRaw: Int
-    /// ISO 4217 currency code: "JPY", "KRW", "CNY".
+    /// ISO 4217 currency code, such as "JPY", "KRW", "CNY", "HKD", "SGD", "NZD", or "TWD".
     public let currencyCode: String
     /// Card type name for display (e.g. "Suica", "T-Money").
     public let cardName: String
@@ -24,7 +24,7 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         cardName: String,
         validFrom: Date? = nil,
         validUntil: Date? = nil,
-        transactions: [TransitTransaction] = []
+        transactions: [TransitTransaction] = [],
     ) {
         self.serialNumber = serialNumber
         self.balanceRaw = balanceRaw
@@ -45,6 +45,8 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         case "CNY":
             let yuan = Double(balanceRaw) / 100.0
             return String(format: "¥%.2f", yuan)
+        case "TWD":
+            return "NT$\(balanceRaw)"
         case "HKD":
             let dollars = Double(balanceRaw) / 100.0
             return String(format: "HK$%.2f", dollars)
@@ -74,6 +76,12 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
     public let entryStation: String?
     /// Exit station code (hex string), if available.
     public let exitStation: String?
+    /// Source record number, if the card exposes cyclic record slots.
+    public let recordNumber: Int?
+    /// Raw record payload, if retained by the reader.
+    public let rawData: Data?
+    /// Reader-specific decoded fields.
+    public let metadata: [String: String]
 
     public init(
         type: TransactionType,
@@ -81,7 +89,10 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
         balanceAfter: Int,
         date: Date? = nil,
         entryStation: String? = nil,
-        exitStation: String? = nil
+        exitStation: String? = nil,
+        recordNumber: Int? = nil,
+        rawData: Data? = nil,
+        metadata: [String: String] = [:],
     ) {
         self.type = type
         self.amount = amount
@@ -89,6 +100,9 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
         self.date = date
         self.entryStation = entryStation
         self.exitStation = exitStation
+        self.recordNumber = recordNumber
+        self.rawData = rawData
+        self.metadata = metadata
     }
 }
 

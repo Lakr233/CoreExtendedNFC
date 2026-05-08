@@ -51,6 +51,25 @@ struct KSX6924Tests {
     }
 
     @Test
+    func `Continues AID selection after thrown status word`() async throws {
+        let transport = MockTransport()
+        transport.apduFailures = [
+            0: .unexpectedStatusWord(0x6A, 0x82),
+        ]
+        let fci = buildFCI(serial: "1234567890ABCDEF", issueDate: "20200101", expiryDate: "20301231")
+        transport.apduResponses = [
+            ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00),
+        ]
+
+        let reader = KSX6924Reader(transport: transport)
+        let result = try await reader.readBalance()
+
+        #expect(result.cardName == "T-Money")
+        #expect(result.balanceRaw == 10000)
+    }
+
+    @Test
     func `All AIDs fail throws error`() async {
         let transport = MockTransport()
         // All SELECTs fail
@@ -99,7 +118,7 @@ struct KSX6924Tests {
         let calendar = Calendar(identifier: .gregorian)
         let components = try calendar.dateComponents(
             in: #require(TimeZone(identifier: "Asia/Seoul")),
-            from: #require(date)
+            from: #require(date),
         )
         #expect(components.year == 2025)
         #expect(components.month == 12)

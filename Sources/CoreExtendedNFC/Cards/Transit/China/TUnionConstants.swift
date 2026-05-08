@@ -5,6 +5,7 @@ import Foundation
 /// ## References
 /// - T-Union AID: A000000632010105
 /// - Metrodroid ChinaTransitData / TUnionTransitData
+/// - FareBot ChinaCard / TUnionTransitInfo
 /// - NFSee: https://github.com/niceda/NFSee
 ///
 /// ## Note
@@ -16,8 +17,20 @@ enum TUnionConstants {
 
     // MARK: - File IDs
 
-    /// Main file containing balance, serial, and validity info.
+    /// Main file containing serial and validity info.
     static let balanceFileID = Data([0x00, 0x15])
+
+    /// T-Union transaction record SFI. CardBal documents this as a circular
+    /// 0x17-byte transaction/top-up record file.
+    static let transactionSFI: UInt8 = 0x18
+    static let transactionRecordLength: UInt8 = 0x17
+    static let maxTransactionRecords = 10
+
+    /// T-Union transit activity SFI. CardBal documents this as a circular
+    /// 0x30-byte travel activity record file.
+    static let transitActivitySFI: UInt8 = 0x1E
+    static let transitActivityRecordLength: UInt8 = 0x30
+    static let maxTransitActivityRecords = 30
 
     // MARK: - GET BALANCE Command
 
@@ -40,4 +53,15 @@ enum TUnionConstants {
     /// Validity end: bytes 24-27 (4 bytes hex date YYYYMMDD).
     static let validUntilOffset = 24
     static let validUntilLength = 4
+
+    // MARK: - Transaction Record Layout
+
+    static let transactionAmountOffset = 5
+    static let transactionAmountLength = 4
+    static let transactionTypeOffset = 9
+    static let transactionStationOffset = 10
+    static let transactionStationLength = 6
+    static let transactionDateTimeOffset = 16
+    static let transactionDateTimeLength = 7
+    static let topUpType: UInt8 = 0x02
 }

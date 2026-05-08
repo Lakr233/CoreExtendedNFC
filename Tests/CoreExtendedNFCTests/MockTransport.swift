@@ -8,10 +8,12 @@ final class MockTransport: ISO7816TagTransporting, @unchecked Sendable {
     let identifier: Data
     var responses: [Data] = []
     var apduResponses: [ResponseAPDU] = []
+    var apduFailures: [Int: NFCError] = [:]
     var sentCommands: [Data] = []
     var sentAPDUs: [CommandAPDU] = []
     private var responseIndex = 0
     private var apduResponseIndex = 0
+    private var apduCallIndex = 0
 
     init(identifier: Data = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])) {
         self.identifier = identifier
@@ -29,6 +31,11 @@ final class MockTransport: ISO7816TagTransporting, @unchecked Sendable {
 
     func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
         sentAPDUs.append(apdu)
+        let callIndex = apduCallIndex
+        apduCallIndex += 1
+        if let error = apduFailures[callIndex] {
+            throw error
+        }
         guard apduResponseIndex < apduResponses.count else {
             throw NFCError.tagConnectionLost
         }
@@ -44,6 +51,7 @@ final class MockTransport: ISO7816TagTransporting, @unchecked Sendable {
     func reset() {
         responseIndex = 0
         apduResponseIndex = 0
+        apduCallIndex = 0
         sentCommands.removeAll()
         sentAPDUs.removeAll()
     }

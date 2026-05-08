@@ -2,7 +2,7 @@
 //
 // ## References
 // - CJRC system code 0x0003
-// - Balance: service 0x008B, 1 block, bytes 0x0A-0x0B little-endian (JPY)
+// - Balance: service 0x008B, 1 block, bytes 0x0B-0x0C little-endian (JPY)
 // - History: service 0x090F, up to 20 blocks (cyclic)
 // - Date encoding: 2 bytes BE, year(7) month(4) day(5), base 2000
 @testable import CoreExtendedNFC
@@ -22,7 +22,7 @@ struct JapanICTests {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0x00, 0x10])],
             serviceBlocks: [Data([0x8B, 0x00]): [balanceBlock]],
-            systemCode: Data([0x00, 0x03])
+            systemCode: Data([0x00, 0x03]),
         )
 
         let reader = JapanICReader(transport: transport)
@@ -64,7 +64,7 @@ struct JapanICTests {
                 Data([0x8B, 0x00]): [balanceBlock],
                 Data([0x0F, 0x09]): [historyBlock],
             ],
-            systemCode: Data([0x00, 0x03])
+            systemCode: Data([0x00, 0x03]),
         )
 
         let reader = JapanICReader(transport: transport)
@@ -84,7 +84,7 @@ struct JapanICTests {
     func `System code mismatch throws error`() async {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [:],
-            systemCode: Data([0x88, 0xB4]) // wrong system code
+            systemCode: Data([0x88, 0xB4]), // wrong system code
         )
 
         let reader = JapanICReader(transport: transport)
@@ -97,7 +97,7 @@ struct JapanICTests {
     func `Balance service unavailable throws error`() async {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0xFF, 0xFF])], // service not found
-            systemCode: Data([0x00, 0x03])
+            systemCode: Data([0x00, 0x03]),
         )
 
         let reader = JapanICReader(transport: transport)
@@ -122,7 +122,7 @@ struct JapanICTests {
         let calendar = Calendar(identifier: .gregorian)
         let components = try calendar.dateComponents(
             in: #require(TimeZone(identifier: "Asia/Tokyo")),
-            from: #require(date)
+            from: #require(date),
         )
         #expect(components.year == 2025)
         #expect(components.month == 1)
@@ -189,7 +189,7 @@ struct JapanICTests {
         let transport = MockFeliCaServiceTransport(
             serviceVersions: [Data([0x8B, 0x00]): Data([0x00, 0x10])],
             serviceBlocks: [Data([0x8B, 0x00]): [balanceBlock]],
-            systemCode: Data([0x00, 0x03])
+            systemCode: Data([0x00, 0x03]),
         )
 
         let reader = JapanICReader(transport: transport)

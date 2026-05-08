@@ -7,12 +7,20 @@ public struct OctopusReader: Sendable {
 
     public init(transport: any FeliCaTagTransporting) {
         self.transport = transport
-        balanceOffset = OctopusConstants.currentBalanceRawOffset
+        balanceOffset = OctopusConstants.balanceRawOffset(for: Date())
     }
 
     public init(
         transport: any FeliCaTagTransporting,
-        balanceOffset: Int
+        scanDate: Date,
+    ) {
+        self.transport = transport
+        balanceOffset = OctopusConstants.balanceRawOffset(for: scanDate)
+    }
+
+    public init(
+        transport: any FeliCaTagTransporting,
+        balanceOffset: Int,
     ) {
         self.transport = transport
         self.balanceOffset = balanceOffset
@@ -24,7 +32,7 @@ public struct OctopusReader: Sendable {
 
         NFCLog.debug("Octopus request service balance=\(OctopusConstants.balanceServiceCode.hexString)", source: "Octopus")
         let versions = try await transport.requestService(
-            nodeCodeList: [OctopusConstants.balanceServiceCode]
+            nodeCodeList: [OctopusConstants.balanceServiceCode],
         )
         NFCLog.debug("Octopus balance service versions=\(versions.map(\.hexString).joined(separator: ","))", source: "Octopus")
         guard let version = versions.first, version != Data([0xFF, 0xFF]) else {
@@ -33,7 +41,7 @@ public struct OctopusReader: Sendable {
 
         let blocks = try await transport.readWithoutEncryption(
             serviceCode: OctopusConstants.balanceServiceCode,
-            blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
+            blockList: [FeliCaFrame.blockListElement(blockNumber: 0)],
         )
         guard let block = blocks.first, block.count >= 4 else {
             NFCLog.error("Octopus invalid balance block=\((blocks.first ?? Data()).hexString)", source: "Octopus")
@@ -44,7 +52,7 @@ public struct OctopusReader: Sendable {
         let balanceCents = Self.balanceCents(rawValue: rawValue, offset: balanceOffset)
         NFCLog.debug(
             "Octopus balance block=\(block.hexString) raw=\(rawValue) offset=\(balanceOffset) cents=\(balanceCents)",
-            source: "Octopus"
+            source: "Octopus",
         )
         NFCLog.info("Octopus balance read complete balanceCents=\(balanceCents)", source: "Octopus")
 
@@ -52,7 +60,7 @@ public struct OctopusReader: Sendable {
             serialNumber: transport.identifier.hexString,
             balanceRaw: balanceCents,
             currencyCode: "HKD",
-            cardName: "Octopus"
+            cardName: "Octopus",
         )
     }
 
@@ -64,7 +72,7 @@ public struct OctopusReader: Sendable {
         NFCLog.debug("Octopus system code=\(transport.systemCode.hexString) expected=\(OctopusConstants.systemCode.hexString)", source: "Octopus")
         guard transport.systemCode == OctopusConstants.systemCode else {
             throw NFCError.unsupportedOperation(
-                "Expected FeliCa system code 0x8008 (Octopus), got \(transport.systemCode.hexString)"
+                "Expected FeliCa system code 0x8008 (Octopus), got \(transport.systemCode.hexString)",
             )
         }
     }
