@@ -23,7 +23,7 @@ struct OctopusTests {
     }
 
     @Test
-    func `Read Octopus balance with expanded convenience limit offset`() async throws {
+    func `Read Octopus balance uses Y Mobile and CardBal raw offset`() async throws {
         var block = Data(repeating: 0x00, count: 16)
         block[0] = 0x00
         block[1] = 0x00
@@ -38,19 +38,13 @@ struct OctopusTests {
 
         let result = try await OctopusReader(
             transport: transport,
-            balanceOffset: OctopusConstants.expandedConvenienceLimitBalanceRawOffset,
+            balanceOffset: OctopusConstants.defaultBalanceRawOffset,
         ).readBalance()
 
-        #expect(result.balanceRaw == 41190)
+        #expect(result.balanceRaw == 42690)
         #expect(result.currencyCode == "HKD")
         #expect(result.cardName == "Octopus")
-        #expect(result.formattedBalance == "HK$411.90")
-    }
-
-    @Test
-    func `Octopus offset follows card issue date`() {
-        #expect(OctopusConstants.balanceRawOffset(cardIssuedAt: date(year: 2017, month: 9, day: 30)) == 350)
-        #expect(OctopusConstants.balanceRawOffset(cardIssuedAt: date(year: 2017, month: 10, day: 1)) == 500)
+        #expect(result.formattedBalance == "HK$426.90")
     }
 
     @Test
@@ -87,15 +81,5 @@ struct OctopusTests {
             serviceBlocks: [Data([0x17, 0x01]): [block]],
             systemCode: Data([0x80, 0x08]),
         )
-    }
-
-    private func date(year: Int, month: Int, day: Int) -> Date {
-        var components = DateComponents()
-        components.calendar = Calendar(identifier: .gregorian)
-        components.timeZone = TimeZone(identifier: "Asia/Hong_Kong")
-        components.year = year
-        components.month = month
-        components.day = day
-        return components.date!
     }
 }

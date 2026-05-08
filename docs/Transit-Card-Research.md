@@ -37,6 +37,24 @@ Useful CardBal addresses:
 | T-Union negative purse   | `0x1001D794C` | Sends `80 5C 01 02`, `Le=04`.                                                                                           |
 | KSX6924 AID set          | `0x1001726B8` | Includes Hyundai, T-Money, Cashbee, EB Card, Snapper/MOIBA, and K-Cash AIDs.                                            |
 
+## Y Mobile IDA Source
+
+Y Mobile was inspected through the local IDA MCP instance:
+
+- IDB: `/Users/qaq/Desktop/Payload/Runner.app/Frameworks/App.framework/App.i64`
+- MCP endpoint: `http://127.0.0.1:13339/mcp`
+- Binary: `App.framework/App`
+- Flutter source marker: `package:card_reader_flutter/cardreader/Types/OctopusReader.dart`
+
+Useful Y Mobile addresses:
+
+| Area                    |    Address | Finding                                                                  |
+| ----------------------- | ---------: | ------------------------------------------------------------------------ |
+| Octopus source marker   | `0x437ef0` | Dart AOT string for `OctopusReader.dart`.                                |
+| Octopus command marker  | `0x4a6b10` | String `060080080117`, matching FeliCa system `8008` and service `0117`. |
+| Octopus balance formula | `0x24A910` | Parses response data, then computes `(raw - 350) / 10` as HKD.           |
+| Raw offset instruction  | `0x24A9C0` | `SUB X1, X0, #0x15E`, where `0x15E` is decimal `350`.                    |
+
 ## Implemented Fixes
 
 ### Japan IC, ICOCA, Nimoca
@@ -59,13 +77,12 @@ CardBal, Metrodroid, FareBot, and TRETJapanNFCReader agree on the card path:
 - Balance service: `0117`, encoded for CoreNFC as `17 01`
 - Balance block: block 0
 - Raw value: first four bytes, big-endian
-- Default physical-card offset: `350`
-- Expanded HK$50 convenience-limit offset: `500`
+- Live-read raw offset: `350`
 - Formula in HKD cents: `(raw - offset) * 10`
 
-Octopus' official FAQ states the HK$50 convenience limit applies to On-Loan Octopus cards issued on or after 2017-10-01 and mobile Octopus products. Older physical cards retain the HK$35 convenience limit. This makes card issue class the deciding signal for the balance offset. Metrodroid and FareBot use scan time as a proxy, which is useful for synthetic tests and weaker for live physical-card reads.
+Octopus' official FAQ states the HK$50 convenience limit applies to On-Loan Octopus cards issued on or after 2017-10-01 and mobile Octopus products. CardBal and Y Mobile both still use raw offset `350` for service `0117` live balance arithmetic. Metrodroid and FareBot use scan time as a `350`/`500` proxy, which is useful for synthetic tests and weaker for live physical-card reads.
 
-CoreExtendedNFC adds `OctopusReader`, dispatches FeliCa system code `8008` to that reader, formats HKD balances, and logs raw block details. The unified `TransitBalance.balanceRaw` value stores cents. The reader defaults to offset `350` because iOS live reads currently expose service `0117` without a reliable issue-class signal. Callers with confirmed post-2017/mobile card context can pass offset `500` explicitly.
+CoreExtendedNFC adds `OctopusReader`, dispatches FeliCa system code `8008` to that reader, formats HKD balances, and logs raw block details. The unified `TransitBalance.balanceRaw` value stores cents. The reader uses offset `350`, matching CardBal, Y Mobile, and the physical-card scan where raw `920` displays HK$57.00.
 
 ### China T-Union, Shenzhen Tong, Nanjing
 

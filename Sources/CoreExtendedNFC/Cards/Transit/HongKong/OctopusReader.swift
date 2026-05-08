@@ -12,14 +12,6 @@ public struct OctopusReader: Sendable {
 
     public init(
         transport: any FeliCaTagTransporting,
-        cardIssueDate: Date,
-    ) {
-        self.transport = transport
-        balanceOffset = OctopusConstants.balanceRawOffset(cardIssuedAt: cardIssueDate)
-    }
-
-    public init(
-        transport: any FeliCaTagTransporting,
         balanceOffset: Int,
     ) {
         self.transport = transport
