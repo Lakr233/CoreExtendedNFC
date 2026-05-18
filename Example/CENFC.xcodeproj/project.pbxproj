@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2A812599E25F736ED69BEC33 /* LookInsideServer in Frameworks */ = {isa = PBXBuildFile; productRef = 2A7586257684D361DB10F4B6 /* LookInsideServer */; };
 		504CD4592F608D290015F2E4 /* ColorfulX in Frameworks */ = {isa = PBXBuildFile; productRef = 504CD4582F608D290015F2E4 /* ColorfulX */; };
 		504CD45F2F608D480015F2E4 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 504CD45E2F608D480015F2E4 /* SnapKit */; };
 		504CD4622F608D540015F2E4 /* SwifterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 504CD4612F608D540015F2E4 /* SwifterSwift */; };
@@ -64,11 +65,15 @@
 		};
 		50AA00092F70000100AA0009 /* CENFCTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = CENFCTests;
 			sourceTree = "<group>";
 		};
 		50BB00092F80000100BB0009 /* CENFCUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = CENFCUITests;
 			sourceTree = "<group>";
 		};
@@ -86,6 +91,7 @@
 				504CD45F2F608D480015F2E4 /* SnapKit in Frameworks */,
 				504CD4622F608D540015F2E4 /* SwifterSwift in Frameworks */,
 				504CD4592F608D290015F2E4 /* ColorfulX in Frameworks */,
+				2A812599E25F736ED69BEC33 /* LookInsideServer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -161,6 +167,7 @@
 				504CD4662F608D8A0015F2E4 /* CoreExtendedNFC */,
 				5067F67A2F6169DB00633731 /* SPIndicator */,
 				508966112F7005B200F40110 /* ConfigurableKit */,
+				2A7586257684D361DB10F4B6 /* LookInsideServer */,
 			);
 			productName = CENFC;
 			productReference = 501BBD002F5D768E00C52667 /* CENFC.app */;
@@ -183,8 +190,6 @@
 				50AA00092F70000100AA0009 /* CENFCTests */,
 			);
 			name = CENFCTests;
-			packageProductDependencies = (
-			);
 			productName = CENFCTests;
 			productReference = 50AA00022F70000100AA0002 /* CENFCTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -206,8 +211,6 @@
 				50BB00092F80000100BB0009 /* CENFCUITests */,
 			);
 			name = CENFCUITests;
-			packageProductDependencies = (
-			);
 			productName = CENFCUITests;
 			productReference = 50BB00022F80000100BB0002 /* CENFCUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -253,6 +256,7 @@
 				504CD4682F608D8A0015F2E4 /* XCLocalSwiftPackageReference ".." */,
 				5067F6792F6169DB00633731 /* XCRemoteSwiftPackageReference "SPIndicator" */,
 				508966102F7005B200F40110 /* XCRemoteSwiftPackageReference "ConfigurableKit" */,
+				74E5A552E8D49D4D2EBB38F5 /* XCRemoteSwiftPackageReference "LookInside-Release" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 501BBD012F5D768E00C52667 /* Products */;
@@ -508,6 +512,10 @@
 				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = (
+					"$(inherited)",
+					"LookInsideServer*",
+				);
 				GCC_OPTIMIZATION_LEVEL = s;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CENFC/Resources/Info.plist;
@@ -711,9 +719,22 @@
 				minimumVersion = 4.1.1;
 			};
 		};
+		74E5A552E8D49D4D2EBB38F5 /* XCRemoteSwiftPackageReference "LookInside-Release" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/LookInsideApp/LookInside-Release.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.2.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		2A7586257684D361DB10F4B6 /* LookInsideServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 74E5A552E8D49D4D2EBB38F5 /* XCRemoteSwiftPackageReference "LookInside-Release" */;
+			productName = LookInsideServer;
+		};
 		504CD4582F608D290015F2E4 /* ColorfulX */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 504CD4572F608D290015F2E4 /* XCRemoteSwiftPackageReference "ColorfulX" */;
