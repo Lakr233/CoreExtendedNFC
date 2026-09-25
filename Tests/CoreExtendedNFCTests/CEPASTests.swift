@@ -79,8 +79,8 @@ struct CEPASTests {
 
         let unknown = try #require(result.transactions.first)
         #expect(unknown.type == .unknown)
-        #expect(unknown.amount == 1)
-        #expect(unknown.metadata["balanceChange"] == "-1")
+        #expect(unknown.amount == nil)
+        #expect(unknown.metadata["balanceChange"] == nil)
         #expect(unknown.metadata["transactionType"] == "AB")
         #expect(unknown.metadata["userData"] == nil)
         #expect(unknown.rawData == opaque)
@@ -90,6 +90,44 @@ struct CEPASTests {
         #expect(recharge.type == .topup)
         #expect(recharge.metadata["transactionType"] == "75")
         #expect(recharge.metadata["userData"]?.trimmingCharacters(in: .whitespaces) == "TOPUP")
+    }
+
+    @Test
+    func `Creation events do not expose amounts while zero-value purchases remain numeric`() async throws {
+        let creation = [UInt8(0x05), 0xF0].map { type in
+            Data([type, 0x7F, 0xFF, 0xFF, 0, 0, 0, 0] + Array("NEW CARD".utf8))
+        }
+        let purchase = Data([0x01, 0, 0, 0, 0, 0, 0, 0] + Array("SHOP    ".utf8))
+        let transport = transport(purse: purse(recordCount: 3), history: [creation[0] + creation[1] + purchase])
+
+        let result = try await CEPASReader(transport: transport).readBalanceAndHistory()
+
+        for (transaction, raw) in zip(result.transactions.prefix(2), creation) {
+            #expect(transaction.type == .unknown)
+            #expect(transaction.amount == nil)
+            #expect(transaction.metadata["balanceChange"] == nil)
+            #expect(transaction.metadata["transactionType"] == String(format: "%02X", raw[0]))
+            #expect(transaction.rawData == raw)
+        }
+        let zeroValuePurchase = try #require(result.transactions.last)
+        #expect(zeroValuePurchase.type == .purchase)
+        #expect(zeroValuePurchase.amount == 0)
+        #expect(zeroValuePurchase.metadata["balanceChange"] == "0")
+    }
+
+    @Test
+    func `Optional transaction amounts decode old numeric JSON and retain missing values`() throws {
+        let oldJSON = Data(#"{"type":"trip","amount":250,"balanceAfter":244,"metadata":{}}"#.utf8)
+        let oldTransaction = try JSONDecoder().decode(TransitTransaction.self, from: oldJSON)
+        #expect(oldTransaction.amount == 250)
+        #expect(oldTransaction.balanceAfter == 244)
+
+        let newJSON = Data(#"{"type":"unknown","metadata":{"transactionType":"05"}}"#.utf8)
+        let newTransaction = try JSONDecoder().decode(TransitTransaction.self, from: newJSON)
+        #expect(newTransaction.amount == nil)
+        #expect(newTransaction.balanceAfter == nil)
+        let restored = try JSONDecoder().decode(TransitTransaction.self, from: JSONEncoder().encode(newTransaction))
+        #expect(restored == newTransaction)
     }
 
     @Test

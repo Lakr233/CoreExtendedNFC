@@ -70,8 +70,8 @@ public struct TransitBalance: Sendable, Equatable, Codable {
 public struct TransitTransaction: Sendable, Equatable, Codable {
     /// Transaction type.
     public let type: TransactionType
-    /// Amount in smallest currency unit.
-    public let amount: Int
+    /// Amount in smallest currency unit, or nil when no monetary amount is exposed or understood.
+    public let amount: Int?
     /// Balance after this transaction, or nil when the source record does not expose it.
     public let balanceAfter: Int?
     /// Transaction date/time, if available.
@@ -89,7 +89,7 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
 
     public init(
         type: TransactionType,
-        amount: Int,
+        amount: Int? = nil,
         balanceAfter: Int? = nil,
         date: Date? = nil,
         entryStation: String? = nil,

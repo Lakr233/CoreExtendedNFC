@@ -2,8 +2,9 @@ import Foundation
 
 /// Experimental read-only reader for traditional CEPAS purse 3 and its recent log.
 ///
-/// iOS tag discovery and physical-card compatibility remain unverified. SimplyGo
-/// account-based history is not supported. Call before application-refinement probes.
+/// One traditional EZ-Link card has been read on iPhone Air with iOS 27; other
+/// cards and discovery configurations remain unverified. SimplyGo account-based
+/// history is not supported. Call before application-refinement probes.
 public struct CEPASReader: Sendable {
     private let transport: any ISO7816TagTransporting
     // CEPAS timestamps start at 1995-01-01 00:00 in Singapore (UTC+08:00).
@@ -97,8 +98,12 @@ public struct CEPASReader: Sendable {
         case 0x01: type = .purchase
         default: type = .unknown
         }
-        let change = signedAmount(Data(record[1 ..< 4]))
-        var metadata = ["transactionType": String(format: "%02X", record[0]), "balanceChange": String(change)]
+        // Interpret amount bytes only for recognized monetary records.
+        let change = type == .unknown ? nil : signedAmount(Data(record[1 ..< 4]))
+        var metadata = ["transactionType": String(format: "%02X", record[0])]
+        if let change {
+            metadata["balanceChange"] = String(change)
+        }
         var entry: String?
         var exit: String?
         let userData = Data(record[8 ..< 16])
@@ -116,7 +121,7 @@ public struct CEPASReader: Sendable {
         }
         return TransitTransaction(
             type: type,
-            amount: abs(change),
+            amount: change.map { abs($0) },
             date: epoch.addingTimeInterval(Double(Data(record[4 ..< 8]).uint32BE)),
             entryStation: entry,
             exitStation: exit,

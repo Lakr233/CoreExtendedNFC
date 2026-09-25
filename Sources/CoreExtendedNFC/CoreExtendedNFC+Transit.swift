@@ -76,7 +76,8 @@ extension CoreExtendedNFC {
 
     /// Experimentally read traditional Singapore CEPAS balance and recent history.
     ///
-    /// iOS discovery and physical-card reads are unverified; SimplyGo history is unsupported.
+    /// Read successfully on one traditional EZ-Link card using iPhone Air; other variants remain unverified.
+    /// SimplyGo account-based history is unsupported.
     /// Invoke directly after scanning, before `refineCardInfo` changes the selected application.
     public static func readSingaporeTransitBalance(
         transport: any ISO7816TagTransporting

@@ -162,7 +162,7 @@ public struct JapanICReader: Sendable {
 
         return TransitTransaction(
             type: txType,
-            amount: 0, // Individual trip fare not stored in standard history
+            amount: nil, // Individual trip fare not stored in standard history
             balanceAfter: balanceAfter,
             date: date,
             entryStation: entryStation,

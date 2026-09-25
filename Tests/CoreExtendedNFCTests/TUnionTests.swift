@@ -1,3 +1,6 @@
+import Foundation
+import Testing
+
 // China T-Union transit card test suite.
 //
 // ## References
@@ -6,8 +9,6 @@
 // - Balance: low 31 bits of a 4-byte big-endian CNY fen value
 // - File 0x15: serial (bytes 10-19), validity (bytes 20-27)
 @testable import CoreExtendedNFC
-import Foundation
-import Testing
 
 struct TUnionTests {
     // MARK: - AID Selection
@@ -37,7 +38,7 @@ struct TUnionTests {
     func `T-Union AID not found throws error`() async {
         let transport = MockTransport()
         transport.apduResponses = [
-            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT fails
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82) // SELECT fails
         ]
 
         let reader = TUnionReader(transport: transport)
@@ -213,6 +214,7 @@ struct TUnionTests {
         let first = try #require(result.transactions.first)
         #expect(first.type == .topup)
         #expect(first.amount == 0)
+        #expect(first.balanceAfter == nil)
         #expect(first.entryStation == "200099990040")
         #expect(try #require(first.rawData).hexString == "0002000000000000000220009999004020200115151321")
     }
@@ -321,6 +323,7 @@ struct TUnionTests {
         let tx = try #require(result.transactions.first)
         #expect(tx.type == .purchase)
         #expect(tx.amount == -260)
+        #expect(tx.balanceAfter == nil)
         #expect(tx.recordNumber == 1)
         #expect(tx.entryStation == "010203040506")
         #expect(tx.metadata["source"] == "TUnion SFI 18")
@@ -333,6 +336,18 @@ struct TUnionTests {
         #expect(tx.type == .topup)
         #expect(tx.amount == 10000)
         #expect(tx.recordNumber == 3)
+    }
+
+    @Test
+    func `Undecoded transit activity preserves bytes without invented monetary values`() throws {
+        var record = Data(repeating: 0, count: 0x30)
+        record[0] = 0x01
+        let transaction = try #require(TUnionReader.parseTransitActivityRecord(record, recordNumber: 2))
+
+        #expect(transaction.amount == nil)
+        #expect(transaction.balanceAfter == nil)
+        #expect(transaction.rawData == record)
+        #expect(transaction.metadata["source"] == "TUnion SFI 1E")
     }
 
     @Test
@@ -362,9 +377,15 @@ struct TUnionTests {
         }
 
         // Valid from at offset 20: 2020-01-01
-        data[20] = 0x20; data[21] = 0x20; data[22] = 0x01; data[23] = 0x01
+        data[20] = 0x20
+        data[21] = 0x20
+        data[22] = 0x01
+        data[23] = 0x01
         // Valid until at offset 24: 2030-12-31
-        data[24] = 0x20; data[25] = 0x30; data[26] = 0x12; data[27] = 0x31
+        data[24] = 0x20
+        data[25] = 0x30
+        data[26] = 0x12
+        data[27] = 0x31
 
         return data
     }
@@ -411,16 +432,18 @@ struct TUnionTests {
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
         ]
 
-        responses.append(contentsOf: sfi18.map {
-            ResponseAPDU(data: hexToData($0), sw1: 0x90, sw2: 0x00)
-        })
+        responses.append(
+            contentsOf: sfi18.map {
+                ResponseAPDU(data: hexToData($0), sw1: 0x90, sw2: 0x00)
+            })
         if sfi18.count < TUnionConstants.maxTransactionRecords {
             responses.append(ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83))
         }
 
-        responses.append(contentsOf: sfi1E.map {
-            ResponseAPDU(data: hexToData($0), sw1: 0x90, sw2: 0x00)
-        })
+        responses.append(
+            contentsOf: sfi1E.map {
+                ResponseAPDU(data: hexToData($0), sw1: 0x90, sw2: 0x00)
+            })
         if sfi1E.count < TUnionConstants.maxTransitActivityRecords {
             responses.append(ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83))
         }
