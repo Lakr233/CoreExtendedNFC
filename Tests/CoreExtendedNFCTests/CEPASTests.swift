@@ -16,7 +16,7 @@ struct CEPASTests {
             history: [debit + topup, Data(Array(repeating: Array(bus), count: 15).joined()), purchase]
         )
 
-        let result = try await CoreExtendedNFC.readSingaporeTransitBalance(transport: transport)
+        let result = try await CoreExtendedNFC.readTransitBalance(info: CardInfo(type: .smartMX, uid: transport.identifier), transport: transport)
 
         #expect(
             transport.sentAPDUs.map(\.bytes) == [

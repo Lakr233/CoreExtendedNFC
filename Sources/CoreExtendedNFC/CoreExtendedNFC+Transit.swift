@@ -82,17 +82,6 @@ extension CoreExtendedNFC {
         try await KSX6924Reader(transport: transport).readBalanceAndHistory()
     }
 
-    /// Read traditional Singapore CEPAS balance and recent history.
-    ///
-    /// Read successfully on one traditional EZ-Link card using iPhone Air; other variants remain unverified.
-    /// SimplyGo account-based history is unsupported.
-    /// Invoke directly after scanning, before `refineCardInfo` changes the selected application.
-    public static func readSingaporeTransitBalance(
-        transport: any ISO7816TagTransporting
-    ) async throws -> TransitBalance {
-        try await CEPASReader(transport: transport).readBalanceAndHistory()
-    }
-
     /// Read China T-Union balance.
     ///
     /// Note: Beijing Yikatong uses a short AID outside iOS CoreNFC's selectable AID path.
