@@ -1,6 +1,6 @@
 import Foundation
 
-public extension CoreExtendedNFC {
+extension CoreExtendedNFC {
     /// Read transit card balance from a connected tag.
     /// Automatically detects Japan IC (FeliCa), Octopus, T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
     ///
@@ -8,7 +8,7 @@ public extension CoreExtendedNFC {
     /// 1. FeliCa with system code 0x0003 → Japan IC
     /// 2. ISO 7816 → try KS X 6924 AIDs (T-Money, Cashbee, Snapper/MOIBA, K-Cash)
     /// 3. ISO 7816 → try T-Union AID
-    static func readTransitBalance(
+    public static func readTransitBalance(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> TransitBalance {
@@ -54,30 +54,40 @@ public extension CoreExtendedNFC {
     /// Supports Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken.
     /// The consumer app must register system code `0x0003` in Info.plist
     /// under `com.apple.developer.nfc.readersession.felicasystemcodes`.
-    static func readJapanICBalance(
+    public static func readJapanICBalance(
         transport: any FeliCaTagTransporting
     ) async throws -> TransitBalance {
         try await JapanICReader(transport: transport).readBalanceAndHistory()
     }
 
     /// Read Hong Kong Octopus balance.
-    static func readOctopusBalance(
+    public static func readOctopusBalance(
         transport: any FeliCaTagTransporting
     ) async throws -> TransitBalance {
         try await OctopusReader(transport: transport).readBalance()
     }
 
     /// Read Korea T-Money/Cashbee balance + history (KS X 6924).
-    static func readKoreaTransitBalance(
+    public static func readKoreaTransitBalance(
         transport: any ISO7816TagTransporting
     ) async throws -> TransitBalance {
         try await KSX6924Reader(transport: transport).readBalanceAndHistory()
     }
 
+    /// Experimentally read traditional Singapore CEPAS balance and recent history.
+    ///
+    /// iOS discovery and physical-card reads are unverified; SimplyGo history is unsupported.
+    /// Invoke directly after scanning, before `refineCardInfo` changes the selected application.
+    public static func readSingaporeTransitBalance(
+        transport: any ISO7816TagTransporting
+    ) async throws -> TransitBalance {
+        try await CEPASReader(transport: transport).readBalanceAndHistory()
+    }
+
     /// Read China T-Union balance.
     ///
     /// Note: Beijing Yikatong uses a short AID outside iOS CoreNFC's selectable AID path.
-    static func readChinaTransitBalance(
+    public static func readChinaTransitBalance(
         transport: any ISO7816TagTransporting
     ) async throws -> TransitBalance {
         try await TUnionReader(transport: transport).readBalance()

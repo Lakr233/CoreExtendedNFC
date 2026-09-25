@@ -67,7 +67,7 @@ public struct JapanICReader: Sendable {
         )
         NFCLog.debug("Japan IC balance service versions=\(versions.map(\.hexString).joined(separator: ","))", source: "JapanIC")
         guard let version = versions.first,
-              version != Data([0xFF, 0xFF])
+            version != Data([0xFF, 0xFF])
         else {
             throw NFCError.unsupportedOperation("Balance service 0x008B not available on this card")
         }
@@ -78,7 +78,7 @@ public struct JapanICReader: Sendable {
             blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
         )
         guard let block = blocks.first,
-              block.count >= JapanICConstants.balanceOffset + 2
+            block.count >= JapanICConstants.balanceOffset + 2
         else {
             NFCLog.error("Japan IC invalid balance block=\((blocks.first ?? Data()).hexString)", source: "JapanIC")
             throw NFCError.invalidResponse(blocks.first ?? Data())
@@ -117,7 +117,9 @@ public struct JapanICReader: Sendable {
                 }
 
                 if let tx = parseHistoryBlock(block) {
-                    NFCLog.debug("Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter) entry=\(tx.entryStation ?? "") exit=\(tx.exitStation ?? "")", source: "JapanIC")
+                    NFCLog.debug(
+                        "Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter.map(String.init) ?? "unavailable") entry=\(tx.entryStation ?? "") exit=\(tx.exitStation ?? "")",
+                        source: "JapanIC")
                     transactions.append(tx)
                 } else {
                     NFCLog.debug("Japan IC history block #\(i) skipped by parser", source: "JapanIC")
@@ -139,13 +141,14 @@ public struct JapanICReader: Sendable {
         let usageType = block[JapanICConstants.historyUsageType]
 
         // Classify transaction type
-        let txType: TransactionType = if JapanICConstants.topupUsageTypes.contains(usageType) {
-            .topup
-        } else if JapanICConstants.purchaseUsageTypes.contains(usageType) {
-            .purchase
-        } else {
-            .trip
-        }
+        let txType: TransactionType =
+            if JapanICConstants.topupUsageTypes.contains(usageType) {
+                .topup
+            } else if JapanICConstants.purchaseUsageTypes.contains(usageType) {
+                .purchase
+            } else {
+                .trip
+            }
 
         // Parse date: 2 bytes at offset 4, packed as year(7) month(4) day(5)
         let date = parseDate(block)

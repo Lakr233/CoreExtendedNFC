@@ -72,13 +72,13 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
     public let type: TransactionType
     /// Amount in smallest currency unit.
     public let amount: Int
-    /// Balance after this transaction.
-    public let balanceAfter: Int
+    /// Balance after this transaction, or nil when the source record does not expose it.
+    public let balanceAfter: Int?
     /// Transaction date/time, if available.
     public let date: Date?
-    /// Entry station code (hex string), if available.
+    /// Entry station code, if available. Encoding depends on the reader.
     public let entryStation: String?
-    /// Exit station code (hex string), if available.
+    /// Exit station code, if available. Encoding depends on the reader.
     public let exitStation: String?
     /// Source record number, if the card exposes cyclic record slots.
     public let recordNumber: Int?
@@ -90,7 +90,7 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
     public init(
         type: TransactionType,
         amount: Int,
-        balanceAfter: Int,
+        balanceAfter: Int? = nil,
         date: Date? = nil,
         entryStation: String? = nil,
         exitStation: String? = nil,

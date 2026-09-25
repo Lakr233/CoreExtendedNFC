@@ -1,6 +1,134 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ SGD cents" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ SGD cents"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 新加坡分"
+          }
+        }
+      }
+    },
+    "Bus: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bus: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公交线路：%@"
+          }
+        }
+      }
+    },
+    "Exit: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exit: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出站：%@"
+          }
+        }
+      }
+    },
+    "Entry: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entry: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "进站：%@"
+          }
+        }
+      }
+    },
+    "%@ (Singapore time)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (Singapore time)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（新加坡时间）"
+          }
+        }
+      }
+    },
+    "This card was not detected as a compatible Singapore CEPAS card." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This card was not detected as a compatible Singapore CEPAS card."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能将此卡检测为兼容的新加坡 CEPAS 卡。"
+          }
+        }
+      }
+    },
+    "Experimental; iOS card testing pending. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Experimental; iOS card testing pending. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实验功能，iOS 实卡尚待验证。仅读取传统 EZ-Link/CEPAS，不支持 SimplyGo 历史。测试后请导出日志。"
+          }
+        }
+      }
+    },
+    "Test Singapore EZ-Link / CEPAS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test Singapore EZ-Link / CEPAS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试新加坡 EZ-Link / CEPAS"
+          }
+        }
+      }
+    },
     "%@" : {
       "extractionState" : "stale",
       "localizations" : {

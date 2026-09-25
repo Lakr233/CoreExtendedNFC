@@ -9,5 +9,8 @@ public static func readNDEF(info: CardInfo, transport: any NFCTagTransport) asyn
 public static func writeNDEF(_ message: NDEFMessage, info: CardInfo, transport: any NFCTagTransport) async throws
 public static func readPassport(mrzKey: String, dataGroups: [DataGroupId], performActiveAuth: Bool) async throws -> PassportModel
 public static func readTransitBalance(info: CardInfo, transport: any NFCTagTransport) async throws -> TransitBalance
+public static func readSingaporeTransitBalance(transport: any ISO7816TagTransporting) async throws -> TransitBalance
 public static func exportJSON(dump: MemoryDump, prettyPrinted: Bool = true) throws -> String</code></pre>
+<p><code>readSingaporeTransitBalance</code> is an experimental, read-only CEPAS purse and recent-log reader for traditional cards. Call it directly after an ISO 14443 scan, before application refinement. SimplyGo history is unsupported and iOS physical-card support is unverified. See the <a href="../guide/transit.html#singapore">test guide</a>.</p>
+<p><code>TransitTransaction.balanceAfter</code> is optional: <code>nil</code> means the source record does not provide a balance. Preserve that distinction when displaying or exporting records.</p>
 <nav class="pager"><span class="parent"><a href="index.html">API</a></span><a class="next" href="card-commands.html">Card commands</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

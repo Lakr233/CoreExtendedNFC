@@ -1,7 +1,7 @@
 import ConfigurableKit
 import CoreExtendedNFC
-import SnapKit
 import SPIndicator
+import SnapKit
 import Then
 import UIKit
 
@@ -9,6 +9,12 @@ class TransitBalanceViewController: StackScrollController {
     private let dateFormatter = DateFormatter().then {
         $0.dateStyle = .medium
         $0.timeStyle = .none
+    }
+
+    private let singaporeDateFormatter = DateFormatter().then {
+        $0.dateStyle = .medium
+        $0.timeStyle = .medium
+        $0.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)
     }
 
     private var resultSentinel = UIView()
@@ -25,19 +31,23 @@ class TransitBalanceViewController: StackScrollController {
         super.setupContentViews()
 
         addSectionHeader(String(localized: "Transit Balance"))
-        buildScanButton()
+        buildScanButton(title: String(localized: "Scan Transit Card"), action: #selector(scanTapped))
         addSectionFooter(String(localized: "Supports Japan IC (Suica, PASMO, ICOCA…), Korea T-Money/Cashbee, China T-Union."))
+
+        buildScanButton(title: String(localized: "Test Singapore EZ-Link / CEPAS"), action: #selector(singaporeScanTapped))
+        addSectionFooter(
+            String(localized: "Experimental; iOS card testing pending. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."))
 
         stackView.addArrangedSubview(resultSentinel)
     }
 
     // MARK: - Scan Button
 
-    private func buildScanButton() {
+    private func buildScanButton(title: String, action: Selector) {
         let button = UIButton(type: .system).then {
-            $0.setTitle(String(localized: "Scan Transit Card"), for: .normal)
+            $0.setTitle(title, for: .normal)
             $0.titleLabel?.font = .preferredFont(forTextStyle: .headline)
-            $0.addTarget(self, action: #selector(scanTapped), for: .touchUpInside)
+            $0.addTarget(self, action: action, for: .touchUpInside)
         }
 
         stackView.addArrangedSubviewWithMargin(button)
@@ -47,28 +57,53 @@ class TransitBalanceViewController: StackScrollController {
         performScan()
     }
 
+    @objc private func singaporeScanTapped() {
+        performScan(singapore: true)
+    }
+
     // MARK: - NFC Scan
 
-    private func performScan() {
+    private func performScan(singapore: Bool = false) {
         Task {
             let manager = NFCSessionManager()
+            if singapore {
+                AppLogStore.shared.info("Starting experimental Singapore CEPAS scan", source: "Singapore")
+            }
             do {
-                let (coarseInfo, transport) = try await manager.scan(for: [.all])
-                let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-
-                manager.setAlertMessage(String(localized: "Reading..."))
-                let balance = try await CoreExtendedNFC.readTransitBalance(
-                    info: refinedInfo,
-                    transport: transport
-                )
+                let (coarseInfo, transport) = try await manager.scan(for: singapore ? [.iso14443] : [.all])
+                let balance: TransitBalance
+                if singapore {
+                    AppLogStore.shared.info("Detected tag; initial AID=\(coarseInfo.initialSelectedAID ?? "none")", source: "Singapore")
+                    guard let iso7816 = transport as? any ISO7816TagTransporting else {
+                        throw NFCError.unsupportedOperation(String(localized: "This card was not detected as a compatible Singapore CEPAS card."))
+                    }
+                    // CEPAS uses its default application; refinement may select another application.
+                    manager.setAlertMessage(String(localized: "Reading..."))
+                    balance = try await CoreExtendedNFC.readSingaporeTransitBalance(transport: iso7816)
+                    AppLogStore.shared.info(
+                        "Read succeeded: balance=\(balance.balanceRaw) \(balance.currencyCode), transactions=\(balance.transactions.count)",
+                        source: "Singapore"
+                    )
+                } else {
+                    let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+                    manager.setAlertMessage(String(localized: "Reading..."))
+                    balance = try await CoreExtendedNFC.readTransitBalance(info: refinedInfo, transport: transport)
+                }
                 manager.setAlertMessage(String(localized: "Done"))
                 manager.invalidate()
 
                 displayResults(balance)
             } catch is CancellationError {
+                manager.invalidate()
+                if singapore {
+                    AppLogStore.shared.info("Singapore CEPAS scan cancelled", source: "Singapore")
+                }
                 return
             } catch {
                 manager.invalidate()
+                if singapore {
+                    AppLogStore.shared.error("Singapore CEPAS scan failed: \(error)", source: "Singapore")
+                }
                 if !presentNFCErrorAlertIfNeeded(for: error) {
                     presentErrorAlert(for: error)
                 }
@@ -79,6 +114,7 @@ class TransitBalanceViewController: StackScrollController {
     // MARK: - Display Results
 
     private func displayResults(_ balance: TransitBalance) {
+        dateFormatter.timeZone = balance.currencyCode == "SGD" ? TimeZone(secondsFromGMT: 8 * 60 * 60) : .current
         clearResults()
 
         // Card Info
@@ -134,21 +170,43 @@ class TransitBalanceViewController: StackScrollController {
             addSectionHeader(String(localized: "Transaction History"))
 
             for (index, tx) in balance.transactions.enumerated() {
-                let typeLabel = switch tx.type {
-                case .trip: String(localized: "Trip")
-                case .topup: String(localized: "Top-up")
-                case .purchase: String(localized: "Purchase")
-                case .unknown: String(localized: "Unknown")
+                let typeLabel =
+                    switch tx.type {
+                    case .trip: String(localized: "Trip")
+                    case .topup: String(localized: "Top-up")
+                    case .purchase: String(localized: "Purchase")
+                    case .unknown: String(localized: "Unknown")
+                    }
+
+                var details = [typeLabel]
+                if let date = tx.date {
+                    if balance.currencyCode == "SGD" {
+                        details.append(String(localized: "\(singaporeDateFormatter.string(from: date)) (Singapore time)"))
+                    } else {
+                        details.append(dateFormatter.string(from: date))
+                    }
+                }
+                if let entry = tx.entryStation {
+                    details.append(String(localized: "Entry: \(entry)"))
+                }
+                if let exit = tx.exitStation {
+                    details.append(String(localized: "Exit: \(exit)"))
+                }
+                if let route = tx.metadata["busRoute"] {
+                    details.append(String(localized: "Bus: \(route)"))
                 }
 
-                let dateStr = tx.date.map { dateFormatter.string(from: $0) } ?? ""
-                let description = dateStr.isEmpty ? typeLabel : "\(typeLabel) · \(dateStr)"
-
+                let value: String
+                if balance.currencyCode == "SGD", let change = tx.metadata["balanceChange"] {
+                    value = String(localized: "\(change) SGD cents")
+                } else {
+                    value = tx.balanceAfter.map { "\(tx.amount) → \($0)" } ?? "\(tx.amount)"
+                }
                 addInfoRow(
                     icon: tx.type == .topup ? "plus.circle" : "arrow.right.circle",
                     title: "#\(index + 1)",
-                    description: description,
-                    value: "\(tx.amount) → \(tx.balanceAfter)"
+                    description: details.joined(separator: " · "),
+                    value: value
                 )
             }
 
@@ -159,7 +217,9 @@ class TransitBalanceViewController: StackScrollController {
     private func clearResults() {
         if let idx = stackView.arrangedSubviews.firstIndex(of: resultSentinel) {
             let toRemove = stackView.arrangedSubviews.suffix(from: idx + 1)
-            toRemove.forEach { $0.removeFromSuperview() }
+            for view in toRemove {
+                view.removeFromSuperview()
+            }
         }
     }
 
