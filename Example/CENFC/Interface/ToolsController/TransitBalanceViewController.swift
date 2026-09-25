@@ -36,7 +36,7 @@ class TransitBalanceViewController: StackScrollController {
 
         buildScanButton(title: String(localized: "Test Singapore EZ-Link / CEPAS"), action: #selector(singaporeScanTapped))
         addSectionFooter(
-            String(localized: "Experimental; iOS card testing pending. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."))
+            String(localized: "Experimental. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."))
 
         stackView.addArrangedSubview(resultSentinel)
     }
@@ -113,7 +113,7 @@ class TransitBalanceViewController: StackScrollController {
 
     // MARK: - Display Results
 
-    private func displayResults(_ balance: TransitBalance) {
+    func displayResults(_ balance: TransitBalance) {
         dateFormatter.timeZone = balance.currencyCode == "SGD" ? TimeZone(secondsFromGMT: 8 * 60 * 60) : .current
         clearResults()
 
@@ -156,13 +156,15 @@ class TransitBalanceViewController: StackScrollController {
         addInfoRow(
             icon: "banknote",
             title: String(localized: "Balance"),
-            value: balance.formattedBalance
+            value: balance.formattedBalance,
+            wrapValue: true
         )
 
         addInfoRow(
             icon: "info.circle",
             title: String(localized: "Raw"),
-            value: "\(balance.balanceRaw) \(balance.currencyCode)"
+            value: balance.currencyCode == "SGD" ? String(localized: "\(String(balance.balanceRaw)) SGD cents") : "\(balance.balanceRaw) \(balance.currencyCode)",
+            wrapValue: true
         )
 
         // Transaction History
@@ -179,6 +181,9 @@ class TransitBalanceViewController: StackScrollController {
                     }
 
                 var details = [typeLabel]
+                if tx.type == .unknown, let rawType = tx.metadata["transactionType"] {
+                    details.append(String(localized: "Type: 0x\(rawType)"))
+                }
                 if let date = tx.date {
                     if balance.currencyCode == "SGD" {
                         details.append(String(localized: "\(singaporeDateFormatter.string(from: date)) (Singapore time)"))
@@ -197,16 +202,23 @@ class TransitBalanceViewController: StackScrollController {
                 }
 
                 let value: String
-                if balance.currencyCode == "SGD", let change = tx.metadata["balanceChange"] {
-                    value = String(localized: "\(change) SGD cents")
+                if let amount = tx.amount {
+                    if balance.currencyCode == "SGD" {
+                        let change = tx.metadata["balanceChange"].flatMap(Int.init)
+                        let sign = change.map { $0 < 0 ? "−" : $0 > 0 ? "+" : "" } ?? ""
+                        value = sign + String(format: "S$%.2f", Double(amount) / 100)
+                    } else {
+                        value = tx.balanceAfter.map { "\(amount) → \($0)" } ?? "\(amount)"
+                    }
                 } else {
-                    value = tx.balanceAfter.map { "\(tx.amount) → \($0)" } ?? "\(tx.amount)"
+                    value = tx.balanceAfter.map { "— → \($0)" } ?? "—"
                 }
                 addInfoRow(
                     icon: tx.type == .topup ? "plus.circle" : "arrow.right.circle",
                     title: "#\(index + 1)",
                     description: details.joined(separator: " · "),
-                    value: value
+                    value: value,
+                    wrapValue: true
                 )
             }
 

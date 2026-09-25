@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Type: 0x%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type: 0x%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "类型：0x%@"
+          }
+        }
+      }
+    },
     "%@ SGD cents" : {
       "localizations" : {
         "en" : {
@@ -97,18 +113,18 @@
         }
       }
     },
-    "Experimental; iOS card testing pending. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing." : {
+    "Experimental. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Experimental; iOS card testing pending. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."
+            "value" : "Experimental. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "实验功能，iOS 实卡尚待验证。仅读取传统 EZ-Link/CEPAS，不支持 SimplyGo 历史。测试后请导出日志。"
+            "value" : "实验功能。仅读取传统 EZ-Link/CEPAS，不支持 SimplyGo 历史。测试后请导出日志。"
           }
         }
       }
