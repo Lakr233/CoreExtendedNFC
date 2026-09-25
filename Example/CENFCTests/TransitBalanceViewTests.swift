@@ -68,6 +68,23 @@ struct TransitBalanceViewTests {
         controller.addInfoRow(icon: "info.circle", title: "Empty", value: "")
         controller.view.layoutIfNeeded()
         #expect(infoRows(in: controller.view).last?.valueLabel.attributedTitle(for: .normal)?.string == "")
+
+        let longValue = String(repeating: "1234567890", count: 4)
+        controller.addInfoRow(icon: "info.circle", title: "Amount", value: longValue, wrapValue: true)
+        controller.addInfoRow(icon: "info.circle", title: "Amount", value: longValue)
+        let comparisonRows = Array(infoRows(in: controller.view).suffix(2))
+        let reconfigured = try #require(comparisonRows.first)
+        let fresh = try #require(comparisonRows.last)
+        controller.view.layoutIfNeeded()
+        controller.view.layoutIfNeeded()
+        #expect(reconfigured.bounds.height > fresh.bounds.height)
+
+        reconfigured.configure(value: longValue)
+        controller.view.layoutIfNeeded()
+        controller.view.layoutIfNeeded()
+        #expect(abs(reconfigured.bounds.height - fresh.bounds.height) < 1)
+        #expect(abs(reconfigured.valueLabel.bounds.width - fresh.valueLabel.bounds.width) < 1)
+        #expect(abs(reconfigured.verticalStack.bounds.width - fresh.verticalStack.bounds.width) < 1)
     }
 
     private func infoRows(in view: UIView) -> [ConfigurableInfoView] {

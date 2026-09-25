@@ -58,10 +58,9 @@ class ConfigurableInfoView: ConfigurableView {
     func configure(value: String, isDestructive: Bool = false, wrapValue: Bool = false) {
         valueLabel.titleLabel?.numberOfLines = wrapValue ? 0 : 1
         valueLabel.titleLabel?.lineBreakMode = wrapValue ? .byCharWrapping : .byTruncatingMiddle
-        if wrapValue {
-            valueLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
-            verticalStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        }
+        valueLabel.setContentCompressionResistancePriority(wrapValue ? .defaultHigh : .defaultLow, for: .horizontal)
+        verticalStack.setContentCompressionResistancePriority(wrapValue ? .defaultLow : .required, for: .horizontal)
+        wrappedValueHeight?.update(offset: 0)
         let attrString = NSAttributedString(
             string: value,
             attributes: [
