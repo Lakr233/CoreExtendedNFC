@@ -181,6 +181,86 @@ struct CEPASTests {
         }
     }
 
+    @Test
+    func `Automatic detection reads CEPAS before selecting another application`() async throws {
+        let transport = transport(purse: purse(recordCount: 0))
+        let info = CardInfo(type: .smartMX, uid: transport.identifier)
+
+        let result = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+
+        #expect(result.cardName == "EZ-Link")
+        #expect(result.balanceRaw == 1250)
+        #expect(
+            transport.sentAPDUs.map(\.bytes) == [
+                Data([0x00, 0xA4, 0x00, 0x00, 0x02, 0x40, 0x00]),
+                Data([0x90, 0x32, 0x03, 0x00, 0x00]),
+            ])
+    }
+
+    @Test
+    func `Automatic detection continues to Korea when the CEPAS file or command is unsupported`() async throws {
+        for rejectedCall in 0 ... 1 {
+            let statuses: [UInt16] = [0x6A81, 0x6A82, 0x6D00, 0x6E00] + (rejectedCall == 0 ? [0x6A86] : [])
+            for status in statuses {
+                let transport = MockTransport()
+                let success = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
+                transport.apduResponses =
+                    Array(repeating: success, count: rejectedCall) + [
+                        ResponseAPDU(data: Data(), sw1: UInt8(status >> 8), sw2: UInt8(status & 0xFF)),
+                        success, // KS X 6924 SELECT
+                        ResponseAPDU(data: Data([0, 0, 0x13, 0x88]), sw1: 0x90, sw2: 0x00),
+                        ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // No history
+                    ]
+                let info = CardInfo(type: .smartMX, uid: transport.identifier)
+
+                let result = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+
+                #expect(result.currencyCode == "KRW")
+                #expect(result.balanceRaw == 5000)
+                #expect(transport.sentAPDUs[rejectedCall + 1].data == KSX6924Constants.allAIDs[0].aid)
+            }
+        }
+    }
+
+    @Test
+    func `Automatic detection propagates CEPAS transport and operational failures`() async {
+        let record = Data([0x01, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0] + Array("SHOP    ".utf8))
+        let responses = transport(purse: purse(recordCount: 1), history: [record]).apduResponses
+        for failedCall in responses.indices {
+            let statuses: [UInt16?] = [nil, 0x6700, 0x6982] + (failedCall > 0 ? [0x6A86] : []) + (failedCall == 2 ? [0x6A82] : [])
+            for status in statuses {
+                let transport = MockTransport()
+                transport.apduResponses = responses
+                if let status {
+                    transport.apduResponses[failedCall] = ResponseAPDU(data: Data(), sw1: UInt8(status >> 8), sw2: UInt8(status & 0xFF))
+                } else {
+                    transport.apduFailures[failedCall] = .tagConnectionLost
+                }
+                let info = CardInfo(type: .smartMX, uid: transport.identifier)
+
+                await #expect(throws: NFCError.self) {
+                    _ = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+                }
+                #expect(transport.sentAPDUs.count == failedCall + 1)
+            }
+        }
+    }
+
+    @Test
+    func `Automatic detection does not hide malformed or unsupported CEPAS purses`() async {
+        var unsupported = purse(recordCount: 0)
+        unsupported[0] = 3
+        for data in [Data(), Data(repeating: 0, count: 62), unsupported] {
+            let transport = transport(purse: data)
+            let info = CardInfo(type: .smartMX, uid: transport.identifier)
+
+            await #expect(throws: NFCError.self) {
+                _ = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+            }
+            #expect(transport.sentAPDUs.count == 2)
+        }
+    }
+
     private func purse(recordCount: UInt8) -> Data {
         var data = Data(repeating: 0, count: 65)
         data[0] = 2

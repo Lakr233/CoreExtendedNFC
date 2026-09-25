@@ -31,23 +31,23 @@ class TransitBalanceViewController: StackScrollController {
         super.setupContentViews()
 
         addSectionHeader(String(localized: "Transit Balance"))
-        buildScanButton(title: String(localized: "Scan Transit Card"), action: #selector(scanTapped))
-        addSectionFooter(String(localized: "Supports Japan IC (Suica, PASMO, ICOCA…), Korea T-Money/Cashbee, China T-Union."))
-
-        buildScanButton(title: String(localized: "Test Singapore EZ-Link / CEPAS"), action: #selector(singaporeScanTapped))
+        buildScanButton()
         addSectionFooter(
-            String(localized: "Experimental. Reads traditional EZ-Link/CEPAS only. SimplyGo history is not supported. Export Logs after testing."))
+            String(
+                localized:
+                    "Supports Japan IC (Suica, PASMO, ICOCA…), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
+            ))
 
         stackView.addArrangedSubview(resultSentinel)
     }
 
     // MARK: - Scan Button
 
-    private func buildScanButton(title: String, action: Selector) {
+    private func buildScanButton() {
         let button = UIButton(type: .system).then {
-            $0.setTitle(title, for: .normal)
+            $0.setTitle(String(localized: "Scan Transit Card"), for: .normal)
             $0.titleLabel?.font = .preferredFont(forTextStyle: .headline)
-            $0.addTarget(self, action: action, for: .touchUpInside)
+            $0.addTarget(self, action: #selector(scanTapped), for: .touchUpInside)
         }
 
         stackView.addArrangedSubviewWithMargin(button)
@@ -57,53 +57,33 @@ class TransitBalanceViewController: StackScrollController {
         performScan()
     }
 
-    @objc private func singaporeScanTapped() {
-        performScan(singapore: true)
-    }
-
     // MARK: - NFC Scan
 
-    private func performScan(singapore: Bool = false) {
+    private func performScan() {
         Task {
             let manager = NFCSessionManager()
-            if singapore {
-                AppLogStore.shared.info("Starting experimental Singapore CEPAS scan", source: "Singapore")
-            }
+            AppLogStore.shared.info("Starting transit card scan", source: "Transit")
             do {
-                let (coarseInfo, transport) = try await manager.scan(for: singapore ? [.iso14443] : [.all])
-                let balance: TransitBalance
-                if singapore {
-                    AppLogStore.shared.info("Detected tag; initial AID=\(coarseInfo.initialSelectedAID ?? "none")", source: "Singapore")
-                    guard let iso7816 = transport as? any ISO7816TagTransporting else {
-                        throw NFCError.unsupportedOperation(String(localized: "This card was not detected as a compatible Singapore CEPAS card."))
-                    }
-                    // CEPAS uses its default application; refinement may select another application.
-                    manager.setAlertMessage(String(localized: "Reading..."))
-                    balance = try await CoreExtendedNFC.readSingaporeTransitBalance(transport: iso7816)
-                    AppLogStore.shared.info(
-                        "Read succeeded: balance=\(balance.balanceRaw) \(balance.currencyCode), transactions=\(balance.transactions.count)",
-                        source: "Singapore"
-                    )
-                } else {
-                    let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-                    manager.setAlertMessage(String(localized: "Reading..."))
-                    balance = try await CoreExtendedNFC.readTransitBalance(info: refinedInfo, transport: transport)
-                }
+                let (info, transport) = try await manager.scan(for: [.all])
+                AppLogStore.shared.info("Detected tag; initial AID=\(info.initialSelectedAID ?? "none")", source: "Transit")
+                // Transit detection must run before refinement changes the selected application.
+                manager.setAlertMessage(String(localized: "Reading..."))
+                let balance = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+                AppLogStore.shared.info(
+                    "Read succeeded: balance=\(balance.balanceRaw) \(balance.currencyCode), transactions=\(balance.transactions.count)",
+                    source: "Transit"
+                )
                 manager.setAlertMessage(String(localized: "Done"))
                 manager.invalidate()
 
                 displayResults(balance)
             } catch is CancellationError {
                 manager.invalidate()
-                if singapore {
-                    AppLogStore.shared.info("Singapore CEPAS scan cancelled", source: "Singapore")
-                }
+                AppLogStore.shared.info("Transit card scan cancelled", source: "Transit")
                 return
             } catch {
                 manager.invalidate()
-                if singapore {
-                    AppLogStore.shared.error("Singapore CEPAS scan failed: \(error)", source: "Singapore")
-                }
+                AppLogStore.shared.error("Transit card scan failed: \(error)", source: "Transit")
                 if !presentNFCErrorAlertIfNeeded(for: error) {
                     presentErrorAlert(for: error)
                 }

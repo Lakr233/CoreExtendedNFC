@@ -2,12 +2,16 @@ import Foundation
 
 extension CoreExtendedNFC {
     /// Read transit card balance from a connected tag.
-    /// Automatically detects Japan IC (FeliCa), Octopus, T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
+    /// Automatically detects Japan IC (FeliCa), Octopus, Singapore CEPAS,
+    /// T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
+    /// Call directly after `NFCSessionManager.scan`, before `refineCardInfo` or other
+    /// application-selection commands change the default application used by CEPAS.
     ///
     /// Detection order:
-    /// 1. FeliCa with system code 0x0003 → Japan IC
-    /// 2. ISO 7816 → try KS X 6924 AIDs (T-Money, Cashbee, Snapper/MOIBA, K-Cash)
-    /// 3. ISO 7816 → try T-Union AID
+    /// 1. FeliCa system code → Japan IC or Octopus
+    /// 2. ISO 7816 → probe Singapore CEPAS purse
+    /// 3. ISO 7816 → try KS X 6924 AIDs (T-Money, Cashbee, Snapper/MOIBA, K-Cash)
+    /// 4. ISO 7816 → try T-Union AID
     public static func readTransitBalance(
         info: CardInfo,
         transport: any NFCTagTransport
@@ -25,8 +29,12 @@ extension CoreExtendedNFC {
             throw NFCError.unsupportedOperation("Unsupported FeliCa transit system code \(felicaTransport.systemCode.hexString)")
         }
 
-        // ISO 7816 cards: try Korea then China
         if let iso7816Transport = transport as? any ISO7816TagTransporting {
+            // CEPAS depends on the initial application; probe before selecting other AIDs.
+            if let balance = try await CEPASReader(transport: iso7816Transport).readIfSupported() {
+                return balance
+            }
+
             // Try Korea KS X 6924 first — only catch "not this card" errors
             do {
                 return try await readKoreaTransitBalance(transport: iso7816Transport)
@@ -74,7 +82,7 @@ extension CoreExtendedNFC {
         try await KSX6924Reader(transport: transport).readBalanceAndHistory()
     }
 
-    /// Experimentally read traditional Singapore CEPAS balance and recent history.
+    /// Read traditional Singapore CEPAS balance and recent history.
     ///
     /// Read successfully on one traditional EZ-Link card using iPhone Air; other variants remain unverified.
     /// SimplyGo account-based history is unsupported.

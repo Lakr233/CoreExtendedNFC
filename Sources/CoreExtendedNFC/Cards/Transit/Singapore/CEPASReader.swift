@@ -1,6 +1,6 @@
 import Foundation
 
-/// Experimental read-only reader for traditional CEPAS purse 3 and its recent log.
+/// Read-only reader for traditional CEPAS purse 3 and its recent log.
 ///
 /// One traditional EZ-Link card has been read on iPhone Air with iOS 27; other
 /// cards and discovery configurations remain unverified. SimplyGo account-based
@@ -15,14 +15,44 @@ public struct CEPASReader: Sendable {
     }
 
     public func readBalanceAndHistory() async throws -> TransitBalance {
-        NFCLog.info("Experimental CEPAS read start; initial AID=\(transport.initialAID)", source: "CEPAS")
+        try await selectFile()
+        return try await readBalanceAndHistory(purse: readPurse())
+    }
+
+    /// A rejected file or command is a non-match; malformed data and read failures propagate.
+    func readIfSupported() async throws -> TransitBalance? {
+        let purse: Data
+        do {
+            do {
+                try await selectFile()
+            } catch NFCError.unexpectedStatusWord(0x6A, 0x86) {
+                // This card does not support SELECT by file ID (P1=00, P2=00).
+                return nil
+            }
+            purse = try await readPurse()
+        } catch let NFCError.unexpectedStatusWord(sw1, sw2)
+            where [0x6A81, 0x6A82, 0x6D00, 0x6E00].contains(UInt16(sw1) << 8 | UInt16(sw2))
+        {
+            return nil
+        }
+        return try await readBalanceAndHistory(purse: purse)
+    }
+
+    private func selectFile() async throws {
+        NFCLog.info("CEPAS read start; initial AID=\(transport.initialAID)", source: "CEPAS")
         _ = try await read(
             CommandAPDU(cla: 0x00, ins: 0xA4, p1: 0x00, p2: 0x00, data: Data([0x40, 0x00])),
             stage: "SELECT 4000"
         )
+    }
+
+    private func readPurse() async throws -> Data {
         // Some legacy cards require 90 32 03 00 00 00, which Core NFC rejects.
-        // This experimental path uses the standard five-byte form; no silent fallback.
-        let purse = try await read(CommandAPDU(cla: 0x90, ins: 0x32, p1: 0x03, p2: 0x00, le: 0x00), stage: "GET PURSE")
+        // Use the standard five-byte form; no silent fallback.
+        return try await read(CommandAPDU(cla: 0x90, ins: 0x32, p1: 0x03, p2: 0x00, le: 0x00), stage: "GET PURSE")
+    }
+
+    private func readBalanceAndHistory(purse: Data) async throws -> TransitBalance {
         guard purse.count >= 63, purse.count >= 63 + Int(purse[41]) else {
             throw NFCError.invalidResponse(purse)
         }
