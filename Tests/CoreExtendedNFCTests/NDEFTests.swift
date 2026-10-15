@@ -45,11 +45,12 @@ struct NDEFTests {
     func `Type 2 TLV extraction finds NDEF payload`() throws {
         let payload = NDEFMessage.text("Hi").data
         let tlv = Data([0x03, UInt8(payload.count)]) + payload + Data([0xFE, 0x00])
-        let pages: [MemoryDump.Page] = Array(stride(from: 0, to: tlv.count, by: 4)).enumerated().map { pair in
-            let (index, byteOffset) = pair
-            let chunk = Data((tlv + Data(repeating: 0x00, count: 16))[byteOffset ..< byteOffset + 4])
-            return MemoryDump.Page(number: UInt8(index + 4), data: chunk)
-        }
+        let pages: [MemoryDump.Page] = [MemoryDump.Page(number: 3, data: Data([0xE1, 0x10, 0x06, 0x00]))]
+            + Array(stride(from: 0, to: tlv.count, by: 4)).enumerated().map { pair in
+                let (index, byteOffset) = pair
+                let chunk = Data((tlv + Data(repeating: 0x00, count: 16))[byteOffset ..< byteOffset + 4])
+                return MemoryDump.Page(number: UInt8(index + 4), data: chunk)
+            }
 
         let extracted = NDEFTagMapping.extractType2Message(from: pages)
 
@@ -218,6 +219,95 @@ struct NDEFTests {
         #expect(transport.writtenBlocks[0].number == 0)
         #expect(transport.writtenBlocks[0].data == Data([0xE1, 0x40, 0x02, 0x00]))
         #expect(transport.writtenBlocks[1].data[0] == 0x03)
+    }
+
+    // MARK: - T2T NDEF detection (NFC Forum T2T 1.0 §6.4.1)
+
+    @Test
+    func `Type 2 extraction requires the E1 capability container`() {
+        let tlvPage = MemoryDump.Page(number: 4, data: Data([0x03, 0x01, 0xD0, 0xFE]))
+        let blank = [MemoryDump.Page(number: 3, data: Data([0x00, 0x00, 0x00, 0x00])), tlvPage]
+        #expect(NDEFTagMapping.extractType2Message(from: blank) == nil)
+
+        let missingCC = [tlvPage]
+        #expect(NDEFTagMapping.extractType2Message(from: missingCC) == nil)
+
+        let futureMajor = [MemoryDump.Page(number: 3, data: Data([0xE1, 0x20, 0x06, 0x00])), tlvPage]
+        #expect(NDEFTagMapping.extractType2Message(from: futureMajor) == nil)
+
+        let formatted = [MemoryDump.Page(number: 3, data: Data([0xE1, 0x10, 0x06, 0x00])), tlvPage]
+        #expect(NDEFTagMapping.extractType2Message(from: formatted) == Data([0xD0]))
+    }
+
+    @Test
+    func `Type 2 extraction stops at the CC data area size`() {
+        // CC2 = 1 → 8-byte data area; the NDEF TLV starts after it.
+        let pages = [
+            MemoryDump.Page(number: 3, data: Data([0xE1, 0x10, 0x01, 0x00])),
+            MemoryDump.Page(number: 4, data: Data([0x00, 0x00, 0x00, 0x00])),
+            MemoryDump.Page(number: 5, data: Data([0x00, 0x00, 0x00, 0x00])),
+            MemoryDump.Page(number: 6, data: Data([0x03, 0x01, 0xD0, 0xFE])),
+        ]
+        #expect(NDEFTagMapping.extractType2Message(from: pages) == nil)
+    }
+
+    // MARK: - T5T capability container (NFC Forum T5T 1.0 §4.3.1)
+
+    @Test
+    func `Type 5 8-byte CC is skipped before TLV parsing`() {
+        // ST25DV64K-style CC: MLEN byte 2 = 00h, 16-bit MLEN 03FFh in bytes 6-7.
+        let cc = Data([0xE2, 0x40, 0x00, 0x01, 0x00, 0x00, 0x03, 0xFF])
+        let tlv = Data([0x03, 0x03, 0xD0, 0x00, 0x00, 0xFE])
+        let bytes = cc + tlv + Data(repeating: 0x00, count: 2)
+        let blocks = stride(from: 0, to: bytes.count, by: 4).enumerated().map {
+            MemoryDump.Block(number: $0.offset, data: Data(bytes[$0.element ..< $0.element + 4]))
+        }
+        #expect(NDEFTagMapping.extractType5Message(from: blocks) == Data([0xD0, 0x00, 0x00]))
+    }
+
+    @Test
+    func `Read-only Type 5 CC uses byte 1 write-access bits`() throws {
+        let blocks = try NDEFTagMapping.buildType5Blocks(message: Data(), blockSize: 4, blockCount: 8, writeable: false)
+        #expect(blocks[0] == Data([0xE1, 0x43, 0x03, 0x00]))
+        let writable = try NDEFTagMapping.buildType5Blocks(message: Data(), blockSize: 4, blockCount: 8)
+        #expect(writable[0] == Data([0xE1, 0x40, 0x03, 0x00]))
+    }
+
+    @Test
+    func `Type 5 large data area uses the 8-byte CC`() throws {
+        // 256 blocks × 32 bytes: 255 × 32 / 8 = 1020 units, too large for one MLEN byte.
+        let blocks = try NDEFTagMapping.buildType5Blocks(message: Data([0xD0, 0x00, 0x00]), blockSize: 32, blockCount: 256)
+        #expect(blocks.count == 256)
+        #expect(blocks[0].prefix(8) == Data([0xE1, 0x40, 0x00, 0x00, 0x00, 0x00, 0x03, 0xFC]))
+        let extracted = NDEFTagMapping.extractType5Message(
+            from: blocks.enumerated().map { MemoryDump.Block(number: $0.offset, data: $0.element) }
+        )
+        #expect(extracted == Data([0xD0, 0x00, 0x00]))
+    }
+
+    @Test
+    func `Type 5 write on a tag with more than 256 blocks stays within single-byte addresses`() async throws {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00,
+                afi: 0x00,
+                blockSize: 4,
+                blockCount: 512,
+                icReference: 0x01
+            )
+        )
+
+        try await CoreExtendedNFC.writeNDEF(
+            NDEFMessage.uri("https://a.b"),
+            info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
+            transport: transport
+        )
+
+        #expect(transport.writtenBlocks.count == 256)
+        #expect(transport.writtenBlocks.last?.number == 255)
+        // NDEF area = 255 blocks × 4 bytes = 1020 bytes → MLEN 127.
+        #expect(transport.writtenBlocks[0].data == Data([0xE1, 0x40, 0x7F, 0x00]))
     }
 
     private func makeAttributeInfoBlock(

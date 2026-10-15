@@ -93,6 +93,48 @@ struct ISO15693Tests {
             "keyUpdate:12:0607",
         ])
     }
+
+    @Test
+    func `readAllBlocks rejects more than 256 blocks instead of trapping`() async {
+        let transport = MockISO15693Transport(
+            identifier: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+            icManufacturerCode: 0x04,
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+                dsfid: 0x00,
+                afi: 0x00,
+                blockSize: 4,
+                blockCount: 300,
+                icReference: 0x01
+            ),
+            blocks: Array(repeating: Data(count: 4), count: 300),
+            locked: Array(repeating: false, count: 300)
+        )
+        await #expect(throws: NFCError.self) {
+            _ = try await ISO15693Reader(transport: transport).readAllBlocks(transport: transport)
+        }
+    }
+
+    @Test
+    func `readAllBlocks reads a 256-block tag`() async throws {
+        let transport = MockISO15693Transport(
+            identifier: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+            icManufacturerCode: 0x04,
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+                dsfid: 0x00,
+                afi: 0x00,
+                blockSize: 4,
+                blockCount: 256,
+                icReference: 0x01
+            ),
+            blocks: (0 ..< 256).map { Data(repeating: UInt8($0), count: 4) },
+            locked: Array(repeating: false, count: 256)
+        )
+        let dump = try await ISO15693Reader(transport: transport).readAllBlocks(transport: transport)
+        #expect(dump.blocks.count == 256)
+        #expect(dump.blocks.last?.data == Data(repeating: 0xFF, count: 4))
+    }
 }
 
 private final class MockISO15693SecurityTransport: ISO15693TagTransporting, @unchecked Sendable {
