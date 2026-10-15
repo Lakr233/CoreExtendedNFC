@@ -19,11 +19,17 @@ public struct UltralightDump: Sendable {
         // Read 4 pages at a time using READ command
         var page: UInt8 = 0
         while page < lastPlainReadablePage {
+            try Task.checkCancellation()
             let data: Data
             do {
                 data = try await commands.readPages(startPage: page)
             } catch let error as NFCError {
-                if cardInfo.type == .mifareUltralightC, case .invalidResponse = error, !pages.isEmpty {
+                // A NAK (surfaced as a short response) past AUTH0 on a
+                // read-protected tag: keep the pages that were readable
+                // instead of discarding the whole dump. Ultralight C
+                // (AUTH0/AUTH1), Ultralight EV1 and NTAG21x (AUTH0 with
+                // ACCESS.PROT = 1) all behave this way.
+                if case .invalidResponse = error, !pages.isEmpty {
                     facts.append(.init(key: "Unauthenticated Boundary", value: "Page \(page)"))
                     capabilities = [.authenticationRequired, .partiallyReadable]
                     break
@@ -31,13 +37,14 @@ public struct UltralightDump: Sendable {
                 throw error
             }
             // Each READ returns 4 pages (16 bytes)
+            let bytes = [UInt8](data)
             for i in 0 ..< 4 {
-                let pageNum = page + UInt8(i)
-                guard pageNum < lastPlainReadablePage else { break }
+                let pageNum = Int(page) + i
+                guard pageNum < Int(lastPlainReadablePage) else { break }
                 let offset = i * 4
-                let pageData = Data(data[offset ..< offset + 4])
-                pages.append(MemoryDump.Page(number: pageNum, data: pageData))
+                pages.append(MemoryDump.Page(number: UInt8(pageNum), data: Data(bytes[offset ..< offset + 4])))
             }
+            guard page <= UInt8.max - 4 else { break }
             page += 4
         }
 

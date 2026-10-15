@@ -224,6 +224,85 @@ struct UltralightTests {
         #expect(mock.sentCommands[0] == Data([0x30, 0x28]))
     }
 
+    // MARK: - Command framing guards
+
+    @Test
+    func `FAST_READ rejects end before start`() async {
+        let mock = MockTransport()
+        mock.responses = [Data(count: 16)]
+        await #expect(throws: NFCError.self) {
+            _ = try await UltralightCommands(transport: mock).fastRead(from: 5, to: 4)
+        }
+        #expect(mock.sentCommands.isEmpty)
+    }
+
+    @Test
+    func `FAST_READ full 256-page range computes length without overflow`() async throws {
+        let mock = MockTransport()
+        mock.responses = [Data(repeating: 0xAA, count: 1024)]
+        let data = try await UltralightCommands(transport: mock).fastRead(from: 0, to: 255)
+        #expect(data.count == 1024)
+    }
+
+    @Test
+    func `COMPATIBILITY_WRITE uses two frames`() async throws {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A]), Data([0x0A])]
+        try await UltralightCommands(transport: mock).compatibilityWrite(5, data: Data([1, 2, 3, 4]))
+        #expect(mock.sentCommands == [Data([0xA0, 0x05]), Data([1, 2, 3, 4]) + Data(count: 12)])
+    }
+
+    @Test
+    func `COMPATIBILITY_WRITE stops when the address phase is NAKed`() async {
+        let mock = MockTransport()
+        mock.responses = [Data([0x00]), Data([0x0A])]
+        do {
+            try await UltralightCommands(transport: mock).compatibilityWrite(5, data: Data([1, 2, 3, 4]))
+            Issue.record("expected writeFailed")
+        } catch NFCError.writeFailed(page: 5) {
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+        #expect(mock.sentCommands.count == 1)
+    }
+
+    // MARK: - Ultralight C detection (NXP AN10833 §3.2)
+
+    @Test
+    func `Refiner classifies Ultralight C via AUTHENTICATE probe after GET_VERSION NAK`() async throws {
+        let mock = MockTransport()
+        mock.responses = [Data([0x00]), Data([0xAF]) + Data(repeating: 0x5A, count: 8)]
+        let refined = try await CoreExtendedNFC.refineCardInfo(
+            CardInfo(type: .mifareUltralight, uid: mock.identifier),
+            transport: mock
+        )
+        #expect(refined.type == .mifareUltralightC)
+        #expect(mock.sentCommands == [Data([0x60]), Data([0x1A, 0x00])])
+    }
+
+    @Test
+    func `Refiner keeps plain Ultralight when AUTHENTICATE is also NAKed`() async throws {
+        let mock = MockTransport()
+        mock.responses = [Data([0x00]), Data([0x00])]
+        let refined = try await CoreExtendedNFC.refineCardInfo(
+            CardInfo(type: .mifareUltralight, uid: mock.identifier),
+            transport: mock
+        )
+        #expect(refined.type == .mifareUltralight)
+    }
+
+    @Test
+    func `Refiner does not probe AUTHENTICATE after a transport error`() async throws {
+        let mock = MockTransport()
+        mock.responses = []
+        let refined = try await CoreExtendedNFC.refineCardInfo(
+            CardInfo(type: .mifareUltralight, uid: mock.identifier),
+            transport: mock
+        )
+        #expect(refined.type == .mifareUltralight)
+        #expect(mock.sentCommands == [Data([0x60])])
+    }
+
     private static func rotateLeft(_ data: Data) -> Data {
         guard let first = data.first else { return Data() }
         return concat(Data(data.dropFirst()), Data([first]))

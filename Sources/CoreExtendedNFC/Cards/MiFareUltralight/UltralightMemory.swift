@@ -41,6 +41,18 @@ public struct UltralightMemoryMap: Sendable, Equatable {
                 totalPages: 41, userDataStart: 4, userDataEnd: 35,
                 configStart: 37, dynamicLockStart: 36
             )
+        case .ntag210:
+            // NTAG210: user 04h-0Fh, CFG0 10h, CFG1 11h, PWD 12h, PACK 13h.
+            UltralightMemoryMap(
+                totalPages: 20, userDataStart: 4, userDataEnd: 15,
+                configStart: 16, dynamicLockStart: nil
+            )
+        case .ntag212:
+            // NTAG212: user 04h-23h, dynamic lock 24h, CFG0 25h, CFG1 26h, PWD 27h, PACK 28h.
+            UltralightMemoryMap(
+                totalPages: 41, userDataStart: 4, userDataEnd: 35,
+                configStart: 37, dynamicLockStart: 36
+            )
         case .ntag213:
             UltralightMemoryMap(
                 totalPages: 45, userDataStart: 4, userDataEnd: 39,

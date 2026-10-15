@@ -25,6 +25,14 @@ enum CardInfoRefiner {
         do {
             let version = try await commands.getVersion()
             return updated(info, type: version.cardType)
+        } catch NFCError.invalidResponse {
+            // The tag answered GET_VERSION with a NAK (short frame). Ultralight C
+            // (MF0ICU2) does not implement GET_VERSION; it is identified by
+            // AUTHENTICATE `1A 00` returning `AF ‖ ek(RndB)` (NXP AN10833 §3.2).
+            if await commands.probeUltralightCAuthentication() {
+                return updated(info, type: .mifareUltralightC)
+            }
+            return info
         } catch {
             return info
         }

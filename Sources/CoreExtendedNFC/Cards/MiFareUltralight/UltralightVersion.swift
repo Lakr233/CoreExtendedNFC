@@ -43,12 +43,13 @@ public struct UltralightVersionResponse: Sendable, Equatable {
                 return .mifareUltralight
             }
         case 0x04:
-            // NTAG family
+            // NTAG family. Storage sizes from the NXP NTAG210/212 and
+            // NTAG213/215/216 datasheets (GET_VERSION byte 6).
             switch storageSize {
-            case 0x06:
-                return .ntag210
             case 0x0B:
-                return .ntag212
+                return .ntag210 // 48 user bytes, 20 pages
+            case 0x0E:
+                return .ntag212 // 128 user bytes, 41 pages
             case 0x0F:
                 return .ntag213 // 144 user bytes
             case 0x11:
@@ -56,7 +57,9 @@ public struct UltralightVersionResponse: Sendable, Equatable {
             case 0x13:
                 return .ntag216 // 888 user bytes
             default:
-                return .ntag213
+                // Unknown NTAG size: fall back to the generic 16-page map so
+                // NDEF writes can never reach an unknown config/PWD page.
+                return .mifareUltralight
             }
         default:
             return .mifareUltralight
@@ -65,31 +68,13 @@ public struct UltralightVersionResponse: Sendable, Equatable {
 
     /// Total number of pages on the tag.
     public var totalPages: UInt8 {
-        switch cardType {
-        case .mifareUltralightEV1_MF0UL11: 20
-        case .mifareUltralightEV1_MF0UL21: 41
-        case .mifareUltralight: 16
-        case .mifareUltralightC: 48
-        case .ntag210: 16
-        case .ntag212: 45
-        case .ntag213: 45
-        case .ntag215: 135
-        case .ntag216: 231
-        default: 16
-        }
+        UltralightMemoryMap.forType(cardType).totalPages
     }
 
     /// Number of user-writable data pages.
     public var userPages: UInt8 {
-        switch cardType {
-        case .mifareUltralight: 12 // pages 4-15
-        case .mifareUltralightEV1_MF0UL11: 12 // pages 4-15
-        case .mifareUltralightEV1_MF0UL21: 32 // pages 4-35
-        case .ntag213: 36 // pages 4-39
-        case .ntag215: 126 // pages 4-129
-        case .ntag216: 222 // pages 4-225
-        default: 12
-        }
+        let map = UltralightMemoryMap.forType(cardType)
+        return map.userDataEnd - map.userDataStart + 1
     }
 }
 

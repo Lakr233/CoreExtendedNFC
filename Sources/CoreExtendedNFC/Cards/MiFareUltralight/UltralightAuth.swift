@@ -29,8 +29,8 @@ public extension UltralightCommands {
         // configStart + 0: MOD, RFUI, RFUI, AUTH0
         // configStart + 1: ACCESS, RFUI, RFUI, RFUI
         let data = try await readPages(startPage: configStartPage)
-        let auth0 = data[3] // 4th byte of first config page
-        let access = data[4] // 1st byte of second config page
+        let auth0 = data[data.startIndex + 3] // 4th byte of first config page
+        let access = data[data.startIndex + 4] // 1st byte of second config page
         return (auth0, access)
     }
 
@@ -41,8 +41,8 @@ public extension UltralightCommands {
             throw NFCError.invalidResponse(data)
         }
 
-        let auth0 = data[8]
-        let auth1 = data[12]
+        let auth0 = data[data.startIndex + 8]
+        let auth1 = data[data.startIndex + 12]
         let firstProtectedPage: UInt8? = auth0 == 0x30 ? nil : auth0
         return UltralightCAccessConfiguration(firstProtectedPage: firstProtectedPage, auth1: auth1)
     }
@@ -58,11 +58,12 @@ extension UltralightCommands {
         }
 
         let startResponse = try await transport.send(Data([0x1A, 0x00]))
-        guard startResponse.count >= 9, startResponse[0] == 0xAF else {
+        let startBytes = [UInt8](startResponse)
+        guard startBytes.count >= 9, startBytes[0] == 0xAF else {
             throw NFCError.invalidResponse(startResponse)
         }
 
-        let encryptedRndB = Data(startResponse[1 ..< 9])
+        let encryptedRndB = Data(startBytes[1 ..< 9])
         let rndB = try CryptoUtils.tripleDESDecrypt(key: key, message: encryptedRndB)
         let randomAValue = try validateOrGenerateRandom(randomA)
         let challenge = randomAValue + rotateLeft(rndB)
@@ -73,13 +74,14 @@ extension UltralightCommands {
         )
 
         let finalResponse = try await transport.send(Data([0xAF]) + challengeCiphertext)
-        guard finalResponse.count >= 9, finalResponse[0] == 0x00 else {
+        let finalBytes = [UInt8](finalResponse)
+        guard finalBytes.count >= 9, finalBytes[0] == 0x00 else {
             throw NFCError.invalidResponse(finalResponse)
         }
 
         let rotatedRndA = try CryptoUtils.tripleDESDecrypt(
             key: key,
-            message: Data(finalResponse[1 ..< 9]),
+            message: Data(finalBytes[1 ..< 9]),
             iv: Data(challengeCiphertext.suffix(8))
         )
         guard rotatedRndA == rotateLeft(randomAValue) else {
