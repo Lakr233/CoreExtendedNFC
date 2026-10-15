@@ -117,13 +117,7 @@ public struct MyNumberCardReader: Sendable {
     }
 
     private func selectEF(_ fileID: Data) async throws {
-        let response = try await transport.sendAPDUWithChaining(CommandAPDU(
-            cla: 0x00,
-            ins: 0xA4,
-            p1: 0x02,
-            p2: 0x0C,
-            data: fileID
-        ))
+        let response = try await transport.sendAPDUWithChaining(.selectEF(id: fileID))
         try requireSuccess(response)
     }
 
@@ -138,13 +132,7 @@ public struct MyNumberCardReader: Sendable {
     }
 
     private func readBinary(length: UInt8) async throws -> ResponseAPDU {
-        let response = try await transport.sendAPDUWithChaining(CommandAPDU(
-            cla: 0x00,
-            ins: 0xB0,
-            p1: 0x00,
-            p2: 0x00,
-            le: length
-        ))
+        let response = try await transport.sendAPDUWithChaining(.readBinary(offset: 0, length: length))
         try requireSuccess(response)
         return response
     }

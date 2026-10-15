@@ -41,7 +41,7 @@ enum CardDocument {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(name)
             .appendingPathExtension("cenfc")
-        let dumpRecord = DumpStore.shared.records(withUID: scan.cardInfo.uid).first
+        let dumpRecord = DumpStore.shared.record(withUID: scan.cardInfo.uid)
         if let dumpRecord {
             try exportWithDump(scan: scan, dump: dumpRecord).write(to: url, options: .atomic)
         } else {
@@ -71,7 +71,7 @@ enum CardDocument {
     // MARK: - Helpers
 
     private static func sanitizedFileName(cardType: String, uid: Data) -> String {
-        let uidHex = uid.compactHexString
+        let uidHex = uid.hexString
         let type = cardType
             .replacingOccurrences(of: " ", with: "-")
             .replacingOccurrences(of: "/", with: "-")

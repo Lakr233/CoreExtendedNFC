@@ -50,11 +50,6 @@ class DumpStore: @MainActor ObjectListDataSource {
         save()
     }
 
-    func remove(id: UUID) {
-        records.removeAll { $0.id == id }
-        save()
-    }
-
     func move(from source: Int, to destination: Int) {
         guard source != destination,
               records.indices.contains(source),
@@ -63,12 +58,6 @@ class DumpStore: @MainActor ObjectListDataSource {
         let record = records.remove(at: source)
         let target = min(destination, records.count)
         records.insert(record, at: target)
-        save()
-    }
-
-    func insert(_ record: DumpRecord, at index: Int) {
-        let clamped = max(0, min(index, records.count))
-        records.insert(record, at: clamped)
         save()
     }
 
@@ -92,8 +81,8 @@ class DumpStore: @MainActor ObjectListDataSource {
         records.first { $0.id == id }
     }
 
-    func records(withUID uid: Data) -> [DumpRecord] {
-        records.filter { $0.dump.cardInfo.uid == uid }
+    func record(withUID uid: Data) -> DumpRecord? {
+        records.first { $0.dump.cardInfo.uid == uid }
     }
 
     // MARK: - ObjectListDataSource
@@ -137,17 +126,10 @@ class DumpStore: @MainActor ObjectListDataSource {
         return formatter
     }()
 
-    func configure(cell: ConfigurableView, for item: DumpRecord) {
-        let row = rowPresentation(for: item)
-        cell.configure(icon: UIImage(systemName: row.icon))
-        cell.configure(title: row.title)
-        cell.configure(description: row.detail)
-    }
-
     func rowPresentation(for item: DumpRecord) -> ObjectListRowPresentation {
         let dateString = Self.dateFormatter.string(from: item.date)
         return ObjectListRowPresentation(
-            icon: ScanStore.iconName(for: String(describing: item.dump.cardInfo.type.family)),
+            icon: ScanStore.iconName(for: item.dump.cardInfo.type.family),
             title: item.dump.cardInfo.type.description,
             detail: "\(dateString) · \(item.dump.summary.technicalSummary)"
         )

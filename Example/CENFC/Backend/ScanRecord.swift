@@ -35,7 +35,7 @@ extension ScanRecord: Hashable {
 extension ScanRecord: ObjectListItem {
     func matches(query: String) -> Bool {
         cardInfo.type.description.localizedCaseInsensitiveContains(query)
+            || cardInfo.uid.hexDump.localizedCaseInsensitiveContains(query)
             || cardInfo.uid.hexString.localizedCaseInsensitiveContains(query)
-            || cardInfo.uid.compactHexString.localizedCaseInsensitiveContains(query)
     }
 }

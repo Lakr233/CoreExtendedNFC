@@ -10,10 +10,7 @@ public extension CoreExtendedNFC {
         maxServiceIndex: Int = 15,
         transport: any NFCTagTransport
     ) async throws -> [FeliCaCommands.ServiceProbe] {
-        guard let felicaTransport = transport as? any FeliCaTagTransporting else {
-            throw NFCError.unsupportedOperation("FeliCa operations require a FeliCa transport")
-        }
-        return try await FeliCaCommands(transport: felicaTransport)
+        try await FeliCaCommands(transport: felicaTransport(transport))
             .probeCommonServices(maxServiceIndex: maxServiceIndex)
     }
 
@@ -24,10 +21,7 @@ public extension CoreExtendedNFC {
         excluding excludedServiceCodes: Set<Data> = [],
         transport: any NFCTagTransport
     ) async throws -> [FeliCaCommands.ServiceSnapshot] {
-        guard let felicaTransport = transport as? any FeliCaTagTransporting else {
-            throw NFCError.unsupportedOperation("FeliCa operations require a FeliCa transport")
-        }
-        return await FeliCaCommands(transport: felicaTransport)
+        try await FeliCaCommands(transport: felicaTransport(transport))
             .readPlainServices(
                 services,
                 maxBlocksPerService: maxBlocksPerService,
@@ -43,10 +37,7 @@ public extension CoreExtendedNFC {
         count: Int,
         transport: any NFCTagTransport
     ) async throws -> Data {
-        guard let felicaTransport = transport as? any FeliCaTagTransporting else {
-            throw NFCError.unsupportedOperation("FeliCa operations require a FeliCa transport")
-        }
-        return try await FeliCaType3Reader(transport: felicaTransport)
+        try await FeliCaType3Reader(transport: felicaTransport(transport))
             .readBlocks(from: startBlock, count: count, maxPerRead: 4)
     }
 
@@ -56,10 +47,7 @@ public extension CoreExtendedNFC {
         blocks: [Data],
         transport: any NFCTagTransport
     ) async throws {
-        guard let felicaTransport = transport as? any FeliCaTagTransporting else {
-            throw NFCError.unsupportedOperation("FeliCa operations require a FeliCa transport")
-        }
-        try await FeliCaType3Reader(transport: felicaTransport)
+        try await FeliCaType3Reader(transport: felicaTransport(transport))
             .writeBlocks(startingAt: startBlock, blocks: blocks, maxPerWrite: 4)
     }
 
@@ -69,10 +57,14 @@ public extension CoreExtendedNFC {
     static func readFeliCaAttributeInfo(
         transport: any NFCTagTransport
     ) async throws -> FeliCaAttributeInfo {
+        try await FeliCaType3Reader(transport: felicaTransport(transport))
+            .readAttributeInfo()
+    }
+
+    private static func felicaTransport(_ transport: any NFCTagTransport) throws -> any FeliCaTagTransporting {
         guard let felicaTransport = transport as? any FeliCaTagTransporting else {
             throw NFCError.unsupportedOperation("FeliCa operations require a FeliCa transport")
         }
-        return try await FeliCaType3Reader(transport: felicaTransport)
-            .readAttributeInfo()
+        return felicaTransport
     }
 }

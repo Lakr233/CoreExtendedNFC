@@ -22,23 +22,10 @@ enum ScanRecordDocument {
         return url
     }
 
-    // MARK: - Import
-
-    static func importRecord(from data: Data) throws -> ScanRecord {
-        try PropertyListDecoder().decode(ScanRecord.self, from: data)
-    }
-
-    static func importRecord(from url: URL) throws -> ScanRecord {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url)
-        return try importRecord(from: data)
-    }
-
     // MARK: - Helpers
 
     private static func sanitizedFileName(for record: ScanRecord) -> String {
-        let uid = record.cardInfo.uid.compactHexString
+        let uid = record.cardInfo.uid.hexString
         let type = record.cardInfo.type.description
             .replacingOccurrences(of: " ", with: "-")
             .replacingOccurrences(of: "/", with: "-")

@@ -33,8 +33,7 @@ enum NDEFTagMapping {
     /// - Byte 2: Memory size in 8-byte units
     /// - Byte 3: Read/write access (0x00 = read-write)
     static func buildType2CC(memoryMap: UltralightMemoryMap) -> Data {
-        let userCapacity = Int(memoryMap.userDataEnd - memoryMap.userDataStart + 1) * 4
-        let sizeField = UInt8(clamping: userCapacity / 8)
+        let sizeField = UInt8(clamping: memoryMap.userDataByteCount / 8)
         return Data([0xE1, 0x10, sizeField, 0x00])
     }
 

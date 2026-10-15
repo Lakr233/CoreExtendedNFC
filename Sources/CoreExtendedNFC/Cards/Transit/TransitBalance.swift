@@ -41,25 +41,22 @@ public struct TransitBalance: Sendable, Equatable, Codable {
 
     /// Human-readable formatted balance.
     public var formattedBalance: String {
+        let major = Double(balanceRaw) / 100.0
         switch currencyCode {
         case "JPY":
             return "¥\(balanceRaw)"
         case "KRW":
             return "₩\(balanceRaw)"
         case "CNY":
-            let yuan = Double(balanceRaw) / 100.0
-            return String(format: "¥%.2f", yuan)
+            return String(format: "¥%.2f", major)
         case "TWD":
             return "NT$\(balanceRaw)"
         case "HKD":
-            let dollars = Double(balanceRaw) / 100.0
-            return String(format: "HK$%.2f", dollars)
+            return String(format: "HK$%.2f", major)
         case "SGD":
-            let dollars = Double(balanceRaw) / 100.0
-            return String(format: "S$%.2f", dollars)
+            return String(format: "S$%.2f", major)
         case "NZD":
-            let dollars = Double(balanceRaw) / 100.0
-            return String(format: "NZ$%.2f", dollars)
+            return String(format: "NZ$%.2f", major)
         default:
             return "\(balanceRaw) \(currencyCode)"
         }

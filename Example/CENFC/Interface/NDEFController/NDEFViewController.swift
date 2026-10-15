@@ -359,11 +359,10 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
                     let singleMessage = NDEFMessage(records: [ndefRecord])
                     let name = autoName(for: ndefRecord)
                     let record = NDEFDataRecord(name: name, messageData: singleMessage.data)
-                    if NDEFStore.shared.record(withMessageData: record.messageData) != nil {
-                        duplicated += 1
-                    } else {
-                        NDEFStore.shared.add(record)
+                    if NDEFStore.shared.addIfNew(record) {
                         imported += 1
+                    } else {
+                        duplicated += 1
                     }
                 }
                 showImportSummary(imported: imported, duplicated: duplicated)
@@ -512,17 +511,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     }
 
     func importFile(at url: URL) {
-        do {
-            let record = try NDEFDocument.importRecord(from: url)
-            if NDEFStore.shared.record(withMessageData: record.messageData) != nil {
-                showImportSummary(imported: 0, duplicated: 1)
-            } else {
-                NDEFStore.shared.add(record)
-                showImportSummary(imported: 1, duplicated: 0)
-            }
-        } catch {
-            presentErrorAlert(for: error)
-        }
+        importFiles(at: [url])
     }
 
     func importFiles(at urls: [URL]) {
@@ -531,11 +520,10 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         for url in urls {
             do {
                 let record = try NDEFDocument.importRecord(from: url)
-                if NDEFStore.shared.record(withMessageData: record.messageData) != nil {
-                    duplicated += 1
-                } else {
-                    NDEFStore.shared.add(record)
+                if NDEFStore.shared.addIfNew(record) {
                     imported += 1
+                } else {
+                    duplicated += 1
                 }
             } catch {
                 presentErrorAlert(for: error)
@@ -571,30 +559,13 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     // MARK: - Push Editor
 
     private func pushEditor(for record: NDEFDataRecord) {
-        let editor: NDEFEditorViewController
-        guard let ndefRecord = record.parsedRecord else {
-            editor = NDEFTextEditorViewController()
-            editor.existingRecord = record
-            editor.onSave = { updated in
-                NDEFStore.shared.update(updated)
-            }
-            navigationController?.pushViewController(editor, animated: true)
-            return
-        }
-
-        switch ndefRecord.parsedPayload {
-        case .text:
-            editor = NDEFTextEditorViewController()
-        case .uri:
-            editor = NDEFURIEditorViewController()
-        case .smartPoster:
-            editor = NDEFSmartPosterEditorViewController()
-        case .mime:
-            editor = NDEFMIMEEditorViewController()
-        case .external:
-            editor = NDEFExternalEditorViewController()
-        default:
-            editor = NDEFTextEditorViewController()
+        let editor: NDEFEditorViewController = switch record.parsedRecord?.parsedPayload {
+        case .text?: NDEFTextEditorViewController()
+        case .uri?: NDEFURIEditorViewController()
+        case .smartPoster?: NDEFSmartPosterEditorViewController()
+        case .mime?: NDEFMIMEEditorViewController()
+        case .external?: NDEFExternalEditorViewController()
+        default: NDEFTextEditorViewController()
         }
         editor.existingRecord = record
         editor.onSave = { updated in
@@ -607,17 +578,5 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
 
     func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         importFiles(at: urls)
-    }
-
-    // MARK: - Errors
-
-    private func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
     }
 }

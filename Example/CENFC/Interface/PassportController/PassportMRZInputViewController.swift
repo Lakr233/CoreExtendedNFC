@@ -98,7 +98,7 @@ class PassportMRZInputViewController: StackScrollController {
             } catch {
                 navigationItem.rightBarButtonItem?.isEnabled = true
                 if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
+                    presentReadFailedAlert(for: error)
                 }
             }
         }
@@ -123,7 +123,7 @@ class PassportMRZInputViewController: StackScrollController {
         present(alert, animated: true)
     }
 
-    private func presentErrorAlert(for error: Error) {
+    private func presentReadFailedAlert(for error: Error) {
         let alert = UIAlertController(
             title: String(localized: "Passport Read Failed"),
             message: String(describing: error),

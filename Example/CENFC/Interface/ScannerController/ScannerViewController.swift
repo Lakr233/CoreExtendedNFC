@@ -62,7 +62,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 UIAction(
                     title: String(localized: "UID"),
                     image: UIImage(systemName: "number")
-                ) { _ in ScanStore.shared.sort { $0.cardInfo.uid.hexString < $1.cardInfo.uid.hexString } },
+                ) { _ in ScanStore.shared.sort { $0.cardInfo.uid.hexDump < $1.cardInfo.uid.hexDump } },
                 UIAction(
                     title: String(localized: "AID"),
                     image: UIImage(systemName: "creditcard")
@@ -251,7 +251,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                     title: String(localized: "Copy UID"),
                     image: UIImage(systemName: "doc.on.doc")
                 ) { _ in
-                    UIPasteboard.general.string = record.cardInfo.uid.hexString
+                    UIPasteboard.general.string = record.cardInfo.uid.hexDump
                     SPIndicator.present(
                         title: String(localized: "Copied"),
                         preset: .done,
@@ -335,12 +335,12 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         _: UITableView,
         performDropWith coordinator: UITableViewDropCoordinator
     ) {
-        let destinationIndexPath = coordinator.destinationIndexPath
-            ?? IndexPath(row: ScanStore.shared.records.count, section: 0)
-
-        if coordinator.session.localDragSession != nil {
+        guard coordinator.session.localDragSession == nil else {
             return // local reorder handled by diffable data source
         }
+
+        let destinationIndexPath = coordinator.destinationIndexPath
+            ?? IndexPath(row: ScanStore.shared.records.count, section: 0)
 
         for item in coordinator.items {
             item.dragItem.itemProvider.loadDataRepresentation(
@@ -349,12 +349,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 guard let data else { return }
                 DispatchQueue.main.async {
                     guard let envelope = try? CardDocument.importEnvelope(from: data) else { return }
-                    let record = envelope.scanRecord
-                    if let existing = ScanStore.shared.record(withUID: record.cardInfo.uid) {
-                        ScanStore.shared.replace(existing.id, with: record)
-                    } else {
-                        ScanStore.shared.insert(record, at: destinationIndexPath.row)
-                    }
+                    ScanStore.shared.upsert(envelope.scanRecord, at: destinationIndexPath.row)
                     if let dump = envelope.dumpRecord, dump.hasMemoryData {
                         DumpStore.shared.add(dump)
                     }
@@ -430,12 +425,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 guard let data else { return }
                 DispatchQueue.main.async {
                     guard let envelope = try? CardDocument.importEnvelope(from: data) else { return }
-                    let record = envelope.scanRecord
-                    if let existing = ScanStore.shared.record(withUID: record.cardInfo.uid) {
-                        ScanStore.shared.replace(existing.id, with: record)
-                    } else {
-                        ScanStore.shared.add(record)
-                    }
+                    ScanStore.shared.upsert(envelope.scanRecord)
                     if let dump = envelope.dumpRecord, dump.hasMemoryData {
                         DumpStore.shared.add(dump)
                     }
@@ -511,12 +501,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     func importFile(at url: URL) {
         do {
             let envelope = try CardDocument.importEnvelope(from: url)
-            let record = envelope.scanRecord
-            if let existing = ScanStore.shared.record(withUID: record.cardInfo.uid) {
-                ScanStore.shared.replace(existing.id, with: record)
-            } else {
-                ScanStore.shared.add(record)
-            }
+            ScanStore.shared.upsert(envelope.scanRecord)
 
             if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
                 promptSaveDump(dumpRecord)
@@ -558,17 +543,5 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         for url in urls {
             importFile(at: url)
         }
-    }
-
-    // MARK: - Errors
-
-    private func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
     }
 }

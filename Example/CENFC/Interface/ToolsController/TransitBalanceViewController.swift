@@ -214,16 +214,4 @@ class TransitBalanceViewController: StackScrollController {
             }
         }
     }
-
-    // MARK: - Error Handling
-
-    private func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
-    }
 }

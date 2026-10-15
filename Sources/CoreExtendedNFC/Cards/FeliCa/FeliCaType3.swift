@@ -36,7 +36,7 @@ public struct FeliCaType3Reader: Sendable {
         }
         NFCLog.debug("NDEF length=\(attrInfo.ndefLength), NBR=\(attrInfo.nbr)", source: "FeliCa")
 
-        let totalBlocks = Int((attrInfo.ndefLength + 15) / 16) // ceil division
+        let totalBlocks = (Int(attrInfo.ndefLength) + FeliCaMemory.blockSize - 1) / FeliCaMemory.blockSize // ceil division
         let blockData = try await readBlocks(
             from: 1,
             count: totalBlocks,

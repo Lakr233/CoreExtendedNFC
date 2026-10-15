@@ -83,13 +83,7 @@ class NDEFEditorViewController: StackScrollController {
             } catch {
                 manager.invalidate()
                 if !presentNFCErrorAlertIfNeeded(for: error) {
-                    let alert = UIAlertController(
-                        title: String(localized: "Error"),
-                        message: String(describing: error),
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-                    present(alert, animated: true)
+                    presentErrorAlert(for: error)
                 }
             }
         }

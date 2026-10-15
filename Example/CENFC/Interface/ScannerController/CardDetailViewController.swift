@@ -101,27 +101,27 @@ class CardDetailViewController: StackScrollController {
         var lines: [String] = []
         lines.append("\(String(localized: "Card Type")): \(record.cardInfo.type.description)")
         lines.append("\(String(localized: "Card Family")): \(String(describing: record.cardInfo.type.family))")
-        lines.append("\(String(localized: "UID")): \(record.cardInfo.uid.hexString)")
+        lines.append("\(String(localized: "UID")): \(record.cardInfo.uid.hexDump)")
         lines.append("\(String(localized: "Operable on iOS")): \(record.cardInfo.type.isOperableOnIOS ? String(localized: "Yes") : String(localized: "No"))")
         lines.append("\(String(localized: "Scan Date")): \(dateFormatter.string(from: record.date))")
-        if let atqa = record.cardInfo.atqa { lines.append("\(String(localized: "ATQA")): \(atqa.hexString)") }
+        if let atqa = record.cardInfo.atqa { lines.append("\(String(localized: "ATQA")): \(atqa.hexDump)") }
         if let sak = record.cardInfo.sak { lines.append("\(String(localized: "SAK")): \(String(format: "0x%02X", sak))") }
         if let ats = record.cardInfo.ats {
             lines.append("\(String(localized: "ATS FSCI")): \(ats.fsci) (max \(ats.maxFrameSize) bytes)")
             if let ta = ats.ta { lines.append("\(String(localized: "ATS TA")): \(String(format: "0x%02X", ta))") }
             if let tb = ats.tb { lines.append("\(String(localized: "ATS TB")): \(String(format: "0x%02X", tb))") }
             if let tc = ats.tc { lines.append("\(String(localized: "ATS TC")): \(String(format: "0x%02X", tc))") }
-            if !ats.historicalBytes.isEmpty { lines.append("\(String(localized: "ATS Historical Bytes")): \(ats.historicalBytes.hexString)") }
+            if !ats.historicalBytes.isEmpty { lines.append("\(String(localized: "ATS Historical Bytes")): \(ats.historicalBytes.hexDump)") }
         }
-        if let hist = record.cardInfo.historicalBytes, !hist.isEmpty { lines.append("\(String(localized: "Historical Bytes")): \(hist.hexString)") }
+        if let hist = record.cardInfo.historicalBytes, !hist.isEmpty { lines.append("\(String(localized: "Historical Bytes")): \(hist.hexDump)") }
         if let aid = record.cardInfo.initialSelectedAID, !aid.isEmpty {
             lines.append("\(String(localized: "Initial Selected AID")): \(aid)")
             if let application = record.cardInfo.knownISO7816Application {
                 lines.append("\(String(localized: "Known ISO 7816 Application")): \(application.displayName)")
             }
         }
-        if let sysCode = record.cardInfo.systemCode { lines.append("\(String(localized: "System Code")): \(sysCode.hexString)") }
-        if let idm = record.cardInfo.idm { lines.append("\(String(localized: "IDm")): \(idm.hexString)") }
+        if let sysCode = record.cardInfo.systemCode { lines.append("\(String(localized: "System Code")): \(sysCode.hexDump)") }
+        if let idm = record.cardInfo.idm { lines.append("\(String(localized: "IDm")): \(idm.hexDump)") }
         if let icMfr = record.cardInfo.icManufacturer { lines.append("\(String(localized: "IC Manufacturer")): \(String(format: "0x%02X (%d)", icMfr, icMfr))") }
         UIPasteboard.general.string = lines.joined(separator: "\n")
         SPIndicator.present(
@@ -162,7 +162,7 @@ class CardDetailViewController: StackScrollController {
         addInfoRow(
             icon: "number", title: String(localized: "UID"),
             description: String(localized: "Unique identifier burned into the chip at manufacturing."),
-            value: record.cardInfo.uid.hexString
+            value: record.cardInfo.uid.hexDump
         )
         addInfoRow(
             icon: record.cardInfo.type.isOperableOnIOS ? "checkmark.circle" : "xmark.circle",
@@ -196,7 +196,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "arrow.right.arrow.left", title: String(localized: "ATQA"),
                 description: String(localized: "Answer To Request Type A, encodes anticollision and bit-frame info."),
-                value: atqa.hexString
+                value: atqa.hexDump
             )
         }
         if let sak = record.cardInfo.sak {
@@ -237,7 +237,7 @@ class CardDetailViewController: StackScrollController {
                 addInfoRow(
                     icon: "doc.text", title: String(localized: "ATS Historical Bytes"),
                     description: String(localized: "Optional data from the card providing chip or application info."),
-                    value: ats.historicalBytes.hexString
+                    value: ats.historicalBytes.hexDump
                 )
             }
         }
@@ -245,7 +245,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "doc.text", title: String(localized: "Historical Bytes"),
                 description: String(localized: "Manufacturer-defined data returned during anticollision or selection."),
-                value: hist.hexString
+                value: hist.hexDump
             )
         }
         if let aid = record.cardInfo.initialSelectedAID, !aid.isEmpty {
@@ -277,14 +277,14 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "cpu", title: String(localized: "System Code"),
                 description: String(localized: "FeliCa system code identifying the card's service configuration."),
-                value: sysCode.hexString
+                value: sysCode.hexDump
             )
         }
         if let idm = record.cardInfo.idm {
             addInfoRow(
                 icon: "cpu", title: String(localized: "IDm"),
                 description: String(localized: "FeliCa Manufacture ID, 8-byte unique identifier assigned at production."),
-                value: idm.hexString
+                value: idm.hexDump
             )
         }
         if let icMfr = record.cardInfo.icManufacturer {
@@ -310,7 +310,7 @@ class CardDetailViewController: StackScrollController {
             )
             $0.textColor = .label.withAlphaComponent(0.25)
             $0.numberOfLines = 0
-            $0.text = record.cardInfo.uid.compactHexString
+            $0.text = record.cardInfo.uid.hexString
             $0.textAlignment = .center
         }
         stackView.addArrangedSubviewWithMargin(uidLabel)

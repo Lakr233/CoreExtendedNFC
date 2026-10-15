@@ -116,6 +116,15 @@ public enum CryptoUtils {
 
     // MARK: - Internal
 
+    /// Generate cryptographically random bytes.
+    static func randomBytes(count: Int) -> Data {
+        var bytes = Data(count: count)
+        _ = bytes.withUnsafeMutableBytes { ptr in
+            SecRandomCopyBytes(kSecRandomDefault, count, ptr.baseAddress!)
+        }
+        return bytes
+    }
+
     /// Expand a 16-byte 2-key 3DES key to 24-byte 3-key format: K1||K2||K1.
     private static func expandDESKey(_ key: Data) -> Data {
         if key.count == 16 {

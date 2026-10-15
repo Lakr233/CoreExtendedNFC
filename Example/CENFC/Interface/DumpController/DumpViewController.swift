@@ -61,7 +61,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
                 UIAction(
                     title: String(localized: "UID"),
                     image: UIImage(systemName: "number")
-                ) { _ in DumpStore.shared.sort { $0.dump.cardInfo.uid.hexString < $1.dump.cardInfo.uid.hexString } },
+                ) { _ in DumpStore.shared.sort { $0.dump.cardInfo.uid.hexDump < $1.dump.cardInfo.uid.hexDump } },
             ]
         )
 
@@ -240,7 +240,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
                     title: String(localized: "Copy UID"),
                     image: UIImage(systemName: "doc.on.doc")
                 ) { _ in
-                    UIPasteboard.general.string = record.dump.cardInfo.uid.hexString
+                    UIPasteboard.general.string = record.dump.cardInfo.uid.hexDump
                     SPIndicator.present(
                         title: String(localized: "Copied"),
                         preset: .done,
@@ -428,11 +428,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: String(localized: "Save"), style: .default) { _ in
-            if let existing = ScanStore.shared.record(withUID: scanRecord.cardInfo.uid) {
-                ScanStore.shared.replace(existing.id, with: scanRecord)
-            } else {
-                ScanStore.shared.add(scanRecord)
-            }
+            ScanStore.shared.upsert(scanRecord)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Skip"), style: .cancel))
         present(alert, animated: true)
@@ -447,16 +443,6 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     }
 
     // MARK: - Alerts
-
-    private func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
-    }
 
     private func presentInfoAlert(title: String, message: String) {
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)

@@ -38,10 +38,6 @@ struct NDEFDataRecord: Codable, Hashable, Identifiable {
         parsedRecord?.displayValue ?? String(localized: "No data")
     }
 
-    func replacingID(_ newID: UUID = UUID(), date newDate: Date = Date()) -> NDEFDataRecord {
-        NDEFDataRecord(id: newID, date: newDate, name: name, messageData: messageData)
-    }
-
     func withName(_ newName: String) -> NDEFDataRecord {
         NDEFDataRecord(id: id, date: date, name: newName, messageData: messageData)
     }

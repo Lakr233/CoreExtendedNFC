@@ -4,7 +4,7 @@ set -euo pipefail
 
 json=$(xcrun simctl list devices available -j)
 
-selection=$(python3 -c '
+python3 -c '
 import json
 import re
 import sys
@@ -30,19 +30,11 @@ ios_runtimes.sort(key=lambda item: item[0], reverse=True)
 for _, devices in ios_runtimes:
     for prefix in ("iPhone", "iPad"):
         for device in devices:
-            if not device.get("isAvailable", False):
-                continue
-
             name = device.get("name", "")
             if name.startswith(prefix):
-                print("platform=iOS Simulator,id={}\t{}".format(device["udid"], name))
+                print("Selected simulator: {}".format(name), file=sys.stderr)
+                print("platform=iOS Simulator,id={}".format(device["udid"]))
                 raise SystemExit(0)
 
 raise SystemExit("No available iOS Simulator devices found")
-' "$json")
-
-destination=${selection%%$'\t'*}
-name=${selection#*$'\t'}
-
-echo "Selected simulator: $name" >&2
-echo "$destination"
+' "$json"

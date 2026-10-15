@@ -13,10 +13,6 @@ struct DumpRecord: Codable, Identifiable {
         self.dump = dump
     }
 
-    func replacingID(_ newID: UUID = UUID(), date newDate: Date = Date()) -> DumpRecord {
-        DumpRecord(from: dump, id: newID, date: newDate)
-    }
-
     var hasMemoryData: Bool {
         !dump.pages.isEmpty || !dump.blocks.isEmpty || !dump.files.isEmpty || dump.ndefMessage != nil
     }
@@ -35,7 +31,7 @@ extension DumpRecord: Hashable {
 extension DumpRecord: ObjectListItem {
     func matches(query: String) -> Bool {
         dump.cardInfo.type.description.localizedCaseInsensitiveContains(query)
+            || dump.cardInfo.uid.hexDump.localizedCaseInsensitiveContains(query)
             || dump.cardInfo.uid.hexString.localizedCaseInsensitiveContains(query)
-            || dump.cardInfo.uid.compactHexString.localizedCaseInsensitiveContains(query)
     }
 }

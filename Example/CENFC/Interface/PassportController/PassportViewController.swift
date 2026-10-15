@@ -12,8 +12,6 @@ class PassportViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let emptyState = EmptyStateView.scan()
     private var dataSource: ReorderableTableViewDiffableDataSource<Section, UUID>!
-    private var pendingSnapshotReload = false
-    private var pendingSnapshotAnimated = true
 
     private var currentSearchText: String {
         navigationItem.searchController?.searchBar.text ?? ""
@@ -129,11 +127,6 @@ class PassportViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadSnapshot()
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        flushPendingSnapshotReloadIfNeeded()
     }
 
     override func viewDidLayoutSubviews() {
@@ -274,8 +267,6 @@ class PassportViewController: UIViewController {
 
     func reloadSnapshot(animatingDifferences: Bool = true) {
         guard isViewLoaded else {
-            pendingSnapshotReload = true
-            pendingSnapshotAnimated = pendingSnapshotAnimated || animatingDifferences
             AppLogStore.shared.debug(
                 "reloadSnapshot deferred animated=\(animatingDifferences) viewLoaded=\(isViewLoaded)",
                 source: "PassportReorder"
@@ -297,18 +288,6 @@ class PassportViewController: UIViewController {
         snapshot.appendItems(filtered.map(\.id))
         dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
         emptyState.isHidden = !PassportStore.shared.records.isEmpty
-    }
-
-    private func flushPendingSnapshotReloadIfNeeded() {
-        guard pendingSnapshotReload, isViewLoaded else { return }
-        let animated = pendingSnapshotAnimated
-        pendingSnapshotReload = false
-        pendingSnapshotAnimated = true
-        AppLogStore.shared.debug(
-            "flushing deferred snapshot animated=\(animated)",
-            source: "PassportReorder"
-        )
-        reloadSnapshot(animatingDifferences: animated)
     }
 
     // MARK: - Navigation
@@ -361,18 +340,6 @@ class PassportViewController: UIViewController {
         } catch {
             presentErrorAlert(for: error)
         }
-    }
-
-    // MARK: - Errors
-
-    private func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
     }
 }
 

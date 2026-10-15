@@ -20,10 +20,7 @@ function with_retry {
     local retries=3
     local count=0
     while [[ $count -lt $retries ]]; do
-        "$@"
-        if [[ $? -eq 0 ]]; then
-            return 0
-        fi
+        if "$@"; then return 0; fi
         count=$((count + 1))
     done
     return 1
@@ -35,15 +32,12 @@ with_retry xcodebuild -resolvePackageDependencies \
     -clonedSourcePackagesDirPath "$PACKAGE_CLONE_ROOT" \
     -project "${PROJECT_ROOT}/Example/CENFC.xcodeproj" \
     -scheme CENFC |
-    xcbeautify 2>/dev/null || true
+    xcbeautify 2>/dev/null
 
 echo "[*] scanning licenses..."
 
-SCANNER_DIR=(
-    "$PACKAGE_CLONE_ROOT/checkouts"
-)
+SCANNER_DIR="$PACKAGE_CLONE_ROOT/checkouts"
 
-# Build package name mapping from Package.resolved
 declare -A PACKAGE_NAME_MAP
 PACKAGE_RESOLVED="${PROJECT_ROOT}/Example/CENFC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 
@@ -74,18 +68,12 @@ function get_correct_package_name {
 
 SCANNED_LICENSE_CONTENT="# Open Source Licenses\n\n"
 
-for dir in "${SCANNER_DIR[@]}"; do
-    if [[ -d "$dir" ]]; then
-        for file in $(find "$dir" -maxdepth 2 -name "LICENSE*" -type f | sort); do
-            PACKAGE_NAME=$(get_correct_package_name $(basename $(dirname $file)))
-            SCANNED_LICENSE_CONTENT="${SCANNED_LICENSE_CONTENT}\n\n## ${PACKAGE_NAME}\n\n$(cat $file)"
-        done
-        for file in $(find "$dir" -maxdepth 2 -name "COPYING*" -type f | sort); do
-            PACKAGE_NAME=$(get_correct_package_name $(basename $(dirname $file)))
-            SCANNED_LICENSE_CONTENT="${SCANNED_LICENSE_CONTENT}\n\n## ${PACKAGE_NAME}\n\n$(cat $file)"
-        done
-    fi
-done
+if [[ -d "$SCANNER_DIR" ]]; then
+    for file in $({ find "$SCANNER_DIR" -maxdepth 2 -name "LICENSE*" -type f | sort; find "$SCANNER_DIR" -maxdepth 2 -name "COPYING*" -type f | sort; }); do
+        PACKAGE_NAME=$(get_correct_package_name $(basename $(dirname $file)))
+        SCANNED_LICENSE_CONTENT="${SCANNED_LICENSE_CONTENT}\n\n## ${PACKAGE_NAME}\n\n$(cat $file)"
+    done
+fi
 
 OUTPUT_FILE="${PROJECT_ROOT}/Example/CENFC/Resources/OpenSourceLicenses.md"
 echo -e "$SCANNED_LICENSE_CONTENT" >"$OUTPUT_FILE"

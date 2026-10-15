@@ -97,11 +97,7 @@ extension UltralightCommands {
             return candidate
         }
 
-        var bytes = Data(count: 8)
-        _ = bytes.withUnsafeMutableBytes { ptr in
-            SecRandomCopyBytes(kSecRandomDefault, 8, ptr.baseAddress!)
-        }
-        return bytes
+        return CryptoUtils.randomBytes(count: 8)
     }
 
     private func rotateLeft(_ data: Data) -> Data {

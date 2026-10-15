@@ -118,7 +118,7 @@ class DumpDetailViewController: StackScrollController {
             icon: "number",
             title: String(localized: "UID"),
             description: String(localized: "Unique identifier burned into the chip at manufacturing."),
-            value: record.dump.cardInfo.uid.hexString
+            value: record.dump.cardInfo.uid.hexDump
         )
         addInfoRow(
             icon: "calendar",
@@ -244,7 +244,7 @@ class DumpDetailViewController: StackScrollController {
             )
             $0.textColor = .label.withAlphaComponent(0.25)
             $0.numberOfLines = 0
-            $0.text = record.dump.cardInfo.uid.compactHexString
+            $0.text = record.dump.cardInfo.uid.hexString
             $0.textAlignment = .center
         }
         stackView.addArrangedSubviewWithMargin(uidLabel)

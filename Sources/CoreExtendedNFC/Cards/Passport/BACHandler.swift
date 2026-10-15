@@ -48,8 +48,8 @@ public enum BACHandler {
         let rndICC = challengeResponse.data
 
         // Step 3: Generate our random values
-        let rndIFDValue = rndIFD ?? generateRandom(count: 8)
-        let kIFDValue = kIFD ?? generateRandom(count: 16)
+        let rndIFDValue = rndIFD ?? CryptoUtils.randomBytes(count: 8)
+        let kIFDValue = kIFD ?? CryptoUtils.randomBytes(count: 16)
 
         // Step 4: Build concatenation S = rndIFD || rndICC || kIFD
         var s = Data()
@@ -133,16 +133,5 @@ public enum BACHandler {
             ksMac: ksMac,
             ssc: ssc
         )
-    }
-
-    // MARK: - Private
-
-    /// Generate cryptographically random bytes.
-    private static func generateRandom(count: Int) -> Data {
-        var bytes = Data(count: count)
-        _ = bytes.withUnsafeMutableBytes { ptr in
-            SecRandomCopyBytes(kSecRandomDefault, count, ptr.baseAddress!)
-        }
-        return bytes
     }
 }

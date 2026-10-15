@@ -13,6 +13,11 @@ public struct UltralightMemoryMap: Sendable, Equatable {
     /// First dynamic lock byte page (if applicable).
     public let dynamicLockStart: UInt8?
 
+    /// Number of user data bytes (4 bytes per page, inclusive range).
+    var userDataByteCount: Int {
+        Int(userDataEnd - userDataStart + 1) * 4
+    }
+
     /// Build memory map for a specific card type.
     public static func forType(_ type: CardType) -> UltralightMemoryMap {
         switch type {

@@ -50,15 +50,11 @@ class NDEFStore: @MainActor ObjectListDataSource {
         save()
     }
 
-    func remove(id: UUID) {
-        records.removeAll { $0.id == id }
-        save()
-    }
-
-    func replace(_ existingID: UUID, with record: NDEFDataRecord) {
-        guard let index = records.firstIndex(where: { $0.id == existingID }) else { return }
-        records[index] = record.replacingID(existingID)
-        save()
+    /// Adds the record unless one with the same message data already exists. Returns whether it was added.
+    func addIfNew(_ record: NDEFDataRecord) -> Bool {
+        guard self.record(withMessageData: record.messageData) == nil else { return false }
+        add(record)
+        return true
     }
 
     func update(_ record: NDEFDataRecord) {
@@ -75,12 +71,6 @@ class NDEFStore: @MainActor ObjectListDataSource {
         let record = records.remove(at: source)
         let target = min(destination, records.count)
         records.insert(record, at: target)
-        save()
-    }
-
-    func insert(_ record: NDEFDataRecord, at index: Int) {
-        let clamped = max(0, min(index, records.count))
-        records.insert(record, at: clamped)
         save()
     }
 
@@ -133,13 +123,6 @@ class NDEFStore: @MainActor ObjectListDataSource {
 
     func reorderItems(by orderedIDs: [UUID]) {
         reorder(by: orderedIDs)
-    }
-
-    func configure(cell: ConfigurableView, for item: NDEFDataRecord) {
-        let row = rowPresentation(for: item)
-        cell.configure(icon: UIImage(systemName: row.icon))
-        cell.configure(title: row.title)
-        cell.configure(description: row.detail)
     }
 
     func rowPresentation(for item: NDEFDataRecord) -> ObjectListRowPresentation {

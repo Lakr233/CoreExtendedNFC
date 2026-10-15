@@ -307,17 +307,15 @@ public struct PassportReader: Sendable {
         let (_, tagBytes) = try ASN1Parser.parseTag(headerData, at: 0)
 
         // Try to parse length — if we don't have enough bytes, read more
-        var contentLength: Int
-        var lengthBytes: Int
-        var parseSucceeded = false
+        var parsedLength: (content: Int, header: Int)?
 
         // Loop to ensure we have enough header data for the length field
         // Maximum header: 2 (tag) + 4 (0x83 length) = 6 bytes, so at most 2 extra reads
         for attempt in 0 ..< 3 {
             if tagBytes < headerData.count {
                 do {
-                    (contentLength, lengthBytes) = try ASN1Parser.parseLength(headerData, at: tagBytes)
-                    parseSucceeded = true
+                    let (content, header) = try ASN1Parser.parseLength(headerData, at: tagBytes)
+                    parsedLength = (content: content, header: header)
                     break
                 } catch {
                     // Length field is incomplete — need more bytes
@@ -334,15 +332,12 @@ public struct PassportReader: Sendable {
             headerData.append(moreResponse.data)
         }
 
-        guard parseSucceeded else {
+        guard let parsedLength else {
             throw NFCError.dataGroupParseFailed("Could not parse TLV length after reading \(headerData.count) header bytes")
         }
 
-        // Suppress "used before being initialized" — parseSucceeded guarantees these are set
-        (contentLength, lengthBytes) = try ASN1Parser.parseLength(headerData, at: tagBytes)
-
-        let headerSize = tagBytes + lengthBytes
-        let totalLength = headerSize + contentLength
+        let headerSize = tagBytes + parsedLength.header
+        let totalLength = headerSize + parsedLength.content
 
         // Sanity check: reject absurdly large lengths (> 10 MB) to prevent memory issues
         guard totalLength <= 10 * 1024 * 1024 else {
@@ -622,10 +617,7 @@ public struct PassportReader: Sendable {
         transport: SecureMessagingTransport
     ) async throws -> ActiveAuthenticationResult {
         // Generate 8-byte random challenge
-        var challenge = Data(count: 8)
-        _ = challenge.withUnsafeMutableBytes { ptr in
-            SecRandomCopyBytes(kSecRandomDefault, 8, ptr.baseAddress!)
-        }
+        let challenge = CryptoUtils.randomBytes(count: 8)
 
         // Send INTERNAL AUTHENTICATE
         let authAPDU = CommandAPDU.internalAuthenticate(data: challenge)

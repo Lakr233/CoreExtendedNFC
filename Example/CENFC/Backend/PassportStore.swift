@@ -53,23 +53,6 @@ class PassportStore {
         save()
     }
 
-    func move(from source: Int, to destination: Int) {
-        guard source != destination,
-              records.indices.contains(source),
-              destination >= 0, destination <= records.count
-        else { return }
-        let record = records.remove(at: source)
-        let target = min(destination, records.count)
-        records.insert(record, at: target)
-        save()
-    }
-
-    func insert(_ record: PassportRecord, at index: Int) {
-        let clamped = max(0, min(index, records.count))
-        records.insert(record, at: clamped)
-        save()
-    }
-
     func sort(by comparator: (PassportRecord, PassportRecord) -> Bool) {
         records.sort(by: comparator)
         save()

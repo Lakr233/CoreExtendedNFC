@@ -38,19 +38,15 @@ extension CoreExtendedNFC {
             // Try Korea KS X 6924 first — only catch "not this card" errors
             do {
                 return try await readKoreaTransitBalance(transport: iso7816Transport)
-            } catch NFCError.unsupportedOperation {
-                // Not a Korean transit card, try next
-            } catch NFCError.unexpectedStatusWord {
-                // AID selection rejected by card, try next
+            } catch NFCError.unsupportedOperation, NFCError.unexpectedStatusWord {
+                // Not a Korean transit card (or AID rejected); try next
             }
 
             // Try China T-Union
             do {
                 return try await readChinaTransitBalance(transport: iso7816Transport)
-            } catch NFCError.unsupportedOperation {
-                // Not a T-Union card either
-            } catch NFCError.unexpectedStatusWord {
-                // AID selection rejected by card
+            } catch NFCError.unsupportedOperation, NFCError.unexpectedStatusWord {
+                // Not a T-Union card either (or AID rejected)
             }
         }
 

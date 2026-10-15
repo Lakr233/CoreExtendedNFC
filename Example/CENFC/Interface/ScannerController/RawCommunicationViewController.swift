@@ -113,7 +113,7 @@ class RawCommunicationViewController: StackScrollController {
         addInfoRow(
             icon: "number",
             title: String(localized: "UID"),
-            value: cardInfo.uid.hexString
+            value: cardInfo.uid.hexDump
         )
 
         let mode = communicationMode
@@ -241,8 +241,8 @@ class RawCommunicationViewController: StackScrollController {
 
             // Verify UID
             guard transport.identifier == cardInfo.uid else {
-                let expected = cardInfo.uid.hexString
-                let got = transport.identifier.hexString
+                let expected = cardInfo.uid.hexDump
+                let got = transport.identifier.hexDump
                 manager.invalidate(errorMessage: String(localized: "Wrong card detected"))
                 appendLog("ERROR: UID mismatch\n  Expected: \(expected)\n  Got:      \(got)")
                 return
@@ -267,14 +267,14 @@ class RawCommunicationViewController: StackScrollController {
             manager.setAlertMessage(String(localized: "Done"))
             manager.invalidate()
 
-            appendLog("TX: \(commandData.hexString)\nRX: \(response.hexString)")
+            appendLog("TX: \(commandData.hexDump)\nRX: \(response.hexDump)")
 
         } catch is CancellationError {
             return
         } catch {
             manager.invalidate()
             if !presentNFCErrorAlertIfNeeded(for: error) {
-                appendLog("TX: \(commandData.hexString)\nERROR: \(String(describing: error))")
+                appendLog("TX: \(commandData.hexDump)\nERROR: \(String(describing: error))")
             }
         }
     }

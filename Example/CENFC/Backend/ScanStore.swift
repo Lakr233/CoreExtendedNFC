@@ -50,11 +50,6 @@ class ScanStore: @MainActor ObjectListDataSource {
         save()
     }
 
-    func remove(id: UUID) {
-        records.removeAll { $0.id == id }
-        save()
-    }
-
     func replace(_ existingID: UUID, with record: ScanRecord) {
         guard let index = records.firstIndex(where: { $0.id == existingID }) else { return }
         records[index] = record.replacingID(existingID)
@@ -76,6 +71,15 @@ class ScanStore: @MainActor ObjectListDataSource {
         let clamped = max(0, min(index, records.count))
         records.insert(record, at: clamped)
         save()
+    }
+
+    /// Replaces the record with the same UID, or inserts a new one at `index`.
+    func upsert(_ record: ScanRecord, at index: Int = 0) {
+        if let existing = self.record(withUID: record.cardInfo.uid) {
+            replace(existing.id, with: record)
+        } else {
+            insert(record, at: index)
+        }
     }
 
     func sort(by comparator: (ScanRecord, ScanRecord) -> Bool) {
@@ -136,34 +140,27 @@ class ScanStore: @MainActor ObjectListDataSource {
         reorder(by: orderedIDs)
     }
 
-    func configure(cell: ConfigurableView, for item: ScanRecord) {
-        let row = rowPresentation(for: item)
-        cell.configure(icon: UIImage(systemName: row.icon))
-        cell.configure(title: row.title)
-        cell.configure(description: row.detail)
-    }
-
     func rowPresentation(for item: ScanRecord) -> ObjectListRowPresentation {
         ObjectListRowPresentation(
-            icon: Self.iconName(for: String(describing: item.cardInfo.type.family)),
+            icon: Self.iconName(for: item.cardInfo.type.family),
             title: item.cardInfo.type.description,
-            detail: item.cardInfo.uid.hexString
+            detail: item.cardInfo.uid.hexDump
         )
     }
 
-    static func iconName(for family: String) -> String {
+    static func iconName(for family: CardFamily) -> String {
         switch family {
-        case "mifareUltralight", "ntag": "creditcard"
-        case "mifareClassic": "creditcard.trianglebadge.exclamationmark"
-        case "mifarePlus": "creditcard.and.123"
-        case "mifareDesfire": "lock.shield"
-        case "type4": "doc.text"
-        case "felica": "wave.3.right"
-        case "iso15693": "barcode"
-        case "passport": "person.text.rectangle"
-        case "jewelTopaz": "diamond"
-        case "iso14443B": "rectangle.on.rectangle"
-        default: "questionmark.circle"
+        case .mifareUltralight, .ntag: "creditcard"
+        case .mifareClassic: "creditcard.trianglebadge.exclamationmark"
+        case .mifarePlus: "creditcard.and.123"
+        case .mifareDesfire: "lock.shield"
+        case .type4: "doc.text"
+        case .felica: "wave.3.right"
+        case .iso15693: "barcode"
+        case .passport: "person.text.rectangle"
+        case .jewelTopaz: "diamond"
+        case .iso14443B: "rectangle.on.rectangle"
+        case .unknown: "questionmark.circle"
         }
     }
 }

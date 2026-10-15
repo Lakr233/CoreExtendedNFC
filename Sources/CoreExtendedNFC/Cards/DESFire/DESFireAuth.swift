@@ -423,15 +423,7 @@ extension DESFireCommands {
             }
             return candidate
         }
-        return Self.generateRandom(count: count)
-    }
-
-    private static func generateRandom(count: Int) -> Data {
-        var bytes = Data(count: count)
-        _ = bytes.withUnsafeMutableBytes { ptr in
-            SecRandomCopyBytes(kSecRandomDefault, count, ptr.baseAddress!)
-        }
-        return bytes
+        return CryptoUtils.randomBytes(count: count)
     }
 
     private func rotateLeft(_ data: Data) -> Data {

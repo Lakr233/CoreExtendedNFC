@@ -13,7 +13,7 @@ public enum CoreExtendedNFC {
         message: String? = nil
     ) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager) {
         let manager = NFCSessionManager()
-        let (info, transport) = try await manager.scan(message: message ?? String(localized: "Hold your iPhone near the NFC tag", bundle: .module))
+        let (info, transport) = try await manager.scan(message: message)
 
         let refinedInfo = try await refineCardInfo(info, transport: transport)
         manager.setAlertMessage("\(refinedInfo.type.description)")
@@ -24,11 +24,10 @@ public enum CoreExtendedNFC {
     public static func scanAndDump(
         message: String? = nil
     ) async throws -> (CardInfo, MemoryDump) {
-        let (info, transport, manager) = try await scan(message: message ?? String(localized: "Hold your iPhone near the NFC tag", bundle: .module))
+        let (info, transport, manager) = try await scan(message: message)
 
         // Non-operable cards (Classic, etc.) — return identification only
         guard info.type.isOperableOnIOS else {
-            manager.setAlertMessage("\(info.type.description)")
             manager.invalidate()
             return (info, MemoryDump(cardInfo: info))
         }
@@ -70,13 +69,8 @@ public enum CoreExtendedNFC {
         case .iso15693:
             return try await dumpISO15693(info: info, transport: transport)
 
-        case .iso14443B:
-            if info.type == .myNumberCard {
-                return try await dumpMyNumberCard(info: info, transport: transport)
-            }
-            throw NFCError.unsupportedOperation(
-                "Automatic dump not yet supported for \(info.type.description)"
-            )
+        case .iso14443B where info.type == .myNumberCard:
+            return try await dumpMyNumberCard(info: info, transport: transport)
 
         case .mifareClassic:
             throw NFCError.notOperableOnIOS(info.type)
@@ -99,7 +93,9 @@ public enum CoreExtendedNFC {
         transport: any NFCTagTransport
     ) async throws -> NDEFMessage {
         switch info.type.family {
-        case .type4:
+        case .type4, .passport, .mifareDesfire:
+            // Multi-application cards (e.g. ePassport chips that also carry NDEF)
+            // sit on ISO 7816 transport, so try the Type 4 NDEF path as a fallback.
             let payload = try await Type4Tag(transport: transport).readNDEF()
             return try NDEFMessage(data: payload)
         case .felica:
@@ -114,11 +110,6 @@ public enum CoreExtendedNFC {
                 throw NFCError.unsupportedOperation("No NDEF message detected for \(info.type.description)")
             }
             return parsed
-        case .passport, .mifareDesfire:
-            // Multi-application cards (e.g. ePassport chips that also carry NDEF)
-            // sit on ISO 7816 transport, so try the Type 4 NDEF path as a fallback.
-            let payload = try await Type4Tag(transport: transport).readNDEF()
-            return try NDEFMessage(data: payload)
         default:
             throw NFCError.unsupportedOperation("Unified NDEF reading is not supported for \(info.type.description)")
         }
@@ -131,7 +122,8 @@ public enum CoreExtendedNFC {
         transport: any NFCTagTransport
     ) async throws {
         switch info.type.family {
-        case .type4:
+        case .type4, .passport, .mifareDesfire:
+            // Multi-application cards sit on ISO 7816 transport, so use the Type 4 NDEF path.
             try await Type4Tag(transport: transport).writeNDEF(message.data)
         case .felica:
             guard let felicaTransport = transport as? any FeliCaTagTransporting else {
@@ -145,8 +137,6 @@ public enum CoreExtendedNFC {
                 throw NFCError.unsupportedOperation("ISO 15693 NDEF writing requires an ISO 15693 transport")
             }
             try await writeType5NDEF(message.data, transport: iso15693Transport)
-        case .passport, .mifareDesfire:
-            try await Type4Tag(transport: transport).writeNDEF(message.data)
         default:
             throw NFCError.unsupportedOperation("Unified NDEF writing is not yet supported for \(info.type.description)")
         }
@@ -260,12 +250,7 @@ public enum CoreExtendedNFC {
                         data = try await commands.readRecords(fileID: fileID)
                     case .valueFile:
                         let value = try await commands.getValue(fileID: fileID)
-                        var valueData = Data(count: 4)
-                        valueData[0] = UInt8(truncatingIfNeeded: value)
-                        valueData[1] = UInt8(truncatingIfNeeded: value >> 8)
-                        valueData[2] = UInt8(truncatingIfNeeded: value >> 16)
-                        valueData[3] = UInt8(truncatingIfNeeded: value >> 24)
-                        data = valueData
+                        data = withUnsafeBytes(of: value.littleEndian) { Data($0) }
                     }
                     files.append(MemoryDump.FileData(fileID: fileID, data: data))
                 } catch let error as NFCError {
@@ -368,7 +353,6 @@ public enum CoreExtendedNFC {
         let serviceProbes = await (try? commands.probeCommonServices()) ?? []
 
         var blocks: [MemoryDump.Block] = []
-        var files: [MemoryDump.FileData] = []
         var facts: [MemoryDump.Fact] = [
             .init(key: "System Code", value: info.systemCode?.hexString ?? felicaTransport.systemCode.hexString, monospaced: true),
             .init(key: "Common Services", value: "\(serviceProbes.count)"),
@@ -390,7 +374,7 @@ public enum CoreExtendedNFC {
 
                 let attributeInfo = try FeliCaAttributeInfo(data: attributeBlock)
                 let ndef = try await reader.readNDEF()
-                let totalDataBlocks = Int((attributeInfo.ndefLength + 15) / 16)
+                let totalDataBlocks = (Int(attributeInfo.ndefLength) + FeliCaMemory.blockSize - 1) / FeliCaMemory.blockSize
                 blocks.append(.init(number: 0, data: attributeBlock))
 
                 for index in 0 ..< totalDataBlocks {
@@ -410,7 +394,7 @@ public enum CoreExtendedNFC {
             maxBlocksPerService: 4,
             excluding: Set([FeliCaType3Reader.readServiceCode, FeliCaType3Reader.writeServiceCode])
         )
-        files = extraServiceSnapshots.map { snapshot in
+        let files = extraServiceSnapshots.map { snapshot in
             MemoryDump.FileData(
                 identifier: snapshot.serviceCode,
                 data: snapshot.payload,
@@ -543,8 +527,7 @@ public enum CoreExtendedNFC {
         transport: any NFCTagTransport
     ) async throws {
         let memory = UltralightMemoryMap.forType(info.type)
-        let capacity = Int(memory.userDataEnd - memory.userDataStart + 1) * 4
-        let bytes = try NDEFTagMapping.buildType2Area(message: message, capacity: capacity)
+        let bytes = try NDEFTagMapping.buildType2Area(message: message, capacity: memory.userDataByteCount)
         let commands = UltralightCommands(transport: transport)
 
         for (index, offset) in stride(from: 0, to: bytes.count, by: 4).enumerated() {
@@ -558,25 +541,16 @@ public enum CoreExtendedNFC {
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws {
-        let memory = UltralightMemoryMap.forType(info.type)
-        let commands = UltralightCommands(transport: transport)
-
         // Clear user data pages first, then write CC last.
         // If a write fails mid-way, the tag has no valid CC and won't be
         // recognised as NDEF-formatted — safer than leaving a CC pointing
         // at garbage data.
-        let capacity = Int(memory.userDataEnd - memory.userDataStart + 1) * 4
-        let bytes = try NDEFTagMapping.buildType2Area(message: Data(), capacity: capacity)
-
-        for (index, offset) in stride(from: 0, to: bytes.count, by: 4).enumerated() {
-            let page = memory.userDataStart + UInt8(index)
-            let chunk = Data(bytes[offset ..< min(offset + 4, bytes.count)])
-            try await commands.writePage(page, data: chunk)
-        }
+        try await writeType2NDEF(Data(), info: info, transport: transport)
 
         // Write Capability Container to page 3 as the final step
+        let memory = UltralightMemoryMap.forType(info.type)
         let cc = NDEFTagMapping.buildType2CC(memoryMap: memory)
-        try await commands.writePage(3, data: cc)
+        try await UltralightCommands(transport: transport).writePage(3, data: cc)
     }
 
     private static func writeType5NDEF(
