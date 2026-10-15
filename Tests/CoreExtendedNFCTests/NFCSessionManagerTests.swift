@@ -5,6 +5,7 @@
 // - CoreNFC `NFCISO15693Tag.h`: `NFCISO15693SystemInfo` reports absent fields as -1
 // - ISO/IEC 15693-3 §10.4.12: Get System Information optional fields (Info flags b1–b4)
 @testable import CoreExtendedNFC
+import CoreNFC
 import Foundation
 import Testing
 
@@ -118,7 +119,7 @@ struct NFCSessionManagerTests {
                 // Late callbacks from the cancelled session find nothing to resume.
                 #expect(state.sessionInvalidated(session) == nil)
                 #expect(state.cancel(scanID: scanID) == nil)
-                cancelled.continuation.resume(throwing: CancellationError())
+                cancelled.continuation?.resume(throwing: CancellationError())
             }
         } catch is CancellationError {
             thrownCancellation = true
@@ -180,7 +181,10 @@ struct NFCSessionManagerTests {
         #expect(Self.describe(NFCReaderErrorMapping.map(code: 203)) == "systemBusy")
         #expect(Self.describe(NFCReaderErrorMapping.map(code: 202)) == "sessionInvalidated")
         #expect(NFCReaderErrorMapping.map(code: 200)?.isUserCancellation == true)
-        #expect(Self.describe(NFCReaderErrorMapping.map(code: 1)) == "nfcNotAvailable")
+        // Unsupported feature: one command is unsupported (no "Open Settings"), unless it
+        // ends the whole session.
+        #expect(Self.describe(NFCReaderErrorMapping.map(code: 1)) == "unsupportedOperation")
+        #expect(Self.describe(NFCReaderErrorMapping.map(code: 1, context: .sessionInvalidation)) == "nfcNotAvailable")
         #expect(Self.describe(NFCReaderErrorMapping.map(code: 6)) == "nfcNotAvailable")
         #expect(Self.describe(NFCReaderErrorMapping.map(code: 105)) == "unsupportedOperation")
         #expect(NFCReaderErrorMapping.map(code: 400) == nil)
@@ -190,6 +194,127 @@ struct NFCSessionManagerTests {
         } else {
             Issue.record("Tag response error should map to invalidResponse")
         }
+    }
+
+    @Test
+    func `unsupported feature on a single command does not read as NFC unavailable`() async {
+        var mapped: (any Error)?
+        do {
+            try await withNFCErrorMapping { throw NSError(domain: NFCErrorDomain, code: 1) }
+        } catch {
+            mapped = error
+        }
+        guard case NFCError.unsupportedOperation? = mapped else {
+            Issue.record("Expected unsupportedOperation, got \(String(describing: mapped))")
+            return
+        }
+        #expect(!isSessionTerminating(mapped!))
+        // Session end with the same code is still "NFC not available".
+        guard case NFCError.nfcNotAvailable = NFCSessionManager.invalidationError(from: NSError(domain: NFCErrorDomain, code: 1)) else {
+            Issue.record("Session invalidation with code 1 should map to nfcNotAvailable")
+            return
+        }
+    }
+
+    @Test
+    func `session loss after a recorded user cancel maps to userCanceled`() async {
+        #expect(Self.describe(NFCReaderErrorMapping.map(code: 103, userCanceledSession: true)) == "userCanceled")
+        #expect(Self.describe(NFCReaderErrorMapping.map(code: 104, userCanceledSession: true)) == "userCanceled")
+        #expect(Self.describe(NFCReaderErrorMapping.map(code: 102, userCanceledSession: true)) == "invalidResponse")
+        #expect(Self.describe(NFCReaderErrorMapping.map(code: 103)) == "sessionInvalidated")
+
+        // The delegate records the cancel even though no scan is pending (tag already connected).
+        let state = ScanState<FakeSession, Int>()
+        let session = FakeSession()
+        let monitor = SessionTerminationMonitor()
+        _ = try? await withCheckedThrowingContinuation { continuation in
+            _ = state.begin(scanID: state.makeScanID(), session: session, monitor: monitor, continuation: continuation)
+            state.takeContinuationForDetection(by: session)?.resume(returning: 1)
+            _ = state.finishConnecting(by: session)
+        }
+        #expect(state.sessionInvalidated(session, userCanceled: true) == nil)
+        #expect(monitor.userCanceled)
+        #expect(state.currentMonitor?.userCanceled == true)
+
+        // An in-flight command then fails with 103 and surfaces as a user cancel.
+        var thrown: (any Error)?
+        do {
+            try await withNFCErrorMapping(monitor) { throw NSError(domain: NFCErrorDomain, code: 103) }
+        } catch {
+            thrown = error
+        }
+        #expect((thrown as? NFCError)?.isUserCancellation == true) // before: sessionInvalidated
+    }
+
+    @Test
+    func `a stale session cannot record a user cancel`() async {
+        let state = ScanState<FakeSession, Int>()
+        let session = FakeSession()
+        let monitor = SessionTerminationMonitor()
+        _ = try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, any Error>) in
+            _ = state.begin(scanID: state.makeScanID(), session: session, monitor: monitor, continuation: continuation)
+            // A late callback from some other (stale) session must not touch this one.
+            #expect(state.sessionInvalidated(FakeSession(), userCanceled: true) == nil)
+            #expect(!monitor.userCanceled)
+            #expect(state.isCurrent(session))
+            state.detach().continuation?.resume(returning: 0)
+        }
+    }
+
+    @Test
+    func `cancelling while the detected tag is connecting fails the scan with CancellationError`() async {
+        let state = ScanState<FakeSession, Int>()
+        let session = FakeSession()
+        let scanID = state.makeScanID()
+
+        var result: Result<Int, any Error>?
+        do {
+            let value = try await withCheckedThrowingContinuation { continuation in
+                _ = state.begin(scanID: scanID, session: session, continuation: continuation)
+                // didDetect: the continuation moves to the connect task.
+                guard let connecting = state.takeContinuationForDetection(by: session) else {
+                    continuation.resume(returning: -1)
+                    return
+                }
+                // Task cancelled during connect(to:): the session is handed back for invalidation.
+                let cancelled = state.cancel(scanID: scanID)
+                #expect(cancelled?.session === session)
+                #expect(cancelled?.continuation == nil)
+                #expect(!state.isCurrent(session))
+                // connect(to:) returns; the connect task must not hand out a transport.
+                if state.finishConnecting(by: session) {
+                    connecting.resume(returning: 1) // before: scan returned a live transport
+                } else {
+                    connecting.resume(throwing: CancellationError())
+                }
+            }
+            result = .success(value)
+        } catch {
+            result = .failure(error)
+        }
+        guard case .failure(let error)? = result, error is CancellationError else {
+            Issue.record("Expected CancellationError, got \(String(describing: result))")
+            return
+        }
+    }
+
+    @Test
+    func `a scan connected before cancellation finishes normally`() async throws {
+        let state = ScanState<FakeSession, Int>()
+        let session = FakeSession()
+        let scanID = state.makeScanID()
+
+        let value = try await withCheckedThrowingContinuation { continuation in
+            _ = state.begin(scanID: scanID, session: session, continuation: continuation)
+            let connecting = state.takeContinuationForDetection(by: session)
+            #expect(state.finishConnecting(by: session))
+            connecting?.resume(returning: 7)
+        }
+        #expect(value == 7)
+        // A late cancel only leaves a marker; the session stays with the caller.
+        #expect(state.cancel(scanID: scanID) == nil)
+        #expect(state.isCurrent(session))
+        state.forgetCancellation(scanID: scanID)
     }
 
     @Test

@@ -113,9 +113,113 @@ struct NDEFTests {
         }
 
         // CC is written last to page 3 — avoids half-formatted state on failure
-        let expectedCC = NDEFTagMapping.buildType2CC(memoryMap: memory)
-        #expect(transport.sentCommands[12].prefix(2) == Data([0xA2, 0x03]))
-        #expect(Data(transport.sentCommands[12].dropFirst(2)) == expectedCC)
+        #expect(transport.sentCommands[12] == Data([0xA2, 0x03, 0xE1, 0x10, 0x06, 0x00]))
+    }
+
+    @Test
+    func `Type 2 CC uses the NXP data area sizes`() {
+        // NTAG213/215/216 and NTAG210/212 datasheets §8.5.6; Ultralight / Ultralight C use
+        // their whole user area (48 and 144 bytes).
+        #expect(NDEFTagMapping.buildType2CC(for: .ntag210) == Data([0xE1, 0x10, 0x06, 0x00]))
+        #expect(NDEFTagMapping.buildType2CC(for: .ntag212) == Data([0xE1, 0x10, 0x10, 0x00]))
+        #expect(NDEFTagMapping.buildType2CC(for: .ntag213) == Data([0xE1, 0x10, 0x12, 0x00]))
+        #expect(NDEFTagMapping.buildType2CC(for: .ntag215) == Data([0xE1, 0x10, 0x3E, 0x00]))
+        #expect(NDEFTagMapping.buildType2CC(for: .ntag216) == Data([0xE1, 0x10, 0x6D, 0x00]))
+        #expect(NDEFTagMapping.buildType2CC(for: .mifareUltralight) == Data([0xE1, 0x10, 0x06, 0x00]))
+        #expect(NDEFTagMapping.buildType2CC(for: .mifareUltralightC) == Data([0xE1, 0x10, 0x12, 0x00]))
+    }
+
+    @Test
+    func `Type 2 write refuses a message larger than the CC data area before writing`() async {
+        let transport = MockTransport()
+        // NTAG215: page 3 = E1 10 3E 00, so the NDEF area is 0x3E × 8 = 496 bytes.
+        transport.responses = [Data([0xE1, 0x10, 0x3E, 0x00]) + Data(count: 12)]
+            + Array(repeating: Data([0x0A]), count: 200)
+        // 498-byte payload: TLV = 03 FF 01 F2 + 498 + FE = 503 bytes. It fits the 504
+        // user bytes but not the 496-byte data area readers scan.
+        // Record: header, type length, 4-byte payload length, "a/b", payload = 9 + 489 bytes.
+        let message = NDEFMessage(records: [.mime(type: "a/b", data: Data(count: 489))])
+        #expect(message.data.count == 498)
+
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writeNDEF(
+                message,
+                info: CardInfo(type: .ntag215, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
+                transport: transport
+            )
+        }
+        #expect(transport.sentCommands == [Data([0x30, 0x03])]) // before: 126 page writes
+    }
+
+    @Test
+    func `Type 2 write refuses a tag without a Capability Container`() async {
+        let transport = MockTransport()
+        transport.responses = [Data(count: 16)] + Array(repeating: Data([0x0A]), count: 12)
+
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writeNDEF(
+                .text("Hi"),
+                info: CardInfo(type: .mifareUltralight, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
+                transport: transport
+            )
+        }
+        #expect(transport.sentCommands == [Data([0x30, 0x03])])
+    }
+
+    @Test
+    func `Writing an empty NDEF message erases the tag to 03 00 FE`() async throws {
+        let transport = MockTransport()
+        transport.responses = [Data([0xE1, 0x10, 0x06, 0x00]) + Data(count: 12)]
+            + Array(repeating: Data([0x0A]), count: 12)
+
+        try await CoreExtendedNFC.writeNDEF( // before: threw unsupportedOperation
+            NDEFMessage(records: []),
+            info: CardInfo(type: .mifareUltralight, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
+            transport: transport
+        )
+
+        #expect(transport.sentCommands.count == 13)
+        #expect(transport.sentCommands[1] == Data([0xA2, 0x04, 0x03, 0x00, 0xFE, 0x00]))
+        #expect(transport.sentCommands[2] == Data([0xA2, 0x05, 0x00, 0x00, 0x00, 0x00]))
+    }
+
+    @Test
+    func `Deeply nested Smart Posters parse in linear time`() {
+        // 24 nested Sp records around a URI record D1 01 01 55 00 (Smart Poster RTD 1.0).
+        var payload = Data([0xD1, 0x01, 0x01, 0x55, 0x00])
+        for _ in 0 ..< 24 {
+            let header: UInt8 = payload.count < 256 ? 0xD1 : 0xC1
+            var record = Data([header, 0x02])
+            if payload.count < 256 {
+                record.append(UInt8(payload.count))
+            } else {
+                record.append(contentsOf: withUnsafeBytes(of: UInt32(payload.count).bigEndian, Array.init))
+            }
+            record.append(contentsOf: [0x53, 0x70])
+            payload = record + payload
+        }
+        let record = NDEFRecord(typeNameFormat: .wellKnown, type: Data([0x53, 0x70]), payload: payload)
+
+        let start = Date()
+        _ = record.displayValue
+        _ = record.displayType
+        #expect(Date().timeIntervalSince(start) < 0.5) // before: 2^24 nested parses
+        // Only direct URI / Text children are decoded; the outer poster has neither.
+        #expect(record.parsedPayload == .smartPoster(uri: nil, title: nil))
+    }
+
+    @Test
+    func `URI abbreviation picks the longest matching prefix`() {
+        // URI RTD 1.0 Table 3 identifier codes.
+        #expect(NDEFRecord.uri("http://www.example.com").payload == Data([0x01]) + Data("example.com".utf8))
+        #expect(NDEFRecord.uri("https://www.example.com").payload.first == 0x02)
+        #expect(NDEFRecord.uri("http://example.com").payload.first == 0x03)
+        #expect(NDEFRecord.uri("https://example.com").payload.first == 0x04)
+        #expect(NDEFRecord.uri("urn:epc:id:sgtin:1").payload == Data([0x1E]) + Data("sgtin:1".utf8))
+        #expect(NDEFRecord.uri("urn:epc:x").payload.first == 0x22)
+        #expect(NDEFRecord.uri("urn:x").payload.first == 0x13)
+        #expect(NDEFRecord.uri("ftp://ftp.example.com").payload.first == 0x08)
+        #expect(NDEFRecord.uri("example").payload == Data("\0example".utf8))
     }
 
     @Test
@@ -159,7 +263,8 @@ struct NDEFTests {
     @Test
     func `Unified Type 2 NDEF write lays out TLV pages`() async throws {
         let transport = MockTransport()
-        transport.responses = Array(repeating: Data([0x0A]), count: 12)
+        transport.responses = [Data([0xE1, 0x10, 0x06, 0x00]) + Data(count: 12)]
+            + Array(repeating: Data([0x0A]), count: 12)
 
         let message = NDEFMessage.text("Hi")
         try await CoreExtendedNFC.writeNDEF(
@@ -168,12 +273,14 @@ struct NDEFTests {
             transport: transport
         )
 
-        #expect(transport.sentCommands.count == 12)
-        #expect(transport.sentCommands[0].prefix(2) == Data([0xA2, 0x04]))
+        // READ page 3 (CC), then 12 page writes.
+        #expect(transport.sentCommands.count == 13)
+        #expect(transport.sentCommands[0] == Data([0x30, 0x03]))
+        #expect(transport.sentCommands[1].prefix(2) == Data([0xA2, 0x04]))
 
         let expectedArea = try NDEFTagMapping.buildType2Area(message: message.data, capacity: 48)
-        #expect(Data(transport.sentCommands[0].dropFirst(2)) == expectedArea.prefix(4))
-        #expect(Data(transport.sentCommands[1].dropFirst(2)) == Data(expectedArea[4 ..< 8]))
+        #expect(Data(transport.sentCommands[1].dropFirst(2)) == expectedArea.prefix(4))
+        #expect(Data(transport.sentCommands[2].dropFirst(2)) == Data(expectedArea[4 ..< 8]))
     }
 
     @Test

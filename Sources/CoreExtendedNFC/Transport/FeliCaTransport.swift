@@ -4,6 +4,9 @@ import Foundation
 /// Transport adapter wrapping `NFCFeliCaTag`.
 public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     private let tag: NFCFeliCaTag
+    /// Set by `NFCSessionManager`: once the user cancels the session, failures are
+    /// reported as `NFCError.userCanceled`.
+    private let terminationMonitor: SessionTerminationMonitor?
 
     public var identifier: Data {
         tag.currentIDm
@@ -15,11 +18,17 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
 
     public init(tag: NFCFeliCaTag) {
         self.tag = tag
+        terminationMonitor = nil
+    }
+
+    init(tag: NFCFeliCaTag, terminationMonitor: SessionTerminationMonitor?) {
+        self.tag = tag
+        self.terminationMonitor = terminationMonitor
     }
 
     public func send(_ data: Data) async throws -> Data {
         NFCLog.debug("→ SEND \(data.hexDump)", source: "FeliCa")
-        let response: Data = try await withNFCErrorMapping {
+        let response: Data = try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { continuation in
                 tag.sendFeliCaCommand(commandPacket: data) { response, error in
                     if let error {
@@ -44,7 +53,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         blockList: [Data]
     ) async throws -> [Data] {
         NFCLog.debug("→ READ_WO_ENC services=\(serviceCodeList.count) blocks=\(blockList.count)", source: "FeliCa")
-        let (statusFlag1, statusFlag2, blocks) = try await withNFCErrorMapping {
+        let (statusFlag1, statusFlag2, blocks) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.readWithoutEncryption(
                 serviceCodeList: serviceCodeList,
                 blockList: blockList
@@ -76,7 +85,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         blockData: [Data]
     ) async throws {
         NFCLog.debug("→ WRITE_WO_ENC services=\(serviceCodeList.count) blocks=\(blockList.count)", source: "FeliCa")
-        let (statusFlag1, statusFlag2) = try await withNFCErrorMapping {
+        let (statusFlag1, statusFlag2) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.writeWithoutEncryption(
                 serviceCodeList: serviceCodeList,
                 blockList: blockList,
@@ -106,7 +115,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     /// Check whether the requested service codes exist.
     public func requestService(nodeCodeList: [Data]) async throws -> [Data] {
         NFCLog.debug("→ REQUEST_SERVICE nodes=\(nodeCodeList.count)", source: "FeliCa")
-        let result = try await withNFCErrorMapping {
+        let result = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.requestService(nodeCodeList: nodeCodeList)
         }
         NFCLog.debug("← REQUEST_SERVICE \(result.count) response(s)", source: "FeliCa")

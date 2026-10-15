@@ -50,11 +50,45 @@ enum NDEFTagMapping {
     /// Layout: `[0xE1, version, size, access]`
     /// - Byte 0: NDEF magic number (0xE1)
     /// - Byte 1: Mapping version 1.0 (0x10)
-    /// - Byte 2: Memory size in 8-byte units
+    /// - Byte 2: Data area size in 8-byte units (see ``type2DataAreaUnits(for:)``)
     /// - Byte 3: Read/write access (0x00 = read-write)
-    static func buildType2CC(memoryMap: UltralightMemoryMap) -> Data {
-        let sizeField = UInt8(clamping: memoryMap.userDataByteCount / 8)
-        return Data([0xE1, 0x10, sizeField, 0x00])
+    static func buildType2CC(for type: CardType) -> Data {
+        Data([0xE1, 0x10, type2DataAreaUnits(for: type), 0x00])
+    }
+
+    /// CC byte 2 (data area size / 8) that NXP pre-programs or specifies for each
+    /// Type 2 product. NTAG213/215/216 datasheet §8.5.6 ("NDEF memory size"):
+    /// 12h, 3Eh, 6Dh, so 215 and 216 advertise less than their 504 / 888 user
+    /// bytes. NTAG210/212 datasheet §8.5.6: 06h, 10h. The other products use their
+    /// whole user area (Ultralight 06h, Ultralight C 12h, EV1 06h / 10h).
+    static func type2DataAreaUnits(for type: CardType) -> UInt8 {
+        switch type {
+        case .ntag215:
+            0x3E
+        case .ntag216:
+            0x6D
+        default:
+            UInt8(clamping: UltralightMemoryMap.forType(type).userDataByteCount / 8)
+        }
+    }
+
+    /// Bytes available to the NDEF TLV area on a Type 2 tag whose page 3 holds `cc`
+    /// (NFC Forum T2T 1.0 §6.1): CC2 × 8, but never more than the product's user memory,
+    /// so a written message is always found again by ``extractType2Message(from:)``.
+    /// Throws when the tag is not NDEF formatted, uses an unsupported mapping major
+    /// version, or denies write access (CC3 b3-b0 ≠ 0h).
+    static func type2WritableCapacity(cc: Data, memoryMap: UltralightMemoryMap) throws -> Int {
+        let bytes = [UInt8](cc.prefix(4))
+        guard bytes.count == 4, bytes[0] == 0xE1 else {
+            throw NFCError.unsupportedOperation("The tag is not NDEF formatted; format it first")
+        }
+        guard bytes[1] >> 4 <= 1 else {
+            throw NFCError.unsupportedOperation("Unsupported Type 2 NDEF mapping version")
+        }
+        guard bytes[3] & 0x0F == 0x00 else {
+            throw NFCError.tagLocked
+        }
+        return min(memoryMap.userDataByteCount, Int(bytes[2]) * 8)
     }
 
     static func buildType2Area(message: Data, capacity: Int) throws -> Data {

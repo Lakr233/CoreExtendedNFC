@@ -280,4 +280,85 @@ struct DumpInteropTests {
         let text = try dump.exportFlipperNFC() // before: UInt8 overflow trap in inferredPageTotal
         #expect(text.contains("Pages total: 256"))
     }
+
+    // MARK: - Flipper firmware loadability (mf_ultralight_load / iso14443_3a_load)
+
+    @Test
+    func `Flipper export writes every key the firmware loader requires, in order`() throws {
+        let pages = (0 ..< 45).map { MemoryDump.Page(number: UInt8($0), data: Data([UInt8($0), 0, 0, 0])) }
+        let dump = MemoryDump(
+            cardInfo: CardInfo(type: .ntag213, uid: Data([0x04, 0x57, 0x01, 0xCA, 0x53, 0x28, 0x80])),
+            pages: pages
+        )
+
+        let lines = try dump.exportFlipperNFC().split(separator: "\n").map(String.init)
+
+        let expectedHeader = [
+            "Filetype: Flipper NFC device",
+            "Version: 4",
+            "Device type: NTAG/Ultralight",
+            "UID: 04 57 01 CA 53 28 80",
+            "ATQA: 00 44",
+            "SAK: 00",
+            "Data format version: 2",
+            "NTAG/Ultralight type: NTAG213",
+            "Signature: " + Array(repeating: "00", count: 32).joined(separator: " "),
+            "Mifare version: 00 04 04 02 01 00 0F 03",
+            "Counter 0: 0",
+            "Tearing 0: 00",
+            "Counter 1: 0",
+            "Tearing 1: 00",
+            "Counter 2: 0",
+            "Tearing 2: 00",
+            "Pages total: 45",
+            "Pages read: 45",
+            "Page 0: 00 00 00 00",
+        ]
+        #expect(Array(lines.prefix(expectedHeader.count)) == expectedHeader)
+        #expect(lines.last == "Page 44: 2C 00 00 00")
+    }
+
+    @Test
+    func `Flipper export of an unread tail reports fewer pages read`() throws {
+        // Ultralight C pages 44-47 hold the 3DES key and cannot be read.
+        let pages = (0 ..< 44).map { MemoryDump.Page(number: UInt8($0), data: Data(count: 4)) }
+        let dump = MemoryDump(cardInfo: CardInfo(type: .mifareUltralightC, uid: Data(count: 7)), pages: pages)
+
+        let text = try dump.exportFlipperNFC()
+        #expect(text.contains("NTAG/Ultralight type: Mifare Ultralight C"))
+        #expect(text.contains("Mifare version: 00 00 00 00 00 00 00 00"))
+        #expect(text.contains("Pages total: 48\nPages read: 44\n"))
+        #expect(try MemoryDump.importFlipperNFC(text).cardInfo.type == .mifareUltralightC)
+    }
+
+    @Test
+    func `NTAG210 and NTAG212 round-trip through Flipper and Proxmark exports`() throws {
+        for (type, pageCount, version) in [
+            (CardType.ntag210, 20, "00 04 04 01 01 00 0B 03"),
+            (CardType.ntag212, 41, "00 04 04 01 01 00 0E 03"),
+        ] {
+            let pages = (0 ..< pageCount).map { MemoryDump.Page(number: UInt8($0), data: Data(count: 4)) }
+            let dump = MemoryDump(cardInfo: CardInfo(type: type, uid: Data(count: 7)), pages: pages)
+
+            let text = try dump.exportFlipperNFC()
+            #expect(text.contains("Mifare version: \(version)"))
+            #expect(try MemoryDump.importFlipperNFC(text).cardInfo.type == type)
+            #expect(try MemoryDump.importProxmark3MFU(dump.exportProxmark3MFU()).cardInfo.type == type)
+        }
+    }
+
+    @Test
+    func `Proxmark import rejects a header whose page count disagrees with the file`() {
+        var header = Data(count: 56)
+        header.replaceSubrange(0 ..< 8, with: Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]))
+        header[11] = 45 // claims 46 pages, but 45 follow
+        let pages = Data(count: 45 * 4)
+
+        #expect(throws: NFCError.self) { // before: imported as 59 plain pages
+            _ = try MemoryDump.importProxmark3MFU(header + pages)
+        }
+        #expect(throws: NFCError.self) { // truncated mid-page
+            _ = try MemoryDump.importProxmark3MFU(header + pages.prefix(45 * 4 - 2))
+        }
+    }
 }

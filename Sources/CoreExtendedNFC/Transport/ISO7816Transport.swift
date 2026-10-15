@@ -4,6 +4,9 @@ import Foundation
 /// Transport adapter wrapping `NFCISO7816Tag`.
 public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable {
     private let tag: NFCISO7816Tag
+    /// Set by `NFCSessionManager`: once the user cancels the session, failures are
+    /// reported as `NFCError.userCanceled`.
+    private let terminationMonitor: SessionTerminationMonitor?
 
     public var identifier: Data {
         tag.identifier
@@ -15,6 +18,12 @@ public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable
 
     public init(tag: NFCISO7816Tag) {
         self.tag = tag
+        terminationMonitor = nil
+    }
+
+    init(tag: NFCISO7816Tag, terminationMonitor: SessionTerminationMonitor?) {
+        self.tag = tag
+        self.terminationMonitor = terminationMonitor
     }
 
     public func send(_: Data) async throws -> Data {
@@ -31,7 +40,7 @@ public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable
             data: apdu.data ?? Data(),
             expectedResponseLength: apdu.nfcExpectedResponseLength
         )
-        let (data, sw1, sw2) = try await withNFCErrorMapping {
+        let (data, sw1, sw2) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.sendCommand(apdu: nfcAPDU)
         }
         NFCLog.debug("← SW:\(String(format: "%02X%02X", sw1, sw2)) \(data.hexDump)", source: "ISO7816")

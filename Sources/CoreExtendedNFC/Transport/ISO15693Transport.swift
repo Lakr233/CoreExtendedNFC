@@ -4,6 +4,9 @@ import Foundation
 /// Transport adapter wrapping `NFCISO15693Tag`.
 public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
     private let tag: NFCISO15693Tag
+    /// Set by `NFCSessionManager`: once the user cancels the session, failures are
+    /// reported as `NFCError.userCanceled`.
+    private let terminationMonitor: SessionTerminationMonitor?
 
     public var identifier: Data {
         tag.identifier
@@ -19,6 +22,12 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
 
     public init(tag: NFCISO15693Tag) {
         self.tag = tag
+        terminationMonitor = nil
+    }
+
+    init(tag: NFCISO15693Tag, terminationMonitor: SessionTerminationMonitor?) {
+        self.tag = tag
+        self.terminationMonitor = terminationMonitor
     }
 
     public func send(_ data: Data) async throws -> Data {
@@ -29,7 +38,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         let commandCode = Int(commandByte)
         // `dropFirst` is startIndex-relative, so sliced input is safe.
         let parameters: Data? = data.count > 1 ? Data(data.dropFirst()) : nil
-        let response: Data = try await withNFCErrorMapping {
+        let response: Data = try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { continuation in
                 tag.sendRequest(
                     requestFlags: Int(NFCISO15693RequestFlag.highDataRate.rawValue),
@@ -56,7 +65,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// Read a single block.
     public func readBlock(_ number: UInt8) async throws -> Data {
         NFCLog.debug("→ READ_BLOCK #\(number)", source: "ISO15693")
-        let data = try await withNFCErrorMapping {
+        let data = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.readSingleBlock(requestFlags: [.highDataRate], blockNumber: number)
         }
         NFCLog.debug("← BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
@@ -66,7 +75,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// Write a single block.
     public func writeBlock(_ number: UInt8, data: Data) async throws {
         NFCLog.debug("→ WRITE_BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
-        try await withNFCErrorMapping {
+        try await withNFCErrorMapping(terminationMonitor) {
             try await tag.writeSingleBlock(
                 requestFlags: [.highDataRate],
                 blockNumber: number,
@@ -79,7 +88,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// Extended read of a single block addressed with a 2-byte block number (command 0x30).
     public func extendedReadBlock(_ number: UInt16) async throws -> Data {
         NFCLog.debug("→ EXT_READ_BLOCK #\(number)", source: "ISO15693")
-        let data = try await withNFCErrorMapping {
+        let data = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.extendedReadSingleBlock(requestFlags: [.highDataRate], blockNumber: Int(number))
         }
         NFCLog.debug("← EXT_BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
@@ -89,7 +98,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// Extended write of a single block addressed with a 2-byte block number (command 0x31).
     public func extendedWriteBlock(_ number: UInt16, data: Data) async throws {
         NFCLog.debug("→ EXT_WRITE_BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
-        try await withNFCErrorMapping {
+        try await withNFCErrorMapping(terminationMonitor) {
             try await tag.extendedWriteSingleBlock(
                 requestFlags: [.highDataRate],
                 blockNumber: Int(number),
@@ -102,7 +111,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// Read multiple contiguous blocks.
     public func readBlocks(range: NSRange) async throws -> [Data] {
         NFCLog.debug("→ READ_BLOCKS \(range.location)..\(range.location + range.length - 1)", source: "ISO15693")
-        let blocks = try await withNFCErrorMapping {
+        let blocks = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.readMultipleBlocks(requestFlags: [.highDataRate], blockRange: range)
         }
         NFCLog.debug("← READ_BLOCKS \(blocks.count) block(s)", source: "ISO15693")
@@ -112,7 +121,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// Get UID, block size, block count, and related system info.
     public func getSystemInfo() async throws -> ISO15693SystemInfo {
         NFCLog.debug("→ GET_SYSTEM_INFO", source: "ISO15693")
-        let systemInfo = try await withNFCErrorMapping {
+        let systemInfo = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.systemInfo(requestFlags: [.highDataRate])
         }
         let info = Self.makeSystemInfo(
@@ -129,7 +138,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
 
     /// Get locked flags for a range of blocks.
     public func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
-        let statuses = try await withNFCErrorMapping {
+        let statuses = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.getMultipleBlockSecurityStatus(
                 requestFlags: [.highDataRate],
                 blockRange: range
@@ -155,7 +164,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     public func customCommand(code: Int, parameters: Data) async throws -> Data {
-        try await withNFCErrorMapping {
+        try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { continuation in
                 tag.customCommand(
                     requestFlags: [.highDataRate],
@@ -169,7 +178,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     public func challenge(cryptoSuiteIdentifier: Int, message: Data) async throws {
-        try await withNFCErrorMapping {
+        try await withNFCErrorMapping(terminationMonitor) {
             try await tag.challenge(
                 requestFlags: [.highDataRate],
                 cryptoSuiteIdentifier: cryptoSuiteIdentifier,
@@ -182,7 +191,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         cryptoSuiteIdentifier: Int,
         message: Data
     ) async throws -> ISO15693SecurityResponse {
-        let (flags, response) = try await withNFCErrorMapping {
+        let (flags, response) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.authenticate(
                 requestFlags: [.highDataRate],
                 cryptoSuiteIdentifier: cryptoSuiteIdentifier,
@@ -199,7 +208,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         keyIdentifier: Int,
         message: Data
     ) async throws -> ISO15693SecurityResponse {
-        let (flags, response) = try await withNFCErrorMapping {
+        let (flags, response) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.keyUpdate(
                 requestFlags: [.highDataRate],
                 keyIdentifier: keyIdentifier,
@@ -214,7 +223,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
 
     /// Bridge a CoreNFC `(Error?) -> Void` completion call to async/await.
     private func completion(_ start: (@escaping @Sendable ((any Error)?) -> Void) -> Void) async throws {
-        try await withNFCErrorMapping {
+        try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 start { error in
                     if let error {

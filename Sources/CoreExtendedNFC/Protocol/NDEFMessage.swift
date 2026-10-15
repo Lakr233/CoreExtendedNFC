@@ -403,32 +403,38 @@ public struct NDEFRecord: Sendable, Equatable {
         return .uri(prefix + suffix)
     }
 
+    /// Smart Poster RTD 1.0 §3: the payload is an NDEF message whose URI record is
+    /// mandatory and whose Text records carry titles. Only direct URI ("U") and Text
+    /// ("T") children are decoded; nested records (including nested Smart Posters)
+    /// are not parsed, so a deeply nested payload costs linear time instead of 2^depth.
     private static func parseSmartPoster(_ payload: Data) -> Payload {
-        guard let nestedMessage = try? NDEFMessage(data: payload) else {
+        guard let nestedRecords = try? parseMessage(payload) else {
             return .unknown(data: payload)
         }
-        let uri = nestedMessage.records.compactMap { record -> String? in
-            if case let .uri(value) = record.parsedPayload {
-                return value
+        var uri: String?
+        var title: String?
+        for record in nestedRecords where record.typeNameFormat == .wellKnown {
+            if uri == nil, record.type == Data([0x55]), case let .uri(value) = parseURIPayload(record.payload) {
+                uri = value
+            } else if title == nil, record.type == Data([0x54]),
+                      case let .text(_, value) = parseTextPayload(record.payload)
+            {
+                title = value
             }
-            return nil
-        }.first
-        let title = nestedMessage.records.compactMap { record -> String? in
-            if case let .text(_, value) = record.parsedPayload {
-                return value
-            }
-            return nil
-        }.first
+        }
         return .smartPoster(uri: uri, title: title)
     }
 
+    /// URI RTD 1.0 Table 3: choose the code with the longest matching prefix, so
+    /// "http://www." wins over "http://" and "urn:epc:id:" over "urn:".
     private static func abbreviateURI(_ uri: String) -> (UInt8, String) {
-        for (index, prefix) in uriPrefixMap.enumerated().reversed() where !prefix.isEmpty {
-            if uri.hasPrefix(prefix) {
-                return (UInt8(index), String(uri.dropFirst(prefix.count)))
-            }
+        var best: (code: Int, length: Int) = (0, 0)
+        for (index, prefix) in uriPrefixMap.enumerated()
+            where prefix.count > best.length && uri.hasPrefix(prefix)
+        {
+            best = (index, prefix.count)
         }
-        return (0x00, uri)
+        return (UInt8(best.code), String(uri.dropFirst(best.length)))
     }
 
     private static let uriPrefixMap: [String] = [

@@ -272,24 +272,31 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         let totalPages = inferredPageTotal(for: orderedPages)
         let pageMap = Self.pageMap(orderedPages)
 
+        let pagesRead = min(orderedPages.last.map { Int($0.number) + 1 } ?? 0, totalPages)
+
+        // Flipper firmware (`iso14443_3a_load`, `mf_ultralight_load`) reads these keys in
+        // this order and rejects the file when any of them is missing.
         var lines = [
             "Filetype: Flipper NFC device",
             "Version: 4",
             "Device type: NTAG/Ultralight",
             "UID: \(cardInfo.uid.hexDump)",
+            // ISO/IEC 14443-3A: ATQA most-significant byte first (file version > 2); a
+            // Type 2 tag answers ATQA 00 44, SAK 00.
+            "ATQA: \((cardInfo.atqa.flatMap { $0.count == 2 ? $0 : nil } ?? Data([0x00, 0x44])).hexDump)",
+            String(format: "SAK: %02X", cardInfo.sak ?? 0x00),
+            "Data format version: 2",
+            "NTAG/Ultralight type: \(Self.flipperTypeName(for: cardInfo.type))",
+            // READ_SIG is not captured by the dump.
+            "Signature: \(Data(repeating: 0x00, count: 32).hexDump)",
+            "Mifare version: \((mifareVersionBytes(for: cardInfo.type) ?? Data(repeating: 0x00, count: 8)).hexDump)",
         ]
-
-        if let atqa = cardInfo.atqa {
-            lines.append("ATQA: \(atqa.hexDump)")
+        for counter in 0 ..< 3 {
+            lines.append("Counter \(counter): 0")
+            lines.append("Tearing \(counter): 00")
         }
-        if let sak = cardInfo.sak {
-            lines.append(String(format: "SAK: %02X", sak))
-        }
-        if let version = mifareVersionBytes(for: cardInfo.type) {
-            lines.append("Mifare version: \(version.hexDump)")
-        }
-
         lines.append("Pages total: \(totalPages)")
+        lines.append("Pages read: \(pagesRead)")
 
         for pageNumber in 0 ..< totalPages {
             let pageData = pageMap[pageNumber] ?? Data(repeating: 0x00, count: 4)
@@ -599,8 +606,44 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         }
     }
 
+    /// Flipper's `NTAG/Ultralight type` names (`mf_ultralight_features[].device_name`).
+    /// Flipper has no NTAG210/212 entry and files them, by GET_VERSION storage size,
+    /// as Ultralight 11 / 21, which share their page counts.
+    static func flipperTypeName(for type: CardType) -> String {
+        switch type {
+        case .mifareUltralightC: "Mifare Ultralight C"
+        case .mifareUltralightEV1_MF0UL11, .ntag210: "Mifare Ultralight 11"
+        case .mifareUltralightEV1_MF0UL21, .ntag212: "Mifare Ultralight 21"
+        case .ntag213: "NTAG213"
+        case .ntag215: "NTAG215"
+        case .ntag216: "NTAG216"
+        default: "Mifare Ultralight"
+        }
+    }
+
+    /// Inverse of ``flipperTypeName(for:)`` for the names this library can model.
+    static func cardType(forFlipperTypeName name: String) -> CardType? {
+        switch name {
+        case "Mifare Ultralight": .mifareUltralight
+        case "Mifare Ultralight C": .mifareUltralightC
+        case "Mifare Ultralight 11": .mifareUltralightEV1_MF0UL11
+        case "Mifare Ultralight 21": .mifareUltralightEV1_MF0UL21
+        case "NTAG213": .ntag213
+        case "NTAG215": .ntag215
+        case "NTAG216": .ntag216
+        default: nil
+        }
+    }
+
+    /// GET_VERSION responses from the NXP datasheets (NTAG210/212 §10.1, NTAG213/215/216
+    /// §10.1, MF0ULx1 §8.1): fixed header, vendor, type, subtype, major, minor, storage
+    /// size, protocol type.
     private func mifareVersionBytes(for type: CardType) -> Data? {
         switch type {
+        case .ntag210:
+            Data([0x00, 0x04, 0x04, 0x01, 0x01, 0x00, 0x0B, 0x03])
+        case .ntag212:
+            Data([0x00, 0x04, 0x04, 0x01, 0x01, 0x00, 0x0E, 0x03])
         case .ntag213:
             Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03])
         case .ntag215:
@@ -638,6 +681,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         let totalPages: Int
         let pages: [PageRecord]
         private let version: Data?
+        private let typeName: String?
 
         init(text: String) throws {
             var fields: [String: String] = [:]
@@ -682,13 +726,20 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             atqa = fields["ATQA"].flatMap(Data.init(hexString:))
             sak = fields["SAK"].flatMap { UInt8($0, radix: 16) }
             version = fields["Mifare version"].flatMap(Data.init(hexString:))
+            typeName = fields["NTAG/Ultralight type"]
             self.totalPages = totalPages
             pages = pageRecords.sorted(by: { $0.number < $1.number })
         }
 
         var cardType: CardType {
-            if let version, let parsedVersion = try? UltralightVersionResponse(data: version) {
+            // An all-zero version means GET_VERSION was not available (Ultralight, Ultralight C).
+            if let version, version != Data(repeating: 0x00, count: version.count),
+               let parsedVersion = try? UltralightVersionResponse(data: version)
+            {
                 return parsedVersion.cardType
+            }
+            if let typeName, let type = MemoryDump.cardType(forFlipperTypeName: typeName) {
+                return type
             }
 
             return switch totalPages {
@@ -722,6 +773,16 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             return lastPageIndex + 1 == (data.count - headerLength) / 4
         }
 
+        /// Whether `data` starts like a Proxmark3 header: a GET_VERSION response
+        /// (fixed header 00h, NXP vendor 04h, ISO/IEC 14443-3 protocol type 03h;
+        /// NTAG21x / MF0ULx1 datasheets). A plain page dump starts with UID0, which is
+        /// 04h for NXP tags, so it does not match.
+        static func looksLikeHeader(_ data: Data) -> Bool {
+            guard data.count >= headerLength + 4 else { return false }
+            let start = data.startIndex
+            return data[start] == 0x00 && data[start + 1] == 0x04 && data[start + 7] == 0x03
+        }
+
         let cardType: CardType
         let uid: Data
         let pages: [PageRecord]
@@ -733,6 +794,10 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             if Self.hasHeader(data) {
                 version = Data(data.prefix(8))
                 payload = Data(data.dropFirst(Self.headerLength))
+            } else if Self.looksLikeHeader(data) {
+                // A header whose page count disagrees with the file (truncated or
+                // concatenated dump): importing it as plain pages would shift every page.
+                throw NFCError.invalidResponse(Data(data.prefix(Self.headerLength)))
             } else if data.count.isMultiple(of: 4) {
                 version = nil
                 payload = data

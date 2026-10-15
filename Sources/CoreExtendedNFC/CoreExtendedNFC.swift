@@ -129,7 +129,9 @@ public enum CoreExtendedNFC {
         transport: any NFCTagTransport
     ) async throws {
         // Refuse records that cannot be encoded instead of writing a truncated message.
-        let payload = try message.validatedData()
+        // A message with no records is written as an empty NDEF message (T2T/T5T
+        // `03 00 FE`, T4T NLEN = 0, T3T Ln = 0), which is how a tag is erased.
+        let payload = message.records.isEmpty ? Data() : try message.validatedData()
         switch info.type.family {
         case .type4, .passport, .mifareDesfire:
             // Multi-application cards sit on ISO 7816 transport, so use the Type 4 NDEF path.
@@ -421,12 +423,17 @@ public enum CoreExtendedNFC {
         guard systemInfo.blockCount <= NDEFTagMapping.type5SingleByteAddressableBlocks else {
             throw NFCError.unsupportedOperation("ISO 15693 dump currently supports up to 256 blocks per session")
         }
+        // Get Multiple Block Security Status is optional (ISO/IEC 15693-3 §10.4.13), and
+        // a tag may stay silent instead of answering with an error. CoreNFC reports that
+        // silence with the same transceive codes (100/101) as a removed tag, so it is not
+        // taken as final here: the mandatory block reads below fail on block 0 if the
+        // tag is really gone.
         let lockStatuses: [Bool]
         do {
             lockStatuses = try await iso15693Transport.getBlockSecurityStatus(
                 range: NSRange(location: 0, length: systemInfo.blockCount)
             )
-        } catch where !isSessionTerminating(error) {
+        } catch where !isSessionTerminating(error) || isMissingTagResponse(error) {
             lockStatuses = Array(repeating: false, count: systemInfo.blockCount)
         }
 
@@ -481,14 +488,28 @@ public enum CoreExtendedNFC {
         return preview.joined(separator: ", ")
     }
 
+    /// Write `message` into the NDEF data area announced by the tag's Capability
+    /// Container (page 3). The area is CC2 × 8 bytes (NFC Forum T2T 1.0 §6.1), which
+    /// can be smaller than the user memory (NTAG215/216), and readers stop there.
     private static func writeType2NDEF(
         _ message: Data,
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws {
         let memory = UltralightMemoryMap.forType(info.type)
-        let bytes = try NDEFTagMapping.buildType2Area(message: message, capacity: memory.userDataByteCount)
         let commands = UltralightCommands(transport: transport)
+        let ccPage = try await commands.readPages(startPage: 3)
+        let capacity = try NDEFTagMapping.type2WritableCapacity(cc: ccPage, memoryMap: memory)
+        try await writeType2Area(message, capacity: capacity, memory: memory, commands: commands)
+    }
+
+    private static func writeType2Area(
+        _ message: Data,
+        capacity: Int,
+        memory: UltralightMemoryMap,
+        commands: UltralightCommands
+    ) async throws {
+        let bytes = try NDEFTagMapping.buildType2Area(message: message, capacity: capacity)
 
         // Resolve every page address before the first write so an impossible layout
         // is refused up front instead of leaving the tag half-written.
@@ -513,12 +534,13 @@ public enum CoreExtendedNFC {
         // If a write fails mid-way, the tag has no valid CC and won't be
         // recognised as NDEF-formatted — safer than leaving a CC pointing
         // at garbage data.
-        try await writeType2NDEF(Data(), info: info, transport: transport)
+        let memory = UltralightMemoryMap.forType(info.type)
+        let commands = UltralightCommands(transport: transport)
+        try await writeType2Area(Data(), capacity: memory.userDataByteCount, memory: memory, commands: commands)
 
         // Write Capability Container to page 3 as the final step
-        let memory = UltralightMemoryMap.forType(info.type)
-        let cc = NDEFTagMapping.buildType2CC(memoryMap: memory)
-        try await UltralightCommands(transport: transport).writePage(3, data: cc)
+        try Task.checkCancellation()
+        try await commands.writePage(3, data: NDEFTagMapping.buildType2CC(for: info.type))
     }
 
     private static func writeType5NDEF(

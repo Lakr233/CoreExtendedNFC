@@ -593,6 +593,31 @@ struct TopLevelRobustnessTests {
     }
 
     @Test
+    func `ISO 15693 dump survives a silent optional security-status command`() async throws {
+        // Get Multiple Block Security Status is optional (ISO/IEC 15693-3); CoreNFC
+        // reports a silent tag as 100/101, i.e. tagConnectionLost.
+        let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: 4, blockCount: 4))
+        transport.securityStatusError = .tagConnectionLost
+        let dump = try await CoreExtendedNFC.dumpCard( // before: threw tagConnectionLost
+            info: CardInfo(type: .iso15693_generic, uid: Self.uid),
+            transport: transport
+        )
+        #expect(dump.blocks.count == 4)
+        #expect(dump.blocks.allSatisfy { !$0.locked })
+    }
+
+    @Test
+    func `ISO 15693 dump still fails when the tag is really gone`() async {
+        let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: 4, blockCount: 4))
+        transport.securityStatusError = .tagConnectionLost
+        transport.readBlockError = .tagConnectionLost
+        await #expect(throws: NFCError.self) {
+            _ = try await CoreExtendedNFC.dumpCard(info: CardInfo(type: .iso15693_generic, uid: Self.uid), transport: transport)
+        }
+        #expect(transport.readBlocks == [0])
+    }
+
+    @Test
     func `FeliCa dump fails when the tag is lost during service probing`() async {
         let transport = SessionLossFeliCaTransport()
         let info = CardInfo(type: .felicaStandard, uid: transport.identifier, systemCode: transport.systemCode, idm: transport.identifier)
@@ -616,6 +641,8 @@ private final class RecordingISO15693Transport: ISO15693TagTransporting, @unchec
     let icManufacturerCode = 0x04
     let systemInfo: ISO15693SystemInfo
     let cancelAfterReadingBlock: UInt8?
+    var securityStatusError: NFCError?
+    var readBlockError: NFCError?
     var readBlocks: [UInt8] = []
     var writtenBlocks: [UInt8] = []
 
@@ -634,6 +661,7 @@ private final class RecordingISO15693Transport: ISO15693TagTransporting, @unchec
 
     func readBlock(_ number: UInt8) async throws -> Data {
         readBlocks.append(number)
+        if let readBlockError { throw readBlockError }
         if number == cancelAfterReadingBlock {
             withUnsafeCurrentTask { $0?.cancel() }
         }
@@ -653,7 +681,8 @@ private final class RecordingISO15693Transport: ISO15693TagTransporting, @unchec
     }
 
     func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
-        Array(repeating: false, count: range.length)
+        if let securityStatusError { throw securityStatusError }
+        return Array(repeating: false, count: range.length)
     }
 }
 
