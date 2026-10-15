@@ -20,14 +20,15 @@ public struct CEPASReader: Sendable {
         return try await readBalanceAndHistory(purse: readPurse())
     }
 
-    /// A rejected file or command is a non-match; malformed data and read failures propagate.
+    /// Any status-word rejection of SELECT 4000, or an unsupported GET PURSE, is a non-match so
+    /// other readers can be tried; malformed data and read failures propagate.
     func readIfSupported() async throws -> TransitBalance? {
         let purse: Data
         do {
             do {
                 try await selectFile()
-            } catch NFCError.unexpectedStatusWord(0x6A, 0x86) {
-                // This card does not support SELECT by file ID (P1=00, P2=00).
+            } catch NFCError.unexpectedStatusWord {
+                // File 4000 is not selectable here: not a CEPAS card in its default application.
                 return nil
             }
             purse = try await readPurse()

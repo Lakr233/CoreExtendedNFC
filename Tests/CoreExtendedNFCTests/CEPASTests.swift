@@ -211,7 +211,7 @@ struct CEPASTests {
     @Test
     func `Automatic detection continues to Korea when the CEPAS file or command is unsupported`() async throws {
         for rejectedCall in 0 ... 1 {
-            let statuses: [UInt16] = [0x6A81, 0x6A82, 0x6D00, 0x6E00] + (rejectedCall == 0 ? [0x6A86] : [])
+            let statuses: [UInt16] = [0x6A81, 0x6A82, 0x6D00, 0x6E00] + (rejectedCall == 0 ? [0x6A86, 0x6986, 0x6700, 0x6982] : [])
             for status in statuses {
                 let transport = MockTransport()
                 let success = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
@@ -234,11 +234,51 @@ struct CEPASTests {
     }
 
     @Test
+    func `Any SELECT 4000 rejection falls through to T-Money`() async throws {
+        let transport = MockTransport()
+        let success = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
+        let notFound = ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82)
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x86), // SELECT 4000: command not allowed
+            notFound, // Hyundai
+            success, // T-Money / Snapper
+            ResponseAPDU(data: Data([0, 0, 0x27, 0x10]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83),
+        ]
+        let info = CardInfo(type: .smartMX, uid: transport.identifier)
+
+        let result = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+
+        #expect(result.cardName == "T-Money")
+        #expect(result.currencyCode == "KRW")
+        #expect(result.balanceRaw == 10000)
+    }
+
+    @Test
+    func `Rejected Korean GET BALANCE surfaces its status word`() async {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT 4000
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // Hyundai SELECT
+            ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x85), // GET BALANCE rejected
+        ]
+        let info = CardInfo(type: .smartMX, uid: transport.identifier)
+
+        await expectTransitNFCError(.unexpectedStatusWord(0x69, 0x85)) {
+            _ = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+        }
+        #expect(transport.sentAPDUs.count == 3)
+    }
+
+    @Test
     func `Automatic detection propagates CEPAS transport and operational failures`() async {
         let record = Data([0x01, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0] + Array("SHOP    ".utf8))
         let responses = transport(purse: purse(recordCount: 1), history: [record]).apduResponses
         for failedCall in responses.indices {
-            let statuses: [UInt16?] = [nil, 0x6700, 0x6982] + (failedCall > 0 ? [0x6A86] : []) + (failedCall == 2 ? [0x6A82] : [])
+            // Any status word on SELECT 4000 means "not CEPAS"; only transport failures propagate there.
+            let statuses: [UInt16?] = failedCall == 0
+                ? [nil]
+                : [nil, 0x6700, 0x6982, 0x6A86] + (failedCall == 2 ? [0x6A82] : [])
             for status in statuses {
                 let transport = MockTransport()
                 transport.apduResponses = responses

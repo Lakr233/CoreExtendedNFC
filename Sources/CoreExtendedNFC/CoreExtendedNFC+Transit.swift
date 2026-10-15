@@ -10,7 +10,7 @@ extension CoreExtendedNFC {
     /// Detection order:
     /// 1. FeliCa system code → Japan IC or Octopus
     /// 2. ISO 7816 → probe Singapore CEPAS purse
-    /// 3. ISO 7816 → try KS X 6924 AIDs (T-Money, Cashbee, Snapper/MOIBA, K-Cash)
+    /// 3. ISO 7816 → try KS X 6924 AIDs (T-Money / Snapper, Cashbee, MOIBA, K-Cash)
     /// 4. ISO 7816 → try T-Union AID
     public static func readTransitBalance(
         info: CardInfo,
@@ -35,18 +35,19 @@ extension CoreExtendedNFC {
                 return balance
             }
 
-            // Try Korea KS X 6924 first — only catch "not this card" errors
+            // Try Korea KS X 6924. Only "no AID selected" means "not this card"; once an AID
+            // is selected, a rejected GET BALANCE or other failure surfaces to the caller.
             do {
                 return try await readKoreaTransitBalance(transport: iso7816Transport)
-            } catch NFCError.unsupportedOperation, NFCError.unexpectedStatusWord {
-                // Not a Korean transit card (or AID rejected); try next
+            } catch NFCError.unsupportedOperation {
+                // No KS X 6924 AID was selectable; try next
             }
 
-            // Try China T-Union
+            // Try China T-Union, with the same rule.
             do {
                 return try await readChinaTransitBalance(transport: iso7816Transport)
-            } catch NFCError.unsupportedOperation, NFCError.unexpectedStatusWord {
-                // Not a T-Union card either (or AID rejected)
+            } catch NFCError.unsupportedOperation {
+                // T-Union AID not selectable either
             }
         }
 
@@ -71,7 +72,7 @@ extension CoreExtendedNFC {
         try await OctopusReader(transport: transport).readBalance()
     }
 
-    /// Read Korea T-Money/Cashbee balance + history (KS X 6924).
+    /// Read KS X 6924 balance + history (T-Money, Cashbee, MOIBA, K-Cash; Snapper is reported in NZD).
     public static func readKoreaTransitBalance(
         transport: any ISO7816TagTransporting
     ) async throws -> TransitBalance {

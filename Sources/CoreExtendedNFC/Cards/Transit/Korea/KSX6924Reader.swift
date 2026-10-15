@@ -1,17 +1,22 @@
 import Foundation
 
 /// Reads balance and transaction history from South Korea KS X 6924 transit cards
-/// (T-Money, Cashbee, MOIBA, K-Cash).
+/// (T-Money, Cashbee, MOIBA, K-Cash) and Wellington Snapper cards, which share the
+/// T-Money AID.
 ///
 /// ## Protocol Overview
 /// 1. SELECT one of the known AIDs (try each until success)
 /// 2. Parse FCI for purse info (tag 0xB0) containing serial number and dates
-/// 3. GET BALANCE: CLA=0x90 INS=0x4C → 4 bytes big-endian (KRW)
-/// 4. GET RECORD: CLA=0x90 INS=0x78 P1=index → 16-byte transaction record
+/// 3. GET BALANCE: CLA=0x90 INS=0x4C → 4 bytes big-endian
+/// 4. READ RECORD from SFI 4 (`00 B2 n 24 00`, n = 1...) → transaction records
+///
+/// Cards selected through the T-Money AID whose SFI 4 records all carry Snapper's
+/// 0xFF filler (Metrodroid `SnapperTransitData.check`) are reported as Snapper in NZD cents.
+/// Snapper trips use a different record layout and are not decoded.
 ///
 /// ## References
 /// - KS X 6924 specification
-/// - Metrodroid TMoney implementation
+/// - Metrodroid KSX6924Application, TMoneyTrip, SnapperTransitData
 public struct KSX6924Reader: Sendable {
     let transport: any ISO7816TagTransporting
 
@@ -19,37 +24,54 @@ public struct KSX6924Reader: Sendable {
         self.transport = transport
     }
 
-    /// Try all known KS X 6924 AIDs and read balance from the first match.
+    /// Try all known KS X 6924 AIDs and read the balance from the first match.
+    ///
+    /// For the shared T-Money / Snapper AID the transaction file is also read, because it is
+    /// the only way to tell the two systems (and their currencies) apart.
     public func readBalance() async throws -> TransitBalance {
-        NFCLog.info("KSX6924 balance read start", source: "KSX6924")
-        let (cardName, fciData) = try await selectCard()
-        let purseInfo = parsePurseInfo(fciData)
-        let balance = try await readRawBalance()
-        NFCLog.info("KSX6924 balance read complete card=\(cardName) balance=\(balance)", source: "KSX6924")
-
-        return TransitBalance(
-            serialNumber: purseInfo.serial,
-            balanceRaw: balance,
-            currencyCode: "KRW",
-            cardName: cardName,
-            validFrom: purseInfo.issueDate,
-            validUntil: purseInfo.expiryDate
-        )
+        try await read(includeTransactions: false)
     }
 
     /// Read balance + transaction records.
     public func readBalanceAndHistory() async throws -> TransitBalance {
-        NFCLog.info("KSX6924 balance/history read start", source: "KSX6924")
-        let (cardName, fciData) = try await selectCard()
+        try await read(includeTransactions: true)
+    }
+
+    // MARK: - Private
+
+    private func read(includeTransactions: Bool) async throws -> TransitBalance {
+        NFCLog.info("KSX6924 read start history=\(includeTransactions)", source: "KSX6924")
+        let (aidName, aid, fciData) = try await selectCard()
         let purseInfo = parsePurseInfo(fciData)
         let balance = try await readRawBalance()
-        let transactions = await readRecords()
-        NFCLog.info("KSX6924 balance/history read complete card=\(cardName) balance=\(balance) transactions=\(transactions.count)", source: "KSX6924")
+
+        let sharesSnapperAID = aid == KSX6924Constants.tMoneyAID
+        let records = includeTransactions || sharesSnapperAID ? try await readRecords() : []
+        let isSnapper = sharesSnapperAID && Self.isSnapper(records: records)
+
+        let cardName: String
+        let currencyCode: String
+        let transactions: [TransitTransaction]
+        if isSnapper {
+            cardName = "Snapper"
+            currencyCode = "NZD"
+            transactions = []
+        } else {
+            cardName = sharesSnapperAID ? "T-Money" : aidName
+            currencyCode = "KRW"
+            transactions = includeTransactions
+                ? records.enumerated().compactMap { Self.parseRecord($0.element, recordNumber: $0.offset + 1) }
+                : []
+        }
+        NFCLog.info(
+            "KSX6924 read complete card=\(cardName) balance=\(balance) \(currencyCode) transactions=\(transactions.count)",
+            source: "KSX6924"
+        )
 
         return TransitBalance(
             serialNumber: purseInfo.serial,
             balanceRaw: balance,
-            currencyCode: "KRW",
+            currencyCode: currencyCode,
             cardName: cardName,
             validFrom: purseInfo.issueDate,
             validUntil: purseInfo.expiryDate,
@@ -57,17 +79,15 @@ public struct KSX6924Reader: Sendable {
         )
     }
 
-    // MARK: - Private
-
-    /// Try each known AID until one succeeds. Returns (cardName, fciResponseData).
-    private func selectCard() async throws -> (String, Data) {
+    /// Try each known AID until one succeeds. Returns (name, aid, fciResponseData).
+    private func selectCard() async throws -> (String, Data, Data) {
         for (name, aid) in KSX6924Constants.allAIDs {
             NFCLog.debug("KSX6924 SELECT AID \(aid.hexString) (\(name))", source: "KSX6924")
             do {
                 let response = try await transport.sendAPDUWithChaining(CommandAPDU.select(aid: aid))
                 if response.isSuccess {
                     NFCLog.debug("KSX6924 SELECT AID success card=\(name) data=\(response.data.hexString)", source: "KSX6924")
-                    return (name, response.data)
+                    return (name, aid, response.data)
                 }
                 NFCLog.debug("KSX6924 SELECT AID rejected card=\(name) sw=\(String(format: "%02X%02X", response.sw1, response.sw2))", source: "KSX6924")
             } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
@@ -89,37 +109,60 @@ public struct KSX6924Reader: Sendable {
         )
         let response = try await transport.sendAPDUWithChaining(apdu)
         NFCLog.debug("KSX6924 GET BALANCE sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "KSX6924")
-        guard response.isSuccess, response.data.count >= 4 else {
+        guard response.isSuccess else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
-        return Int(Data(response.data[response.data.startIndex ..< response.data.startIndex + 4]).uint32BE)
+        guard response.data.count >= 4 else {
+            throw NFCError.invalidResponse(response.data)
+        }
+        return Int(Data(response.data.prefix(4)).uint32BE)
     }
 
-    private func readRecords() async -> [TransitTransaction] {
-        var transactions: [TransitTransaction] = []
+    /// READ RECORD `00 B2 n 24 00`: record `n` of SFI 4, Le = 256.
+    static func readRecordAPDU(recordNumber: UInt8) -> CommandAPDU {
+        CommandAPDU(
+            cla: 0x00,
+            ins: 0xB2,
+            p1: recordNumber,
+            p2: (KSX6924Constants.transactionSFI << 3) | 0x04,
+            le: 0x00
+        )
+    }
 
-        for i in 0 ..< KSX6924Constants.maxRecords {
+    /// Read SFI 4 records until the card reports no further record. Session loss and
+    /// cancellation propagate; any other per-record failure ends the record list.
+    private func readRecords() async throws -> [Data] {
+        var records: [Data] = []
+        for recordNumber in 1 ... KSX6924Constants.maxRecords {
+            try Task.checkCancellation()
+            let response: ResponseAPDU
             do {
-                let apdu = CommandAPDU(
-                    cla: KSX6924Constants.CLA,
-                    ins: KSX6924Constants.INS_GET_RECORD,
-                    p1: UInt8(i),
-                    p2: 0x00,
-                    le: 0x10
+                response = try await transport.sendAPDUWithChaining(
+                    Self.readRecordAPDU(recordNumber: UInt8(recordNumber))
                 )
-                let response = try await transport.sendAPDUWithChaining(apdu)
-                guard response.isSuccess, response.data.count >= 14 else { break }
-                NFCLog.debug("KSX6924 record #\(i)=\(response.data.hexString)", source: "KSX6924")
-
-                if let tx = Self.parseRecord(response.data) {
-                    transactions.append(tx)
-                }
-            } catch {
+            } catch where !isSessionTerminating(error) {
+                NFCLog.debug("KSX6924 READ RECORD #\(recordNumber) stopped: \(error.localizedDescription)", source: "KSX6924")
                 break
             }
+            guard response.isSuccess else {
+                NFCLog.debug("KSX6924 READ RECORD #\(recordNumber) end sw=\(String(format: "%04X", response.statusWord))", source: "KSX6924")
+                break
+            }
+            NFCLog.debug("KSX6924 record #\(recordNumber)=\(response.data.hexString)", source: "KSX6924")
+            records.append(Data(response.data))
         }
+        return records
+    }
 
-        return transactions
+    /// Metrodroid `SnapperTransitData.check`: every SFI 4 record is 46 bytes with bytes 26..<46
+    /// set to 0xFF. An empty record file is not treated as Snapper.
+    static func isSnapper(records: [Data]) -> Bool {
+        guard !records.isEmpty else { return false }
+        return records.allSatisfy { record in
+            let bytes = [UInt8](record)
+            return bytes.count == KSX6924Constants.snapperRecordLength
+                && bytes[KSX6924Constants.snapperFillerRange].allSatisfy { $0 == 0xFF }
+        }
     }
 
     // MARK: - Parsing
@@ -139,7 +182,7 @@ public struct KSX6924Reader: Sendable {
             return PurseInfo(serial: "", issueDate: nil, expiryDate: nil)
         }
 
-        let purse = purseNode.value
+        let purse = [UInt8](purseNode.value)
 
         // Serial: 8 bytes BCD at offset 4
         let serialData = Data(purse[KSX6924Constants.purseCSN ..< KSX6924Constants.purseCSN + KSX6924Constants.purseCSNLength])
@@ -179,28 +222,67 @@ public struct KSX6924Reader: Sendable {
         return Calendar(identifier: .gregorian).date(from: components)
     }
 
-    /// Parse a 16-byte transaction record.
-    static func parseRecord(_ data: Data) -> TransitTransaction? {
-        guard data.count >= 14 else { return nil }
+    /// Parse a 7-byte BCD date-time (YYYYMMDDhhmmss) in Korea Standard Time.
+    static func parseBCDDateTime(_ data: Data) -> Date? {
+        let bytes = [UInt8](data)
+        guard bytes.count == 7,
+              bytes.allSatisfy({ $0 >> 4 <= 9 && $0 & 0x0F <= 9 })
+        else { return nil }
+        let values = bytes.map { Int($0 >> 4) * 10 + Int($0 & 0x0F) }
+        let year = values[0] * 100 + values[1]
+        guard year > 0, (1 ... 12).contains(values[2]), (1 ... 31).contains(values[3]),
+              values[4] <= 23, values[5] <= 59, values[6] <= 59
+        else { return nil }
 
-        let recordType = data[data.startIndex + KSX6924Constants.recordType]
+        var components = DateComponents()
+        components.year = year
+        components.month = values[2]
+        components.day = values[3]
+        components.hour = values[4]
+        components.minute = values[5]
+        components.second = values[6]
+        components.timeZone = TimeZone(identifier: "Asia/Seoul")
+        return Calendar(identifier: .gregorian).date(from: components)
+    }
+
+    /// Parse one SFI 4 transaction record (Metrodroid `TMoneyTrip.parseTrip`).
+    ///
+    /// Layout: byte 0 type, bytes 2..<6 balance after (BE), 6..<10 counter,
+    /// 10..<14 cost (BE, unsigned), 26..<33 BCD date-time (KST).
+    /// Returns nil for unused slots (zero cost and no valid timestamp).
+    static func parseRecord(_ data: Data, recordNumber: Int? = nil) -> TransitTransaction? {
+        let bytes = [UInt8](data)
+        guard bytes.count >= KSX6924Constants.recordMinimumLength else { return nil }
+
+        func uint32(at offset: Int) -> Int {
+            bytes[offset ..< offset + 4].reduce(0) { $0 << 8 | Int($1) }
+        }
+
+        let recordType = bytes[KSX6924Constants.recordType]
+        let balance = uint32(at: KSX6924Constants.recordBalance)
+        let cost = uint32(at: KSX6924Constants.recordCost)
+        let dateRange = KSX6924Constants.recordDateTime ..< KSX6924Constants.recordDateTime + KSX6924Constants.recordDateTimeLength
+        let date = parseBCDDateTime(Data(bytes[dateRange]))
+        if cost == 0, date == nil { return nil }
+
         let txType: TransactionType = switch recordType {
-        case 2: .topup
-        case 1: .trip
+        case 0x01: .trip
+        case 0x02: .topup
         default: .unknown
         }
 
-        let balance = Int(Data(data[data.startIndex + KSX6924Constants.recordBalance ..< data.startIndex + KSX6924Constants.recordBalance + 4]).uint32BE)
-        let amount = Int(Data(data[data.startIndex + KSX6924Constants.recordAmount ..< data.startIndex + KSX6924Constants.recordAmount + 4]).uint32BE)
-
-        let dateData = Data(data[data.startIndex + KSX6924Constants.recordDate ..< data.startIndex + KSX6924Constants.recordDate + 4])
-        let date = parseBCDDate(dateData)
-
         return TransitTransaction(
             type: txType,
-            amount: amount,
+            amount: cost,
             balanceAfter: balance,
-            date: date
+            date: date,
+            recordNumber: recordNumber,
+            rawData: Data(bytes),
+            metadata: [
+                "source": "KSX6924 SFI 4",
+                "recordType": String(format: "%02X", recordType),
+                "counter": String(uint32(at: KSX6924Constants.recordCounter)),
+            ]
         )
     }
 }

@@ -21,6 +21,7 @@ struct KSX6924Tests {
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // Hyundai SELECT fails
             ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00), // SELECT
             ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00), // GET BALANCE: 10000 KRW
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // SFI 4: no records
         ]
 
         let reader = KSX6924Reader(transport: transport)
@@ -60,6 +61,7 @@ struct KSX6924Tests {
         transport.apduResponses = [
             ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data([0x00, 0x00, 0x27, 0x10]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // SFI 4: no records
         ]
 
         let reader = KSX6924Reader(transport: transport)
@@ -98,6 +100,7 @@ struct KSX6924Tests {
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // Hyundai SELECT fails
             ResponseAPDU(data: fci, sw1: 0x90, sw2: 0x00), // SELECT
             ResponseAPDU(data: Data([0x00, 0x01, 0x86, 0xA0]), sw1: 0x90, sw2: 0x00), // 100000 KRW
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // SFI 4: no records
         ]
 
         let reader = KSX6924Reader(transport: transport)
@@ -132,36 +135,113 @@ struct KSX6924Tests {
         #expect(date == nil)
     }
 
-    // MARK: - Record Parsing
+    // MARK: - Record Parsing (SFI 4, Metrodroid TMoneyTrip layout)
+
+    /// 46-byte TMoneyTrip record: type 01, balance 5000, counter 7, cost 1250,
+    /// 2025-03-15 08:30:00 KST at offset 26.
+    static let tripRecordHex = "01000000138800000007000004E20000000000000000000000002025031508300000000000000000000000000000"
 
     @Test
-    func `Parse trip transaction record`() {
-        var record = Data(repeating: 0x00, count: 16)
-        record[0] = 0x01 // trip
-        record[2] = 0x00; record[3] = 0x00; record[4] = 0x13; record[5] = 0x88 // balance 5000
-        record[6] = 0x00; record[7] = 0x00; record[8] = 0x04; record[9] = 0xB0 // amount 1200
-        record[10] = 0x20; record[11] = 0x25; record[12] = 0x03; record[13] = 0x15 // date 20250315
-
-        let tx = KSX6924Reader.parseRecord(record)
-        #expect(tx != nil)
-        #expect(tx?.type == .trip)
-        #expect(tx?.balanceAfter == 5000)
-        #expect(tx?.amount == 1200)
+    func `Parse SFI 4 trip record with TMoneyTrip layout`() throws {
+        let tx = try #require(KSX6924Reader.parseRecord(hexToData(Self.tripRecordHex), recordNumber: 1))
+        #expect(tx.type == .trip)
+        #expect(tx.balanceAfter == 5000)
+        #expect(tx.amount == 1250)
+        #expect(tx.date == Date(timeIntervalSince1970: 1_741_995_000))
+        #expect(tx.recordNumber == 1)
+        #expect(tx.metadata["counter"] == "7")
     }
 
     @Test
-    func `Parse topup transaction record`() {
-        var record = Data(repeating: 0x00, count: 16)
-        record[0] = 0x02 // topup
-        record[2] = 0x00; record[3] = 0x00; record[4] = 0x27; record[5] = 0x10 // balance 10000
-        record[6] = 0x00; record[7] = 0x00; record[8] = 0x13; record[9] = 0x88 // amount 5000
-        record[10] = 0x20; record[11] = 0x25; record[12] = 0x03; record[13] = 0x10 // date 20250310
+    func `Top-up record keeps a positive amount`() throws {
+        var record = hexToData(Self.tripRecordHex)
+        record[0] = 0x02
+        let tx = try #require(KSX6924Reader.parseRecord(record))
+        #expect(tx.type == .topup)
+        #expect(tx.amount == 1250)
+    }
 
-        let tx = KSX6924Reader.parseRecord(record)
-        #expect(tx != nil)
-        #expect(tx?.type == .topup)
-        #expect(tx?.balanceAfter == 10000)
-        #expect(tx?.amount == 5000)
+    @Test
+    func `Unused record slot is skipped`() {
+        let empty = Data(repeating: 0x00, count: 46)
+        #expect(KSX6924Reader.parseRecord(empty) == nil)
+        #expect(KSX6924Reader.parseRecord(Data(repeating: 0x00, count: 20)) == nil)
+    }
+
+    @Test
+    func `History is read from SFI 4 with READ RECORD`() async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // Hyundai SELECT fails
+            ResponseAPDU(data: buildMinimalFCI(), sw1: 0x90, sw2: 0x00), // T-Money SELECT
+            ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00), // GET BALANCE
+            ResponseAPDU(data: hexToData(Self.tripRecordHex), sw1: 0x90, sw2: 0x00), // record 1
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // record 2: not found
+        ]
+
+        let result = try await KSX6924Reader(transport: transport).readBalanceAndHistory()
+
+        #expect(result.cardName == "T-Money")
+        #expect(result.currencyCode == "KRW")
+        #expect(result.transactions.count == 1)
+        #expect(result.transactions.first?.amount == 1250)
+        #expect(transport.sentAPDUs[3].bytes == Data([0x00, 0xB2, 0x01, 0x24, 0x00]))
+        #expect(transport.sentAPDUs[4].bytes == Data([0x00, 0xB2, 0x02, 0x24, 0x00]))
+        #expect(!transport.sentAPDUs.contains { $0.ins == 0x78 })
+    }
+
+    @Test
+    func `Tag loss while reading records propagates`() async {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
+            ResponseAPDU(data: buildMinimalFCI(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00),
+        ]
+        transport.apduFailures = [3: .tagConnectionLost]
+
+        await expectTransitNFCError(.tagConnectionLost) {
+            _ = try await KSX6924Reader(transport: transport).readBalanceAndHistory()
+        }
+    }
+
+    // MARK: - Snapper / MOIBA
+
+    @Test
+    func `Snapper records on the T-Money AID report NZD`() async throws {
+        var snapperRecord = Data(repeating: 0x00, count: 26) + Data(repeating: 0xFF, count: 20)
+        snapperRecord[0] = 0x01
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
+            ResponseAPDU(data: buildMinimalFCI(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x04, 0xD2]), sw1: 0x90, sw2: 0x00), // 1234 cents
+            ResponseAPDU(data: snapperRecord, sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83),
+        ]
+
+        let result = try await KSX6924Reader(transport: transport).readBalance()
+
+        #expect(result.cardName == "Snapper")
+        #expect(result.currencyCode == "NZD")
+        #expect(result.formattedBalance == "NZ$12.34")
+        #expect(result.transactions.isEmpty)
+    }
+
+    @Test
+    func `Snapper discriminator requires every record to carry the FF filler`() {
+        let snapper = Data(repeating: 0x00, count: 26) + Data(repeating: 0xFF, count: 20)
+        #expect(KSX6924Reader.isSnapper(records: [snapper, snapper]))
+        #expect(!KSX6924Reader.isSnapper(records: []))
+        #expect(!KSX6924Reader.isSnapper(records: [snapper, hexToData(Self.tripRecordHex)]))
+        #expect(!KSX6924Reader.isSnapper(records: [snapper + Data([0xFF])]))
+    }
+
+    @Test
+    func `AID labels follow Metrodroid`() {
+        let names = Dictionary(uniqueKeysWithValues: KSX6924Constants.allAIDs.map { ($0.aid.hexString, $0.name) })
+        #expect(names["D4100000300001"] == "MOIBA")
+        #expect(names["D4100000030001"] == "T-Money / Snapper")
     }
 
     // MARK: - Helpers

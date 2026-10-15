@@ -39,7 +39,7 @@ enum JapanICConstants {
     static let historyEntryExit = 3
     /// Bytes 4-5: date as packed bits — year(7) month(4) day(5), base year 2000.
     static let historyDateOffset = 4
-    /// Bytes 6-7: entry station code.
+    /// Bytes 6-7: entry station code (product sales: purchase time hhhhhmmmmmm).
     static let historyStationEntry = 6
     /// Bytes 8-9: exit station code.
     static let historyStationExit = 8
@@ -48,11 +48,22 @@ enum JapanICConstants {
     /// Byte 0x0F: region code.
     static let historyRegionCode = 0x0F
 
-    // MARK: - Usage Type Classification
+    // MARK: - Console / Process Type Classification (Metrodroid SuicaUtil / SuicaTrip)
 
-    /// Usage types that represent top-up / charge operations.
-    static let topupUsageTypes: Set<UInt8> = [0x02, 0x3F]
+    /// Byte 1 bit 7 marks a cash-supplemented variant of the same process (e.g. 0xC6 = 0x46 + cash).
+    static let processTypeMask: UInt8 = 0x7F
 
-    /// Usage types that represent product purchases (vending, store).
-    static let purchaseUsageTypes: Set<UInt8> = [0x46, 0x49, 0xC6, 0xC7]
+    /// Process types (byte 1 & 0x7F) that add value: charge, auto-charge at entry/exit,
+    /// bus deposit, bonus charge, register deposit.
+    static let topupProcessTypes: Set<UInt8> = [0x02, 0x14, 0x15, 0x1F, 0x48, 0x49]
+
+    /// Process type 0x02 (charge): the record carries no station codes.
+    static let chargeProcessType: UInt8 = 0x02
+
+    /// Process types (byte 1 & 0x7F) for merchandise purchase, cancel, and admission.
+    static let purchaseProcessTypes: Set<UInt8> = [0x46, 0x4A, 0x4B]
+
+    /// Console types (byte 0) of product-sale terminals: 0xC7 POS, 0xC8 vending machine.
+    /// Their bytes 6-7 hold the purchase time (hour 5 bits, minute 6 bits) instead of stations.
+    static let productSaleConsoleTypes: Set<UInt8> = [0xC7, 0xC8]
 }

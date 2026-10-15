@@ -121,14 +121,16 @@ struct JapanICTests {
         #expect(first.type == .purchase)
         #expect(first.amount == nil)
         #expect(first.balanceAfter == 27)
-        #expect(first.entryStation == "9825")
-        #expect(first.exitStation == "DCAD")
+        #expect(first.entryStation == nil)
+        #expect(first.exitStation == nil)
+        // 30B5 = 2024-05-21, 9825 = 19:01 JST
+        #expect(first.date == Date(timeIntervalSince1970: 1_716_285_660))
 
         let topup = result.transactions[15]
         #expect(topup.type == .topup)
         #expect(topup.amount == nil)
         #expect(topup.balanceAfter == 5377)
-        #expect(topup.entryStation == "8117")
+        #expect(topup.entryStation == nil) // process 0x02 charge carries no stations
     }
 
     @Test
@@ -169,13 +171,14 @@ struct JapanICTests {
         let first = try #require(result.transactions.first)
         #expect(first.type == .purchase)
         #expect(first.balanceAfter == 10)
-        #expect(first.entryStation == "9825")
-        #expect(first.exitStation == "DCAD")
+        #expect(first.entryStation == nil)
+        #expect(first.exitStation == nil)
 
         let sparse = result.transactions[4]
         #expect(sparse.type == .trip)
         #expect(sparse.balanceAfter == 0)
-        #expect(sparse.entryStation == "0000")
+        #expect(sparse.date == nil)
+        #expect(sparse.entryStation == nil) // unused block: no date, no stations
     }
 
     @Test
@@ -271,6 +274,68 @@ struct JapanICTests {
     }
 
     @Test
+    func `Register deposit at POS is a top-up without stations`() throws {
+        let tx = try #require(JapanICReader.parseHistoryBlock(hexToData("C7490000306F6DA00000721400000000")))
+        #expect(tx.type == .topup)
+        #expect(tx.balanceAfter == 5234)
+        #expect(tx.entryStation == nil)
+        #expect(tx.exitStation == nil)
+    }
+
+    @Test
+    func `POS purchase decodes purchase time instead of stations`() throws {
+        let tx = try #require(JapanICReader.parseHistoryBlock(hexToData("C7460000306F6DA00000D20400000000")))
+        #expect(tx.type == .purchase)
+        #expect(tx.balanceAfter == 1234)
+        // 2024-03-15 13:45 JST
+        #expect(tx.date == Date(timeIntervalSince1970: 1_710_477_900))
+        #expect(tx.entryStation == nil)
+    }
+
+    @Test
+    func `Process type classification follows Metrodroid tables`() throws {
+        func type(console: UInt8, process: UInt8) throws -> TransactionType {
+            var block = Data(repeating: 0x00, count: 16)
+            block[0] = console
+            block[1] = process
+            block[4] = 0x30
+            block[5] = 0x6F
+            return try #require(JapanICReader.parseHistoryBlock(block)).type
+        }
+        for process: UInt8 in [0x02, 0x14, 0x15, 0x1F, 0x48, 0x49, 0x82] {
+            #expect(try type(console: 0x16, process: process) == .topup)
+        }
+        for process: UInt8 in [0x46, 0x4A, 0x4B, 0xC6, 0xCB] {
+            #expect(try type(console: 0x16, process: process) == .purchase)
+        }
+        #expect(try type(console: 0xC8, process: 0x00) == .purchase)
+        #expect(try type(console: 0x16, process: 0x01) == .trip)
+        #expect(try type(console: 0x16, process: 0x3F) == .trip)
+    }
+
+    @Test
+    func `Tag loss while reading history propagates`() async {
+        var balanceBlock = Data(repeating: 0x00, count: 16)
+        balanceBlock[0x0B] = 0xD2
+        let base = MockFeliCaServiceTransport(
+            serviceVersions: [
+                JapanICConstants.balanceServiceCode: Data([0x00, 0x10]),
+                JapanICConstants.historyServiceCode: Data([0x00, 0x10]),
+            ],
+            serviceBlocks: [
+                JapanICConstants.balanceServiceCode: [balanceBlock],
+                JapanICConstants.historyServiceCode: [hexToData("1601000230B563237024A80000006E00")],
+            ],
+            systemCode: JapanICConstants.systemCode
+        )
+        let transport = HistoryTagLossTransport(base: base)
+
+        await expectTransitNFCError(.tagConnectionLost) {
+            _ = try await JapanICReader(transport: transport).readBalanceAndHistory()
+        }
+    }
+
+    @Test
     func `Empty history block is skipped`() {
         let block = Data(repeating: 0x00, count: 16)
         // parseHistoryBlock still returns a transaction (all zeros) but
@@ -323,5 +388,35 @@ struct JapanICTests {
             }
         }
         return data
+    }
+}
+
+/// Serves the first history block, then reports tag loss on the next history read.
+private final class HistoryTagLossTransport: FeliCaTagTransporting, @unchecked Sendable {
+    let base: MockFeliCaServiceTransport
+    private var historyReads = 0
+
+    init(base: MockFeliCaServiceTransport) {
+        self.base = base
+    }
+
+    var identifier: Data { base.identifier }
+    var systemCode: Data { base.systemCode }
+
+    func send(_ data: Data) async throws -> Data { try await base.send(data) }
+    func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU { try await base.sendAPDU(apdu) }
+
+    func readWithoutEncryption(serviceCode: Data, blockList: [Data]) async throws -> [Data] {
+        if serviceCode == JapanICConstants.historyServiceCode {
+            historyReads += 1
+            if historyReads > 1 { throw NFCError.tagConnectionLost }
+        }
+        return try await base.readWithoutEncryption(serviceCode: serviceCode, blockList: blockList)
+    }
+
+    func writeWithoutEncryption(serviceCode _: Data, blockList _: [Data], blockData _: [Data]) async throws {}
+
+    func requestService(nodeCodeList: [Data]) async throws -> [Data] {
+        try await base.requestService(nodeCodeList: nodeCodeList)
     }
 }

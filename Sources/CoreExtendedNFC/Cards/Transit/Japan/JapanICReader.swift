@@ -37,7 +37,7 @@ public struct JapanICReader: Sendable {
         NFCLog.info("Japan IC balance/history read start idm=\(transport.identifier.hexString)", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
-        let transactions = await readHistory()
+        let transactions = try await readHistory()
         NFCLog.info("Japan IC balance/history read complete balance=\(balance) JPY transactions=\(transactions.count)", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
@@ -84,7 +84,7 @@ public struct JapanICReader: Sendable {
             throw NFCError.invalidResponse(blocks.first ?? Data())
         }
 
-        let balanceBytes = Data(block[JapanICConstants.balanceOffset ..< JapanICConstants.balanceOffset + 2])
+        let balanceBytes = Data(block.dropFirst(JapanICConstants.balanceOffset).prefix(2))
         let balance = Int(balanceBytes.uint16LE)
         NFCLog.debug(
             "Japan IC balance block=\(block.hexString) offset=\(JapanICConstants.balanceOffset) bytes=\(balanceBytes.hexString) value=\(balance)",
@@ -93,12 +93,14 @@ public struct JapanICReader: Sendable {
         return balance
     }
 
-    private func readHistory() async -> [TransitTransaction] {
+    /// Read history blocks one at a time. A block-level read failure ends the history;
+    /// session loss and cancellation propagate to the caller.
+    private func readHistory() async throws -> [TransitTransaction] {
         var transactions: [TransitTransaction] = []
         NFCLog.debug("Japan IC history read start service=\(JapanICConstants.historyServiceCode.hexString) maxBlocks=\(JapanICConstants.maxHistoryBlocks)", source: "JapanIC")
 
-        // Read history blocks one at a time; stop on first failure
         for i in 0 ..< JapanICConstants.maxHistoryBlocks {
+            try Task.checkCancellation()
             do {
                 let blocks = try await transport.readWithoutEncryption(
                     serviceCode: JapanICConstants.historyServiceCode,
@@ -124,7 +126,7 @@ public struct JapanICReader: Sendable {
                 } else {
                     NFCLog.debug("Japan IC history block #\(i) skipped by parser", source: "JapanIC")
                 }
-            } catch {
+            } catch where !isSessionTerminating(error) {
                 NFCLog.debug("Japan IC history block #\(i) read stopped: \(error.localizedDescription)", source: "JapanIC")
                 break
             }
@@ -136,29 +138,39 @@ public struct JapanICReader: Sendable {
 
     /// Parse a 16-byte history block into a `TransitTransaction`.
     static func parseHistoryBlock(_ block: Data) -> TransitTransaction? {
-        guard block.count == 16 else { return nil }
+        let bytes = [UInt8](block)
+        guard bytes.count == 16 else { return nil }
 
-        let usageType = block[JapanICConstants.historyUsageType]
+        let consoleType = bytes[JapanICConstants.historyMachineType]
+        let processType = bytes[JapanICConstants.historyUsageType] & JapanICConstants.processTypeMask
+        let isProductSale = JapanICConstants.productSaleConsoleTypes.contains(consoleType)
 
-        // Classify transaction type
+        // Classification follows Metrodroid SuicaUtil console/process tables.
         let txType: TransactionType =
-            if JapanICConstants.topupUsageTypes.contains(usageType) {
+            if JapanICConstants.topupProcessTypes.contains(processType) {
                 .topup
-            } else if JapanICConstants.purchaseUsageTypes.contains(usageType) {
+            } else if isProductSale || JapanICConstants.purchaseProcessTypes.contains(processType) {
                 .purchase
             } else {
                 .trip
             }
 
-        // Parse date: 2 bytes at offset 4, packed as year(7) month(4) day(5)
-        let date = parseDate(block)
+        // Product sales store the purchase time in bytes 6-7 (Metrodroid SuicaUtil.extractDate).
+        let date = parseDate(block, includeTime: isProductSale)
 
-        // Station codes as hex strings
-        let entryStation = Data(block[JapanICConstants.historyStationEntry ..< JapanICConstants.historyStationEntry + 2]).hexString
-        let exitStation = Data(block[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
+        // Station codes as hex strings. Unused blocks, product sales, and charges carry none
+        // (Metrodroid SuicaTrip.parse).
+        let hasStations = date != nil && !isProductSale && processType != JapanICConstants.chargeProcessType
+        let entryStation = hasStations
+            ? Data(bytes[JapanICConstants.historyStationEntry ..< JapanICConstants.historyStationEntry + 2]).hexString
+            : nil
+        let exitStation = hasStations
+            ? Data(bytes[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
+            : nil
 
-        // Balance after transaction
-        let balanceAfter = Int(Data(block[JapanICConstants.historyBalanceOffset ..< JapanICConstants.historyBalanceOffset + 2]).uint16LE)
+        // Balance after transaction (little-endian)
+        let balanceAfter = Int(bytes[JapanICConstants.historyBalanceOffset])
+            | Int(bytes[JapanICConstants.historyBalanceOffset + 1]) << 8
 
         return TransitTransaction(
             type: txType,
@@ -166,19 +178,26 @@ public struct JapanICReader: Sendable {
             balanceAfter: balanceAfter,
             date: date,
             entryStation: entryStation,
-            exitStation: exitStation
+            exitStation: exitStation,
+            metadata: [
+                "consoleType": String(format: "%02X", consoleType),
+                "processType": String(format: "%02X", bytes[JapanICConstants.historyUsageType]),
+            ]
         )
     }
 
     /// Parse the packed date field from a history block.
     /// Format: 2 bytes BE → year(7 bits) month(4 bits) day(5 bits), base year 2000.
-    static func parseDate(_ block: Data) -> Date? {
-        guard block.count > JapanICConstants.historyDateOffset + 1 else { return nil }
+    /// With `includeTime`, bytes 6-7 BE add hour(5 bits) minute(6 bits), as on product sales.
+    static func parseDate(_ block: Data, includeTime: Bool = false) -> Date? {
+        let bytes = [UInt8](block)
+        let offset = JapanICConstants.historyDateOffset
+        guard bytes.count > offset + 1 else { return nil }
 
-        let raw = Data(block[JapanICConstants.historyDateOffset ..< JapanICConstants.historyDateOffset + 2]).uint16BE
-        let year = Int((raw >> 9) & 0x7F) + 2000
-        let month = Int((raw >> 5) & 0x0F)
-        let day = Int(raw & 0x1F)
+        let raw = Int(bytes[offset]) << 8 | Int(bytes[offset + 1])
+        let year = ((raw >> 9) & 0x7F) + 2000
+        let month = (raw >> 5) & 0x0F
+        let day = raw & 0x1F
 
         guard month >= 1, month <= 12, day >= 1, day <= 31 else { return nil }
 
@@ -186,6 +205,16 @@ public struct JapanICReader: Sendable {
         components.year = year
         components.month = month
         components.day = day
+        if includeTime {
+            let timeOffset = JapanICConstants.historyStationEntry
+            guard bytes.count > timeOffset + 1 else { return nil }
+            let time = Int(bytes[timeOffset]) << 8 | Int(bytes[timeOffset + 1])
+            let hour = time >> 11
+            let minute = (time >> 5) & 0x3F
+            guard hour <= 23, minute <= 59 else { return nil }
+            components.hour = hour
+            components.minute = minute
+        }
         components.timeZone = TimeZone(identifier: "Asia/Tokyo")
         return Calendar(identifier: .gregorian).date(from: components)
     }

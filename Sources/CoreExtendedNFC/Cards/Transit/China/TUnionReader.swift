@@ -38,13 +38,13 @@ public struct TUnionReader: Sendable {
         // 2. GET BALANCE. T-Union exposes two purse registers; the displayed
         // value is the signed delta between the primary and negative purse.
         let balance0 = try await readBalanceSlot(p1: TUnionConstants.GET_BALANCE_P1)
-        let balance1 = await readOptionalBalanceSlot(p1: TUnionConstants.GET_NEGATIVE_BALANCE_P1)
+        let balance1 = try await readOptionalBalanceSlot(p1: TUnionConstants.GET_NEGATIVE_BALANCE_P1)
         let balanceFen = Self.displayBalance(primary: balance0, negative: balance1)
         NFCLog.info("T-Union balance read complete balance0=\(balance0) balance1=\(balance1) final=\(balanceFen)", source: "TUnion")
 
         // 3. Read file 0x15 for serial and validity
-        let fileInfo = await readFileInfo()
-        let transactions = await readTransactions()
+        let fileInfo = try await readFileInfo()
+        let transactions = try await readTransactions()
 
         return TransitBalance(
             serialNumber: fileInfo.serial,
@@ -85,11 +85,13 @@ public struct TUnionReader: Sendable {
         return Self.parseBalanceFen(response.data)
     }
 
-    private func readOptionalBalanceSlot(p1: UInt8) async -> Int {
+    /// The negative purse is optional: a card that rejects the command (status word) has none.
+    /// Session loss, cancellation, and other failures propagate instead of reading as zero.
+    private func readOptionalBalanceSlot(p1: UInt8) async throws -> Int {
         do {
             return try await readBalanceSlot(p1: p1)
-        } catch {
-            NFCLog.debug("T-Union optional balance slot p1=\(String(format: "%02X", p1)) skipped: \(error.localizedDescription)", source: "TUnion")
+        } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
+            NFCLog.debug("T-Union optional balance slot p1=\(String(format: "%02X", p1)) skipped sw=\(String(format: "%02X%02X", sw1, sw2))", source: "TUnion")
             return 0
         }
     }
@@ -109,11 +111,14 @@ public struct TUnionReader: Sendable {
         return Int(rawValue & 0x7FFF_FFFF)
     }
 
+    /// Displayed balance = primary purse − negative purse. Metrodroid instead shows the primary
+    /// purse whenever it is positive, but a logged Shanghai card returning 800 fen in both purses
+    /// displayed CNY 0.00 in the issuer app, which matches the plain difference.
     static func displayBalance(primary: Int, negative: Int) -> Int {
         primary - negative
     }
 
-    private func readFileInfo() async -> FileInfo {
+    private func readFileInfo() async throws -> FileInfo {
         do {
             // SELECT file 0x15
             let selectFile = try await transport.sendAPDUWithChaining(
@@ -121,7 +126,7 @@ public struct TUnionReader: Sendable {
             )
             NFCLog.debug("T-Union SELECT file 0015 sw=\(String(format: "%02X%02X", selectFile.sw1, selectFile.sw2)) data=\(selectFile.data.hexString)", source: "TUnion")
             guard selectFile.isSuccess else {
-                return await readFileInfoFromSFI()
+                return try await readFileInfoFromSFI()
             }
 
             // READ BINARY: need at least 28 bytes (offset 0, covers through validity dates)
@@ -130,12 +135,12 @@ public struct TUnionReader: Sendable {
             )
             NFCLog.debug("T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(readResponse.data.hexString)", source: "TUnion")
             guard readResponse.isSuccess, readResponse.data.count >= 28 else {
-                return await readFileInfoFromSFI()
+                return try await readFileInfoFromSFI()
             }
 
             return Self.parseFileInfo(readResponse.data, source: "SELECT 0015 + READ BINARY")
-        } catch {
-            return await readFileInfoFromSFI()
+        } catch where !isSessionTerminating(error) {
+            return try await readFileInfoFromSFI()
         }
     }
 
@@ -143,7 +148,7 @@ public struct TUnionReader: Sendable {
         CommandAPDU(cla: 0x00, ins: 0xA4, p1: 0x00, p2: 0x00, data: id, le: 0x00)
     }
 
-    private func readFileInfoFromSFI() async -> FileInfo {
+    private func readFileInfoFromSFI() async throws -> FileInfo {
         do {
             let response = try await transport.sendAPDUWithChaining(Self.readFile15BySFIAPDU())
             NFCLog.debug("T-Union READ BINARY SFI 15 sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "TUnion")
@@ -151,7 +156,7 @@ public struct TUnionReader: Sendable {
                 return FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable")
             }
             return Self.parseFileInfo(response.data, source: "SFI 15 READ BINARY")
-        } catch {
+        } catch where !isSessionTerminating(error) {
             NFCLog.debug("T-Union READ BINARY SFI 15 skipped: \(error.localizedDescription)", source: "TUnion")
             return FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable")
         }
@@ -163,6 +168,7 @@ public struct TUnionReader: Sendable {
 
     private static func parseFileInfo(_ fileData: Data, source: String) -> FileInfo {
         // Serial: bytes 10-19, skip first nibble (convention from Metrodroid)
+        let fileData = Data(fileData)
         let serialData = Data(fileData[TUnionConstants.serialOffset ..< TUnionConstants.serialOffset + TUnionConstants.serialLength])
         let serialHex = serialData.hexString
         let serial = String(serialHex.dropFirst()) // skip first nibble
@@ -187,14 +193,14 @@ public struct TUnionReader: Sendable {
         )
     }
 
-    private func readTransactions() async -> [TransitTransaction] {
-        let transactions = await readRecords(
+    private func readTransactions() async throws -> [TransitTransaction] {
+        let transactions = try await readRecords(
             sfi: TUnionConstants.transactionSFI,
             length: TUnionConstants.transactionRecordLength,
             maxRecords: TUnionConstants.maxTransactionRecords,
             parser: Self.parseTransactionRecord
         )
-        let trips = await readRecords(
+        let trips = try await readRecords(
             sfi: TUnionConstants.transitActivitySFI,
             length: TUnionConstants.transitActivityRecordLength,
             maxRecords: TUnionConstants.maxTransitActivityRecords,
@@ -221,9 +227,10 @@ public struct TUnionReader: Sendable {
         length: UInt8,
         maxRecords: Int,
         parser: (Data, Int) -> TransitTransaction?
-    ) async -> [TransitTransaction] {
+    ) async throws -> [TransitTransaction] {
         var records: [TransitTransaction] = []
         for recordNumber in 1 ... maxRecords {
+            try Task.checkCancellation()
             do {
                 let apdu = Self.readRecordAPDU(sfi: sfi, recordNumber: UInt8(recordNumber), length: length)
                 let response = try await transport.sendAPDUWithChaining(apdu)
@@ -243,7 +250,7 @@ public struct TUnionReader: Sendable {
                 if let record = parser(response.data, recordNumber) {
                     records.append(record)
                 }
-            } catch {
+            } catch where !isSessionTerminating(error) {
                 NFCLog.debug("T-Union record read stopped sfi=\(String(format: "%02X", sfi)) record=\(recordNumber): \(error.localizedDescription)", source: "TUnion")
                 break
             }
@@ -253,6 +260,7 @@ public struct TUnionReader: Sendable {
 
     static func parseTransactionRecord(_ data: Data, recordNumber: Int) -> TransitTransaction? {
         guard data.count >= Int(TUnionConstants.transactionRecordLength) else { return nil }
+        let data = Data(data)
         let amount = Int(Data(data[TUnionConstants.transactionAmountOffset ..< TUnionConstants.transactionAmountOffset + TUnionConstants.transactionAmountLength]).uint32BE)
         let transactionType = data[TUnionConstants.transactionTypeOffset]
         let dateBytes = Data(data[TUnionConstants.transactionDateTimeOffset ..< TUnionConstants.transactionDateTimeOffset + TUnionConstants.transactionDateTimeLength])
@@ -260,12 +268,11 @@ public struct TUnionReader: Sendable {
             return nil
         }
 
-        let isTopUp = transactionType == TUnionConstants.topUpType
+        let isTopUp = TUnionConstants.topUpTypes.contains(transactionType)
         let station = Data(data[TUnionConstants.transactionStationOffset ..< TUnionConstants.transactionStationOffset + TUnionConstants.transactionStationLength]).hexString
-        let signedAmount = isTopUp ? amount : -amount
         return TransitTransaction(
             type: isTopUp ? .topup : .purchase,
-            amount: signedAmount,
+            amount: amount,
             balanceAfter: nil,
             date: parseBCDDateTime(dateBytes),
             entryStation: station,

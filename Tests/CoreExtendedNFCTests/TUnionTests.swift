@@ -23,7 +23,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT file 0x15
             ResponseAPDU(data: buildFile15Data(), sw1: 0x90, sw2: 0x00), // READ BINARY
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -58,7 +58,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x30, 0x39]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 0
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT file fails (no file info)
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -79,7 +79,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 0
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // no file info
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -124,7 +124,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00), // GET BALANCE slot 1
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT file
             ResponseAPDU(data: buildFile15Data(serial: "31234567890123456789"), sw1: 0x90, sw2: 0x00),
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -143,7 +143,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00), // 5000
             ResponseAPDU(data: Data([0x00, 0x00, 0x03, 0xE8]), sw1: 0x90, sw2: 0x00), // 1000
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -159,7 +159,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data([0x00, 0x00, 0x03, 0xE8]), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -180,7 +180,7 @@ struct TUnionTests {
             ResponseAPDU(data: Data([0x00, 0x00, 0x03, 0x20]), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x86),
             ResponseAPDU(data: buildFile15Data(serial: "31234567890123456789"), sw1: 0x90, sw2: 0x00),
-        ]
+        ] + Self.noFurtherFiles
 
         let reader = TUnionReader(transport: transport)
         let result = try await reader.readBalance()
@@ -250,7 +250,7 @@ struct TUnionTests {
         #expect(try #require(first.rawData).hexString == "00B1000000000000000941310062938020240310211508")
 
         let second = try #require(result.transactions.dropFirst().first)
-        #expect(second.amount == -160)
+        #expect(second.amount == 160)
         #expect(second.entryStation == "413100629388")
     }
 
@@ -294,7 +294,7 @@ struct TUnionTests {
         #expect(result.balanceRaw == 250)
         #expect(result.transactions.count == 10)
         let first = try #require(result.transactions.first)
-        #expect(first.amount == -600)
+        #expect(first.amount == 600)
         #expect(first.entryStation == "413101925969")
         #expect(try #require(first.rawData).hexString == "0057000000000002580941310192596920240614142250")
     }
@@ -322,7 +322,7 @@ struct TUnionTests {
         #expect(result.transactions.count == 1)
         let tx = try #require(result.transactions.first)
         #expect(tx.type == .purchase)
-        #expect(tx.amount == -260)
+        #expect(tx.amount == 260)
         #expect(tx.balanceAfter == nil)
         #expect(tx.recordNumber == 1)
         #expect(tx.entryStation == "010203040506")
@@ -336,6 +336,73 @@ struct TUnionTests {
         #expect(tx.type == .topup)
         #expect(tx.amount == 10000)
         #expect(tx.recordNumber == 3)
+    }
+
+    @Test
+    func `Type 0x01 load is a top-up with positive amount`() throws {
+        let tx = try #require(TUnionReader.parseTransactionRecord(buildTransactionRecord(amount: 5000, type: 0x01), recordNumber: 1))
+        #expect(tx.type == .topup)
+        #expect(tx.amount == 5000)
+    }
+
+    @Test
+    func `Purchase amount is a positive magnitude`() throws {
+        let tx = try #require(TUnionReader.parseTransactionRecord(buildTransactionRecord(amount: 200, type: 0x06), recordNumber: 1))
+        #expect(tx.type == .purchase)
+        #expect(tx.amount == 200)
+    }
+
+    @Test
+    func `Tag loss on negative purse read propagates instead of reading zero`() async {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00),
+        ]
+        transport.apduFailures = [2: .tagConnectionLost]
+
+        await expectTransitNFCError(.tagConnectionLost) {
+            _ = try await TUnionReader(transport: transport).readBalance()
+        }
+    }
+
+    @Test
+    func `Rejected negative purse command reads as an empty purse`() async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x86), // negative purse unsupported
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT 0015
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SFI 15
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SFI 18
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SFI 1E
+        ]
+
+        let result = try await TUnionReader(transport: transport).readBalance()
+        #expect(result.balanceRaw == 5000)
+    }
+
+    @Test
+    func `Tag loss during file info or record reads propagates`() async {
+        let base: [ResponseAPDU] = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x13, 0x88]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x00]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT 0015
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SFI 15
+            ResponseAPDU(data: buildTransactionRecord(amount: 260, type: 0x06), sw1: 0x90, sw2: 0x00), // SFI 18 #1
+        ]
+        // Fail SELECT 0015, SFI 15 fallback, and SFI 18 record 2 in turn.
+        for failedCall in [3, 4, 6] {
+            let transport = MockTransport()
+            transport.apduResponses = base
+            transport.apduFailures = [failedCall: .tagConnectionLost]
+            await expectTransitNFCError(.tagConnectionLost) {
+                _ = try await TUnionReader(transport: transport).readBalance()
+            }
+            #expect(transport.sentAPDUs.count == failedCall + 1)
+        }
     }
 
     @Test
@@ -366,6 +433,10 @@ struct TUnionTests {
     }
 
     // MARK: - Helpers
+
+    /// Status words for the remaining optional reads (SELECT 0015 / SFI 15 / SFI 18 / SFI 1E).
+    /// Unused entries are harmless; running out would read as tag loss, which now propagates.
+    static let noFurtherFiles = Array(repeating: ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), count: 4)
 
     private func buildFile15Data(serial: String = "30112233445566778899") -> Data {
         var data = Data(repeating: 0x00, count: 30)

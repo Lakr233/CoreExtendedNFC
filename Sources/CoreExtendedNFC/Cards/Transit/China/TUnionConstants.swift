@@ -64,5 +64,6 @@ enum TUnionConstants {
     static let transactionStationLength = 6
     static let transactionDateTimeOffset = 16
     static let transactionDateTimeLength = 7
-    static let topUpType: UInt8 = 0x02
+    /// Transaction types that load value (JR/T 0025 / PBOC: 0x01 ED load, 0x02 EP load).
+    static let topUpTypes: Set<UInt8> = [0x01, 0x02]
 }

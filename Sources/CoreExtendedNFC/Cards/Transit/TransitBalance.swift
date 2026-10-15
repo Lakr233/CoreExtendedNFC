@@ -67,7 +67,11 @@ public struct TransitBalance: Sendable, Equatable, Codable {
 public struct TransitTransaction: Sendable, Equatable, Codable {
     /// Transaction type.
     public let type: TransactionType
-    /// Amount in smallest currency unit, or nil when no monetary amount is exposed or understood.
+    /// Unsigned magnitude of the transaction in the card currency's stored unit, or nil when no
+    /// monetary amount is exposed or understood.
+    ///
+    /// Every reader reports a non-negative value; the direction comes from ``type``
+    /// (`.topup` adds to the balance, `.trip` and `.purchase` deduct from it).
     public let amount: Int?
     /// Balance after this transaction, or nil when the source record does not expose it.
     public let balanceAfter: Int?

@@ -58,3 +58,15 @@ struct TransitBalanceTests {
         #expect(result.balanceRaw == 1234)
     }
 }
+
+/// Expect `body` to throw exactly `expected` (compared by case and associated values).
+func expectTransitNFCError(
+    _ expected: NFCError,
+    sourceLocation: SourceLocation = #_sourceLocation,
+    _ body: () async throws -> Void
+) async {
+    let error = await #expect(throws: NFCError.self, sourceLocation: sourceLocation) {
+        try await body()
+    }
+    #expect(error.map { "\($0)" } == "\(expected)", sourceLocation: sourceLocation)
+}
