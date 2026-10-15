@@ -146,7 +146,7 @@ struct FeliCaTests {
         let commands = FeliCaCommands(transport: transport)
         let probes = try await commands.probeCommonServices(maxServiceIndex: 2)
 
-        let snapshots = await commands.readPlainServices(probes, maxBlocksPerService: 4)
+        let snapshots = try await commands.readPlainServices(probes, maxBlocksPerService: 4)
 
         #expect(snapshots.count == 1)
         #expect(snapshots[0].serviceCode == serviceCode)
@@ -160,7 +160,7 @@ struct FeliCaTests {
     }
 
     @Test
-    func `Plain service reads batch multiple services and split on boundary failures`() async {
+    func `Plain service reads batch multiple services and split on boundary failures`() async throws {
         let serviceA = Data([0x8B, 0x00])
         let serviceB = Data([0x4B, 0x00])
         let transport = MockFeliCaServiceTransport(
@@ -184,7 +184,7 @@ struct FeliCaTests {
             FeliCaCommands.ServiceProbe(serviceCode: serviceB, label: "B", keyVersion: Data([0x00, 0x34])),
         ]
 
-        let snapshots = await commands.readPlainServices(services, maxBlocksPerService: 3)
+        let snapshots = try await commands.readPlainServices(services, maxBlocksPerService: 3)
 
         #expect(snapshots.count == 2)
         #expect(snapshots[0].blocks.count == 2)
@@ -237,7 +237,7 @@ struct FeliCaTests {
         let probes = try await commands.probeCommonServices(maxServiceIndex: 19)
         #expect(probes.count == 20)
 
-        let snapshots = await commands.readPlainServices(probes, maxBlocksPerService: 1)
+        let snapshots = try await commands.readPlainServices(probes, maxBlocksPerService: 1)
 
         #expect(snapshots.count == 20)
         #expect(transport.readLog.allSatisfy { $0.count <= 16 })
@@ -318,5 +318,58 @@ struct FeliCaTests {
         block[14] = UInt8(sum >> 8)
         block[15] = UInt8(sum & 0xFF)
         return block
+    }
+
+    @Test
+    func `Plain service reads rethrow tag loss instead of reporting an empty probe`() async {
+        let transport = TagLossFeliCaServiceTransport()
+        let services = [
+            FeliCaCommands.ServiceProbe(serviceCode: Data([0x8B, 0x00]), label: "A", keyVersion: Data([0x00, 0x10])),
+            FeliCaCommands.ServiceProbe(serviceCode: Data([0x4B, 0x00]), label: "B", keyVersion: Data([0x00, 0x10])),
+        ]
+
+        let error = await #expect(throws: NFCError.self) {
+            _ = try await FeliCaCommands(transport: transport).readPlainServices(services, maxBlocksPerService: 2)
+        }
+        guard case .tagConnectionLost? = error else {
+            Issue.record("expected tagConnectionLost, got \(String(describing: error))")
+            return
+        }
+        // One shared read, no bisection retries after the tag is gone.
+        #expect(transport.readCount == 1)
+    }
+
+}
+
+/// A FeliCa tag that leaves the field on the first block read.
+private final class TagLossFeliCaServiceTransport: FeliCaTagTransporting, @unchecked Sendable {
+    let identifier = Data([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF])
+    let systemCode = Data([0x12, 0xFC])
+    var readCount = 0
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func readWithoutEncryption(serviceCodeList _: [Data], blockList _: [Data]) async throws -> [Data] {
+        readCount += 1
+        throw NFCError.tagConnectionLost
+    }
+
+    func readWithoutEncryption(serviceCode _: Data, blockList _: [Data]) async throws -> [Data] {
+        readCount += 1
+        throw NFCError.tagConnectionLost
+    }
+
+    func writeWithoutEncryption(serviceCode _: Data, blockList _: [Data], blockData _: [Data]) async throws {
+        throw NFCError.tagConnectionLost
+    }
+
+    func requestService(nodeCodeList: [Data]) async throws -> [Data] {
+        nodeCodeList.map { _ in Data([0x00, 0x10]) }
     }
 }

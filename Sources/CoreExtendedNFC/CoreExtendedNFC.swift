@@ -128,22 +128,24 @@ public enum CoreExtendedNFC {
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws {
+        // Refuse records that cannot be encoded instead of writing a truncated message.
+        let payload = try message.validatedData()
         switch info.type.family {
         case .type4, .passport, .mifareDesfire:
             // Multi-application cards sit on ISO 7816 transport, so use the Type 4 NDEF path.
-            try await Type4Tag(transport: transport).writeNDEF(message.data)
+            try await Type4Tag(transport: transport).writeNDEF(payload)
         case .felica:
             guard let felicaTransport = transport as? any FeliCaTagTransporting else {
                 throw NFCError.unsupportedOperation("FeliCa NDEF writing requires a FeliCa transport")
             }
-            try await FeliCaType3Reader(transport: felicaTransport).writeNDEF(message.data)
+            try await FeliCaType3Reader(transport: felicaTransport).writeNDEF(payload)
         case .ntag, .mifareUltralight:
-            try await writeType2NDEF(message.data, info: info, transport: transport)
+            try await writeType2NDEF(payload, info: info, transport: transport)
         case .iso15693:
             guard let iso15693Transport = transport as? any ISO15693TagTransporting else {
                 throw NFCError.unsupportedOperation("ISO 15693 NDEF writing requires an ISO 15693 transport")
             }
-            try await writeType5NDEF(message.data, transport: iso15693Transport)
+            try await writeType5NDEF(payload, transport: iso15693Transport)
         default:
             throw NFCError.unsupportedOperation("Unified NDEF writing is not yet supported for \(info.type.description)")
         }
@@ -364,7 +366,7 @@ public enum CoreExtendedNFC {
 
         try Task.checkCancellation()
 
-        let extraServiceSnapshots = await commands.readPlainServices(
+        let extraServiceSnapshots = try await commands.readPlainServices(
             serviceProbes,
             maxBlocksPerService: 4,
             excluding: Set([FeliCaType3Reader.readServiceCode, FeliCaType3Reader.writeServiceCode])

@@ -12,6 +12,25 @@ import Foundation
 import Testing
 
 struct UltralightTests {
+    @Test
+    func `Restore stops before writing when the task is cancelled`() async {
+        let mock = MockTransport()
+        mock.responses = Array(repeating: Data([0x0A]), count: 4)
+        let info = CardInfo(type: .ntag213, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+        let dump = MemoryDump(
+            cardInfo: info,
+            pages: (4 ..< 8).map { MemoryDump.Page(number: UInt8($0), data: Data(repeating: UInt8($0), count: 4)) }
+        )
+        let restore = UltralightDump(commands: UltralightCommands(transport: mock))
+
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await restore.restore(dump: dump, map: .forType(.ntag213))
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(mock.sentCommands.isEmpty)
+    }
+
     // MARK: - Command Building
 
     @Test

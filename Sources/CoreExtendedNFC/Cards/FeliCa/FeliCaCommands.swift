@@ -66,7 +66,7 @@ public struct FeliCaCommands: Sendable {
         _ services: [ServiceProbe],
         maxBlocksPerService: Int = 4,
         excluding excludedServiceCodes: Set<Data> = []
-    ) async -> [ServiceSnapshot] {
+    ) async throws -> [ServiceSnapshot] {
         guard maxBlocksPerService > 0 else { return [] }
 
         let orderedServices = services.filter { !excludedServiceCodes.contains($0.serviceCode) }
@@ -74,8 +74,8 @@ public struct FeliCaCommands: Sendable {
         var activeServices = orderedServices
 
         for blockNumber in 0 ..< maxBlocksPerService where !activeServices.isEmpty {
-            if Task.isCancelled { break }
-            let readResults = await readSharedBlock(
+            try Task.checkCancellation()
+            let readResults = try await readSharedBlock(
                 across: activeServices,
                 blockNumber: UInt16(blockNumber)
             )
@@ -135,14 +135,14 @@ public struct FeliCaCommands: Sendable {
     private func readSharedBlock(
         across services: [ServiceProbe],
         blockNumber: UInt16
-    ) async -> [Data: ServiceReadResult] {
+    ) async throws -> [Data: ServiceReadResult] {
         guard !services.isEmpty else { return [:] }
 
         // Larger lists would alias service indexes 16+ onto 0-15 via `& 0x0F`.
         if services.count > Self.maxServicesPerRead {
             var merged: [Data: ServiceReadResult] = [:]
             for chunk in services.chunked(into: Self.maxServicesPerRead) {
-                for (serviceCode, result) in await readSharedBlock(across: chunk, blockNumber: blockNumber) {
+                for (serviceCode, result) in try await readSharedBlock(across: chunk, blockNumber: blockNumber) {
                     merged[serviceCode] = result
                 }
             }
@@ -175,6 +175,9 @@ public struct FeliCaCommands: Sendable {
             }
             return results
         } catch {
+            // Losing the tag or the session is not a per-service failure;
+            // bisecting would only turn it into a silent empty probe.
+            if isSessionTerminating(error) { throw error }
             guard services.count > 1 else {
                 return [services[0].serviceCode: .stop]
             }
@@ -182,8 +185,8 @@ public struct FeliCaCommands: Sendable {
             let midpoint = services.count / 2
             let left = Array(services.prefix(midpoint))
             let right = Array(services.dropFirst(midpoint))
-            var merged = await readSharedBlock(across: left, blockNumber: blockNumber)
-            for (serviceCode, result) in await readSharedBlock(across: right, blockNumber: blockNumber) {
+            var merged = try await readSharedBlock(across: left, blockNumber: blockNumber)
+            for (serviceCode, result) in try await readSharedBlock(across: right, blockNumber: blockNumber) {
                 merged[serviceCode] = result
             }
             return merged

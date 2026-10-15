@@ -99,7 +99,7 @@ extension UltralightCommands {
             return candidate
         }
 
-        return CryptoUtils.randomBytes(count: 8)
+        return try CryptoUtils.secureRandomBytes(count: 8)
     }
 
     private func rotateLeft(_ data: Data) -> Data {

@@ -177,6 +177,21 @@ struct NDEFTests {
     }
 
     @Test
+    func `Unified NDEF write rejects an unencodable record before touching the tag`() async {
+        let transport = MockTransport()
+        let oversizedType = NDEFRecord(typeNameFormat: .mimeMedia, type: Data(repeating: 0x61, count: 256), payload: Data([0x01]))
+
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writeNDEF(
+                NDEFMessage(records: [oversizedType]),
+                info: CardInfo(type: .mifareUltralight, uid: Data([0x01, 0x02, 0x03, 0x04])),
+                transport: transport
+            )
+        }
+        #expect(transport.sentCommands.isEmpty)
+    }
+
+    @Test
     func `Type 3 NDEF write updates attribute block and message blocks`() async throws {
         let transport = MockFeliCaWriteTransport()
         transport.readResponses = [makeAttributeInfoBlock(nbr: 4, nbw: 2, nmaxb: 4, rwFlag: 0x01, ndefLength: 0)]

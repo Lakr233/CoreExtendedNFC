@@ -430,7 +430,7 @@ extension DESFireCommands {
             }
             return candidate
         }
-        return CryptoUtils.randomBytes(count: count)
+        return try CryptoUtils.secureRandomBytes(count: count)
     }
 
     private func rotateLeft(_ data: Data) -> Data {
