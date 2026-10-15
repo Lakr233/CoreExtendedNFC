@@ -138,6 +138,23 @@ struct TransitBalanceViewTests {
         #expect(TransitBalanceViewController.cardTimeZone(forCurrency: "KRW").identifier == "Asia/Seoul")
     }
 
+    @Test
+    func `Transaction amounts are unsigned magnitudes signed by transaction type`() {
+        let format = TransitBalanceViewController.formatTransactionAmount
+        // T-Union fare of ¥2.50 (amount is now a magnitude, not -250).
+        #expect(format(TransitTransaction(type: .trip, amount: 250), "CNY") == "−¥2.50")
+        #expect(format(TransitTransaction(type: .purchase, amount: 1200), "KRW") == "−₩1200")
+        #expect(format(TransitTransaction(type: .topup, amount: 1000), "JPY") == "+¥1000")
+        #expect(format(TransitTransaction(type: .unknown, amount: 5), "HKD") == "HK$0.05")
+        // KS X 6924 "Snapper" cards report NZD in cents.
+        #expect(format(TransitTransaction(type: .trip, amount: 345), "NZD") == "−NZ$3.45")
+        #expect(TransitBalanceViewController.cardTimeZone(forCurrency: "NZD").identifier == "Pacific/Auckland")
+        // CEPAS: the signed balance change decides, and is never applied twice.
+        #expect(format(TransitTransaction(type: .unknown, amount: 128, metadata: ["balanceChange": "-128"]), "SGD") == "−S$1.28")
+        #expect(format(TransitTransaction(type: .topup, amount: 500, metadata: ["balanceChange": "500"]), "SGD") == "+S$5.00")
+        #expect(format(TransitTransaction(type: .trip), "SGD") == nil)
+    }
+
     private func infoRows(in view: UIView) -> [ConfigurableInfoView] {
         if let row = view as? ConfigurableInfoView { return [row] }
         return view.subviews.flatMap { infoRows(in: $0) }

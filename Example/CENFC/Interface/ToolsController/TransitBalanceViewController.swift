@@ -57,6 +57,27 @@ class TransitBalanceViewController: StackScrollController {
         return sign + body
     }
 
+    /// Formats a transaction's amount with the direction it moved the balance.
+    ///
+    /// ``TransitTransaction/amount`` is an unsigned magnitude for every reader, so
+    /// the sign comes from the transaction: "−" for trips and purchases, "+" for
+    /// top-ups. CEPAS records the signed balance change, which wins when present.
+    nonisolated static func formatTransactionAmount(_ transaction: TransitTransaction, currencyCode: String) -> String? {
+        guard let amount = transaction.amount else { return nil }
+        let body = formatAmount(minorUnits: Int(amount.magnitude), currencyCode: currencyCode)
+        let sign: String
+        if let change = transaction.metadata["balanceChange"].flatMap(Int.init) {
+            sign = change < 0 ? "−" : change > 0 ? "+" : ""
+        } else {
+            sign = switch transaction.type {
+            case .trip, .purchase: "−"
+            case .topup: "+"
+            case .unknown: ""
+            }
+        }
+        return sign + body
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setupDismissKeyboardOnTap()
@@ -226,17 +247,10 @@ class TransitBalanceViewController: StackScrollController {
                 }
 
                 let value: String
-                if let amount = tx.amount {
-                    if balance.currencyCode == "SGD" {
-                        let change = tx.metadata["balanceChange"].flatMap(Int.init)
-                        let sign = change.map { $0 < 0 ? "−" : $0 > 0 ? "+" : "" } ?? ""
-                        value = sign + String(format: "S$%.2f", Double(amount) / 100)
-                    } else {
-                        let formattedAmount = Self.formatAmount(minorUnits: amount, currencyCode: balance.currencyCode)
-                        value = tx.balanceAfter.map {
-                            "\(formattedAmount) → \(Self.formatAmount(minorUnits: $0, currencyCode: balance.currencyCode))"
-                        } ?? formattedAmount
-                    }
+                if tx.amount != nil, let formattedAmount = Self.formatTransactionAmount(tx, currencyCode: balance.currencyCode) {
+                    value = tx.balanceAfter.map {
+                        "\(formattedAmount) → \(Self.formatAmount(minorUnits: $0, currencyCode: balance.currencyCode))"
+                    } ?? formattedAmount
                 } else {
                     value = tx.balanceAfter.map {
                         "— → \(Self.formatAmount(minorUnits: $0, currencyCode: balance.currencyCode))"

@@ -15,7 +15,7 @@ struct NFCConfigurationTests {
         #expect(identifiers.contains("5041592E535A54")) // Legacy Shenzhen Tong
         #expect(identifiers.contains("A000000341000101")) // Singapore CEPAS discovery
         #expect(identifiers.contains("D4100000030001")) // KSX6924 / Snapper-compatible discovery
-        #expect(identifiers.contains("D4100000300001")) // Snapper / MOIBA
+        #expect(identifiers.contains("D4100000300001")) // MOIBA
         #expect(identifiers.contains("D4106509900020")) // K-Cash
     }
 
