@@ -125,15 +125,17 @@ public struct PassportReader: Sendable {
         var rawDataGroups: [DataGroupId: Data] = [:]
 
         for (index, dgId) in dataGroups.enumerated() {
+            try Task.checkCancellation()
             onProgress?("Reading \(dgId.name) (\(index + 1)/\(dataGroups.count))...")
 
             do {
                 let dgData = try await readDataGroup(dgId, transport: smTransport)
                 rawDataGroups[dgId] = dgData
                 NFCLog.info("Read \(dgId.name): \(dgData.count) bytes", source: "Passport")
-            } catch {
-                // Continue reading other DGs even if one fails
-                // (e.g., DG not present on chip)
+            } catch NFCError.dataGroupNotAvailable {
+                // Only a data group the chip reports as absent/inaccessible is skipped.
+                // Transport loss, secure messaging failures and short reads propagate:
+                // after an SM error the chip has torn down the session (ICAO 9303-11 §9.8).
                 continue
             }
         }
@@ -144,7 +146,7 @@ public struct PassportReader: Sendable {
             do {
                 let dg15Data = try await readDataGroup(.dg15, transport: smTransport)
                 rawDataGroups[.dg15] = dg15Data
-            } catch {
+            } catch NFCError.dataGroupNotAvailable {
                 // DG15 not available — AA not supported by this document
             }
         }
@@ -184,9 +186,12 @@ public struct PassportReader: Sendable {
             do {
                 aaResult = try await performActiveAuthentication(
                     publicKey: publicKey,
+                    subjectPublicKeyInfo: rawDataGroups[.dg15].flatMap(DG15Parser.subjectPublicKeyInfo),
                     securityInfos: model.securityInfos,
                     transport: smTransport
                 )
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 aaResult = ActiveAuthenticationResult(
                     success: false,
@@ -270,7 +275,13 @@ public struct PassportReader: Sendable {
     private func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -> Data {
         // SELECT EF
         let selectAPDU = CommandAPDU.selectEF(id: dgId.fileID)
-        let selectResponse = try await transport.sendAPDU(selectAPDU)
+        let selectResponse: ResponseAPDU
+        do {
+            selectResponse = try await transport.sendAPDU(selectAPDU)
+        } catch NFCError.unexpectedStatusWord(0x6A, 0x82) {
+            // Some chips answer "file not found" with a plain, unprotected status word.
+            throw NFCError.dataGroupNotAvailable(dgId.name)
+        }
 
         guard selectResponse.isSuccess else {
             throw NFCError.dataGroupNotAvailable(dgId.name)
@@ -295,7 +306,12 @@ public struct PassportReader: Sendable {
         let headerResponse = try await transport.sendAPDU(headerAPDU)
 
         guard headerResponse.isSuccess else {
-            throw NFCError.dataGroupParseFailed("READ BINARY header failed: SW=\(String(format: "%04X", headerResponse.statusWord))")
+            let statusWord = String(format: "%04X", headerResponse.statusWord)
+            // 6982: access conditions not satisfied (e.g. EAC-protected DG3/DG4); 6A82: file not found.
+            if headerResponse.statusWord == 0x6982 || headerResponse.statusWord == 0x6A82 {
+                throw NFCError.dataGroupNotAvailable("READ BINARY header: SW=\(statusWord)")
+            }
+            throw NFCError.dataGroupParseFailed("READ BINARY header failed: SW=\(statusWord)")
         }
 
         var headerData = headerResponse.data
@@ -344,36 +360,58 @@ public struct PassportReader: Sendable {
             throw NFCError.dataGroupParseFailed("TLV total length \(totalLength) exceeds maximum allowed (10 MB)")
         }
 
-        // Now read the complete file
+        // Now read the complete file. The result must contain exactly `totalLength` bytes:
+        // a short or failed read is an error, never a silently truncated data group.
         var fileData = Data()
+        fileData.reserveCapacity(totalLength)
         var offset = 0
         let chunkSize = PassportConstants.maxReadLength
 
         while offset < totalLength {
+            try Task.checkCancellation()
             let remaining = totalLength - offset
             let readLen = min(chunkSize, remaining)
 
-            let readAPDU = CommandAPDU.readBinaryChunk(offset: offset, length: readLen)
-            let readResponse = try await transport.sendAPDU(readAPDU)
-
-            guard readResponse.isSuccess else {
-                // Some chips return 6B00 (wrong P1P2) when we've read past the end
-                if readResponse.statusWord == 0x6B00 {
-                    break
-                }
-                throw NFCError.dataGroupParseFailed("READ BINARY at offset \(offset) failed: SW=\(String(format: "%04X", readResponse.statusWord))")
+            let chunk = try await readBinaryChunk(offset: offset, length: readLen, transport: transport)
+            guard !chunk.isEmpty else {
+                throw NFCError.dataGroupParseFailed(
+                    "Short read: READ BINARY at offset \(offset) returned no data (expected \(totalLength) bytes)"
+                )
+            }
+            guard chunk.count <= remaining else {
+                throw NFCError.dataGroupParseFailed(
+                    "READ BINARY at offset \(offset) returned \(chunk.count) bytes, only \(remaining) remain"
+                )
             }
 
-            fileData.append(readResponse.data)
-            offset += readResponse.data.count
-
-            // If we got fewer bytes than requested, we've reached the end
-            if readResponse.data.count < readLen {
-                break
-            }
+            fileData.append(chunk)
+            offset += chunk.count
         }
 
         return fileData
+    }
+
+    /// Read one chunk of the current EF at `offset`.
+    ///
+    /// `CommandAPDU.readBinaryChunk` switches to READ BINARY `B1` (offset DO'54, response
+    /// DO'53) above 0x7FFF so DG2/DG3 files larger than 32 KB never wrap (ISO/IEC 7816-4
+    /// §11.2.3). A `B1` read may return a few bytes less than requested; the caller
+    /// advances by the bytes actually returned.
+    private func readBinaryChunk(
+        offset: Int,
+        length: Int,
+        transport: any NFCTagTransport
+    ) async throws -> Data {
+        let apdu = CommandAPDU.readBinaryChunk(offset: offset, length: length)
+        let response = try await transport.sendAPDU(apdu)
+
+        // 6282: end of file reached before Le bytes — data is still returned.
+        guard response.isSuccess || response.statusWord == 0x6282 else {
+            throw NFCError.dataGroupParseFailed(
+                "READ BINARY at offset \(offset) failed: SW=\(String(format: "%04X", response.statusWord))"
+            )
+        }
+        return try response.binaryData(for: apdu)
     }
 
     /// Parse raw data group bytes and assemble a PassportModel.
@@ -613,11 +651,13 @@ public struct PassportReader: Sendable {
     /// - BSI TR-03111, Section 4.2.1 (ECDSA plain signature format: r || s)
     private func performActiveAuthentication(
         publicKey: ActiveAuthPublicKey,
+        subjectPublicKeyInfo: Data?,
         securityInfos: SecurityInfos?,
         transport: SecureMessagingTransport
     ) async throws -> ActiveAuthenticationResult {
-        // Generate 8-byte random challenge
-        let challenge = CryptoUtils.randomBytes(count: 8)
+        // Generate 8-byte random challenge (ICAO 9303-11 §6.1). A predictable challenge
+        // would make the chip's signature replayable, so a generator failure aborts AA.
+        let challenge = try CryptoUtils.secureRandomBytes(count: 8)
 
         // Send INTERNAL AUTHENTICATE
         let authAPDU = CommandAPDU.internalAuthenticate(data: challenge)
@@ -644,6 +684,7 @@ public struct PassportReader: Sendable {
             challenge: challenge,
             signature: signature,
             publicKey: publicKey,
+            subjectPublicKeyInfo: subjectPublicKeyInfo,
             securityInfos: securityInfos
         )
     }

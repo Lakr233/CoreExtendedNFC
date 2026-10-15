@@ -65,8 +65,11 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
     private let underlying: any NFCTagTransport
     private let ksEnc: Data
     private let ksMac: Data
+    /// Send Sequence Counter. Only read or mutated while `exchangeGate` is held.
     private var ssc: Data
     private let mode: SMEncryptionMode
+    /// Serializes command/response pairs so concurrent callers cannot desynchronize the SSC.
+    private let exchangeGate = AsyncExchangeGate()
 
     public var identifier: Data {
         underlying.identifier
@@ -80,9 +83,9 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         mode: SMEncryptionMode = .tripleDES
     ) {
         underlying = transport
-        self.ksEnc = ksEnc
-        self.ksMac = ksMac
-        self.ssc = ssc
+        self.ksEnc = Data(ksEnc)
+        self.ksMac = Data(ksMac)
+        self.ssc = Data(ssc)
         self.mode = mode
     }
 
@@ -92,21 +95,29 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
 
     /// Protect the APDU, send via underlying transport (with GET RESPONSE chaining),
     /// then unprotect the response.
+    ///
+    /// Concurrent calls are serialized: each protected command and its response
+    /// consume two consecutive SSC values.
+    ///
+    /// - Throws: `NFCError.unexpectedStatusWord` when the chip answers with a plain
+    ///   status word (no secure messaging data objects), which ends the SM session;
+    ///   `NFCError.secureMessagingError` when the response cannot be authenticated.
     public func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+        await exchangeGate.acquire()
+        defer { exchangeGate.release() }
+
         incrementSSC()
         let protectedAPDU = try protect(apdu)
 
-        // Send and handle GET RESPONSE (0x61) chaining at the raw level
-        var response = try await underlying.sendAPDU(protectedAPDU)
-        var fullData = response.data
-
-        while response.needsGetResponse {
-            let getResp = CommandAPDU.getResponse(length: response.sw2)
-            response = try await underlying.sendAPDU(getResp)
-            fullData.append(response.data)
+        // Send with bounded GET RESPONSE (61xx) chaining at the raw level. The protected
+        // command is not re-issued on 6Cxx: that would consume a second SSC on the chip.
+        let underlying = underlying
+        let assembledResponse = try await APDUExchange.transmit(
+            protectedAPDU,
+            retryOnWrongLength: false
+        ) { command in
+            try await underlying.sendAPDU(command)
         }
-
-        let assembledResponse = ResponseAPDU(data: fullData, sw1: response.sw1, sw2: response.sw2)
 
         incrementSSC()
         return try unprotect(assembledResponse)
@@ -114,7 +125,11 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
 
     // MARK: - Protect (Encrypt + MAC outgoing APDU)
 
-    /// Build a protected APDU with DO'87 (encrypted data), DO'97 (Le), and DO'8E (MAC).
+    /// Build a protected APDU with DO'87/DO'85 (encrypted data), DO'97 (Le), and DO'8E (MAC).
+    ///
+    /// Even INS codes carry the cryptogram in DO'87 with a padding-content indicator;
+    /// odd INS codes (BER-TLV data field, e.g. READ BINARY `B1`) use DO'85 without it
+    /// (ISO/IEC 7816-4 §10.2, ICAO 9303-11 §9.8).
     private func protect(_ apdu: CommandAPDU) throws -> CommandAPDU {
         let blockSize = mode.blockSize
 
@@ -124,10 +139,9 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         // Command header for MAC calculation: maskedCLA || INS || P1 || P2
         let cmdHeader = ISO9797Padding.pad(Data([maskedCLA, apdu.ins, apdu.p1, apdu.p2]), blockSize: blockSize)
 
-        var do87 = Data()
+        var cryptogramDO = Data()
         var do97 = Data()
 
-        // DO'87: encrypted data (if present)
         if let inputData = apdu.data, !inputData.isEmpty {
             let paddedData = ISO9797Padding.pad(inputData, blockSize: blockSize)
 
@@ -141,140 +155,151 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
                 encrypted = try CryptoUtils.aesEncrypt(key: ksEnc, message: paddedData, iv: iv)
             }
 
-            // Build DO'87': tag || length || 0x01 || encrypted
-            var do87Value = Data([0x01]) // Padding content indicator
-            do87Value.append(encrypted)
-            do87.append(0x87) // Tag
-            do87.append(contentsOf: ASN1Parser.encodeLength(do87Value.count))
-            do87.append(do87Value)
+            if apdu.ins & 0x01 == 0x01 {
+                // DO'85': cryptogram of BER-TLV data, no padding-content indicator
+                cryptogramDO = ASN1Parser.encodeTLV(tag: 0x85, value: encrypted)
+            } else {
+                // DO'87': padding-content indicator 0x01 || cryptogram
+                cryptogramDO = ASN1Parser.encodeTLV(tag: 0x87, value: Data([0x01]) + encrypted)
+            }
         }
 
-        // DO'97: expected response length (if Le is present)
-        if let le = apdu.le {
-            do97.append(0x97) // Tag
-            do97.append(0x01) // Length = 1
-            do97.append(le)
+        // DO'97: expected response length (if Le is present). Short Ne uses one byte
+        // (00 = 256); extended Ne uses two bytes (0000 = 65 536).
+        if let ne = apdu.expectedResponseLength {
+            if ne <= 256 {
+                do97 = Data([0x97, 0x01, UInt8(ne & 0xFF)])
+            } else {
+                do97 = Data([0x97, 0x02, UInt8((ne >> 8) & 0xFF), UInt8(ne & 0xFF)])
+            }
         }
 
-        // Compute MAC over: pad(paddedSSC || cmdHeader || DO'87 || DO'97)
-        // For 3DES: paddedSSC = SSC (8 bytes)
-        // For AES: paddedSSC = [0x00]*8 || SSC (16 bytes)
-        let paddedSSC: Data = switch mode {
-        case .tripleDES:
-            ssc
-        case .aes128, .aes192, .aes256:
-            Data(repeating: 0x00, count: 8) + ssc
-        }
-
-        var macInput = paddedSSC
+        // MAC over pad(paddedSSC || pad(header) || DO'87/85 || DO'97)
+        var macInput = paddedSSC()
         macInput.append(cmdHeader)
-        if !do87.isEmpty { macInput.append(do87) }
-        if !do97.isEmpty { macInput.append(do97) }
-        let paddedMacInput = ISO9797Padding.pad(macInput, blockSize: blockSize)
-        let cc = try computeMAC(paddedMacInput)
+        macInput.append(cryptogramDO)
+        macInput.append(do97)
+        let cc = try computeMAC(ISO9797Padding.pad(macInput, blockSize: blockSize))
 
-        // DO'8E': MAC
-        var do8e = Data([0x8E, UInt8(mode.macLength)]) // Tag + Length
-        do8e.append(cc)
-
-        // Assemble protected APDU data: DO'87 || DO'97 || DO'8E
-        var protectedData = Data()
-        protectedData.append(do87)
+        // Assemble protected APDU data: DO'87/85 || DO'97 || DO'8E
+        var protectedData = cryptogramDO
         protectedData.append(do97)
-        protectedData.append(do8e)
+        protectedData.append(contentsOf: [0x8E, UInt8(mode.macLength)])
+        protectedData.append(cc)
 
+        // Outer Le covers the protected response: 256 for short commands, 65 536
+        // (extended Le 0000) when the plain command asked for more than 256 bytes.
+        let extended = (apdu.expectedResponseLength ?? 0) > 256
         return CommandAPDU(
             cla: maskedCLA,
             ins: apdu.ins,
             p1: apdu.p1,
             p2: apdu.p2,
             data: protectedData,
-            le: 0x00
+            expectedResponseLength: extended ? CommandAPDU.maxExpectedResponseLength : 256
         )
     }
 
     // MARK: - Unprotect (Verify MAC + Decrypt incoming response)
 
-    /// Unprotect a secure messaging response: verify DO'8E MAC, decrypt DO'87 data.
+    /// Unprotect a secure messaging response: verify DO'8E MAC, then decrypt DO'87/DO'85.
+    ///
+    /// ICAO 9303-11 §9.8 makes DO'99 and DO'8E mandatory in every protected response, and
+    /// ISO/IEC 7816-4 §10.2 requires verifying the checksum before using any data object.
+    /// The MAC covers every odd-tag data object preceding DO'8E exactly as received.
     private func unprotect(_ response: ResponseAPDU) throws -> ResponseAPDU {
-        let blockSize = mode.blockSize
-        let data = response.data
+        let data = Data(response.data)
 
-        // Parse Data Objects from response
-        var do87Value = Data()
-        var do99Value = Data()
-        var do8eValue = Data()
+        // A response without data objects is a plain status word: the chip reports an
+        // error (typically aborting secure messaging) without protecting it.
+        guard !data.isEmpty else {
+            if response.isSuccess {
+                throw NFCError.secureMessagingError("Response is missing secure messaging data objects")
+            }
+            throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
+        }
+
+        var authenticatedBytes = Data()
+        var cryptogram: (value: Data, hasPaddingIndicator: Bool)?
+        var do99Value: Data?
+        var do8eValue: Data?
         var offset = 0
 
         while offset < data.count {
-            guard offset < data.count else { break }
+            let objectStart = offset
             let tag = data[offset]
             offset += 1
 
-            guard offset < data.count else { break }
-            let (length, lenBytes) = try ASN1Parser.parseLength(data, at: offset)
-            offset += lenBytes
+            guard offset < data.count else {
+                throw NFCError.secureMessagingError("Truncated secure messaging data object")
+            }
+            let (length, lengthBytes) = try ASN1Parser.parseLength(data, at: offset)
+            offset += lengthBytes
 
-            guard offset + length <= data.count else { break }
+            guard length >= 0, length <= data.count - offset else {
+                throw NFCError.secureMessagingError("Secure messaging data object length exceeds response")
+            }
             let value = Data(data[offset ..< offset + length])
             offset += length
 
-            switch tag {
-            case 0x87:
-                do87Value = value
-            case 0x99:
-                do99Value = value
-            case 0x8E:
+            if tag == 0x8E {
+                // Nothing may follow the checksum: trailing bytes would be unauthenticated.
+                guard offset == data.count else {
+                    throw NFCError.secureMessagingError("Unexpected data after DO'8E")
+                }
                 do8eValue = value
+                break
+            }
+
+            // ISO/IEC 7816-4 §10.2.3: data objects with an odd tag are included in the MAC.
+            if tag & 0x01 == 0x01 {
+                authenticatedBytes.append(data[objectStart ..< offset])
+            }
+
+            switch tag {
+            case 0x87, 0x85:
+                guard cryptogram == nil else {
+                    throw NFCError.secureMessagingError("Duplicate cryptogram data object")
+                }
+                cryptogram = (value, tag == 0x87)
+            case 0x99:
+                guard do99Value == nil else {
+                    throw NFCError.secureMessagingError("Duplicate DO'99")
+                }
+                do99Value = value
             default:
                 break
             }
         }
 
-        // DO'99 contains SW1 || SW2
-        guard do99Value.count == 2 else {
+        guard let do8eValue, do8eValue.count == mode.macLength else {
+            throw NFCError.secureMessagingError("Missing or invalid DO'8E (cryptographic checksum)")
+        }
+        guard let do99Value, do99Value.count == 2 else {
             throw NFCError.secureMessagingError("Missing or invalid DO'99 (status word)")
         }
-        let sw1 = do99Value[0]
-        let sw2 = do99Value[1]
 
-        // Verify MAC: pad(paddedSSC || DO'87 (full TLV) || DO'99 (full TLV))
-        if !do8eValue.isEmpty {
-            // Build paddedSSC matching protect() convention
-            let paddedSSC: Data = switch mode {
-            case .tripleDES:
-                ssc
-            case .aes128, .aes192, .aes256:
-                Data(repeating: 0x00, count: 8) + ssc
-            }
-
-            var macInput = paddedSSC
-            if !do87Value.isEmpty {
-                macInput.append(0x87)
-                macInput.append(contentsOf: ASN1Parser.encodeLength(do87Value.count))
-                macInput.append(do87Value)
-            }
-            // Append DO'99 as TLV
-            macInput.append(0x99)
-            macInput.append(0x02)
-            macInput.append(do99Value)
-
-            let paddedMacInput = ISO9797Padding.pad(macInput, blockSize: blockSize)
-            let computedMAC = try computeMAC(paddedMacInput)
-
-            guard computedMAC == do8eValue else {
-                throw NFCError.secureMessagingError("MAC verification failed")
-            }
+        var macInput = paddedSSC()
+        macInput.append(authenticatedBytes)
+        let computedMAC = try computeMAC(ISO9797Padding.pad(macInput, blockSize: mode.blockSize))
+        guard constantTimeEquals(computedMAC, do8eValue) else {
+            throw NFCError.secureMessagingError("MAC verification failed")
         }
 
-        // Decrypt DO'87 if present
         var plaintext = Data()
-        if !do87Value.isEmpty {
-            // Skip padding content indicator byte (0x01)
-            guard do87Value.count > 1, do87Value[0] == 0x01 else {
-                throw NFCError.secureMessagingError("Invalid DO'87: missing padding content indicator")
+        if let cryptogram {
+            let encrypted: Data
+            if cryptogram.hasPaddingIndicator {
+                guard cryptogram.value.count > 1, cryptogram.value[0] == 0x01 else {
+                    throw NFCError.secureMessagingError("Invalid DO'87: missing padding content indicator")
+                }
+                encrypted = Data(cryptogram.value.dropFirst())
+            } else {
+                encrypted = cryptogram.value
             }
-            let encrypted = Data(do87Value[1...])
+            guard !encrypted.isEmpty, encrypted.count % mode.blockSize == 0 else {
+                throw NFCError.secureMessagingError("Cryptogram length is not a multiple of the cipher block size")
+            }
 
             let decrypted: Data
             switch mode {
@@ -284,13 +309,23 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
                 let iv = try computeAESIV()
                 decrypted = try CryptoUtils.aesDecrypt(key: ksEnc, message: encrypted, iv: iv)
             }
-            plaintext = ISO9797Padding.unpad(decrypted)
+            plaintext = try ISO9797Padding.strictUnpad(decrypted, blockSize: mode.blockSize)
         }
 
-        return ResponseAPDU(data: plaintext, sw1: sw1, sw2: sw2)
+        return ResponseAPDU(data: plaintext, sw1: do99Value[0], sw2: do99Value[1])
     }
 
     // MARK: - MAC Computation
+
+    /// SSC as used in MAC input: 8 bytes for 3DES, zero-extended to 16 bytes for AES.
+    private func paddedSSC() -> Data {
+        switch mode {
+        case .tripleDES:
+            ssc
+        case .aes128, .aes192, .aes256:
+            Data(repeating: 0x00, count: 8) + ssc
+        }
+    }
 
     /// Compute MAC using the appropriate algorithm for the current mode.
     private func computeMAC(_ paddedData: Data) throws -> Data {
@@ -311,17 +346,62 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         return try CryptoUtils.aesECBEncrypt(key: ksEnc, message: paddedSSC)
     }
 
+    private func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        var difference: UInt8 = 0
+        for (left, right) in zip(lhs, rhs) {
+            difference |= left ^ right
+        }
+        return difference == 0
+    }
+
     // MARK: - SSC
 
-    /// Increment the Send Sequence Counter by 1.
+    /// Increment the Send Sequence Counter by 1 (big-endian, wrapping).
     private func incrementSSC() {
-        // Treat SSC as a big-endian integer and add 1
-        var carry: UInt16 = 1
-        for i in stride(from: ssc.count - 1, through: 0, by: -1) {
-            let sum = UInt16(ssc[i]) + carry
-            ssc[i] = UInt8(sum & 0xFF)
-            carry = sum >> 8
-            if carry == 0 { break }
+        var index = ssc.endIndex
+        while index > ssc.startIndex {
+            index -= 1
+            let (sum, overflow) = ssc[index].addingReportingOverflow(1)
+            ssc[index] = sum
+            if !overflow { break }
         }
+    }
+}
+
+/// FIFO async mutual exclusion used to keep secure messaging exchanges strictly sequential.
+///
+/// Unlike an actor, the gate stays held across suspension points, so a second
+/// `sendAPDU` cannot interleave between protect/send/unprotect of the first.
+final class AsyncExchangeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isHeld = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let acquired: Bool = lock.withLock {
+                if isHeld {
+                    waiters.append(continuation)
+                    return false
+                }
+                isHeld = true
+                return true
+            }
+            if acquired {
+                continuation.resume()
+            }
+        }
+    }
+
+    func release() {
+        let next: CheckedContinuation<Void, Never>? = lock.withLock {
+            if waiters.isEmpty {
+                isHeld = false
+                return nil
+            }
+            return waiters.removeFirst()
+        }
+        next?.resume()
     }
 }

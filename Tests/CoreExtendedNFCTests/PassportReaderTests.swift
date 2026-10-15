@@ -203,9 +203,11 @@ struct PassportReaderTests {
             self.files = files
             oidData = ChipAuthenticationHandler.encodeOID(scenario.securityProtocol.rawValue)
             smMode = scenario.mode
-            passwordKey = PACEHandler.derivePasswordKey(
-                password: mrzKey,
-                keyReference: .mrz,
+            // The simulated chip derives keys with the independent reference KDF, not the
+            // production functions under test (ICAO 9303-11 §9.7.3: K_π from full SHA-1).
+            passwordKey = ReferencePACECrypto.kdf(
+                seed: ReferencePACECrypto.sha1(Data(mrzKey.utf8)),
+                counter: 3,
                 mode: smMode
             )
             encryptedNonce = try CryptoUtils.aesEncrypt(
@@ -324,9 +326,9 @@ struct PassportReaderTests {
 
                 terminalEphemeralPublicKey = terminalPublicKey
                 chipEphemeralPublicKey = chipPublicKey
-                sessionKeys = PACEHandler.derivePACESessionKeys(
-                    sharedSecret: sharedSecret,
-                    mode: smMode
+                sessionKeys = (
+                    ReferencePACECrypto.kdf(seed: sharedSecret, counter: 1, mode: smMode),
+                    ReferencePACECrypto.kdf(seed: sharedSecret, counter: 2, mode: smMode)
                 )
                 return dynamicAuthResponse(tag: 0x84, value: chipPublicKey)
             }
@@ -339,21 +341,19 @@ struct PassportReaderTests {
                     throw NFCError.secureMessagingError("PACE key agreement state is incomplete")
                 }
 
-                let expectedTerminalToken = try PACEHandler.computeAuthToken(
+                let expectedTerminalToken = try ReferencePACECrypto.authToken(
                     ksMac: sessionKeys.ksMac,
-                    publicKeyOther: chipEphemeralPublicKey,
-                    oid: oidData,
-                    mode: smMode
+                    publicKey: chipEphemeralPublicKey,
+                    oid: oidData
                 )
                 guard terminalToken == expectedTerminalToken else {
                     throw NFCError.secureMessagingError("PACE terminal token did not verify")
                 }
 
-                let chipToken = try PACEHandler.computeAuthToken(
+                let chipToken = try ReferencePACECrypto.authToken(
                     ksMac: sessionKeys.ksMac,
-                    publicKeyOther: terminalEphemeralPublicKey,
-                    oid: oidData,
-                    mode: smMode
+                    publicKey: terminalEphemeralPublicKey,
+                    oid: oidData
                 )
                 didCompletePACE = true
                 secureMessagingSSC = Data(count: 8)
@@ -569,9 +569,9 @@ private final class PassportNegotiationTransport: NFCTagTransport, @unchecked Se
     init(mrzKey: String, cardAccessData: Data) {
         self.mrzKey = mrzKey
 
-        let passwordKey = PACEHandler.derivePasswordKey(
-            password: mrzKey,
-            keyReference: .mrz,
+        let passwordKey = ReferencePACECrypto.kdf(
+            seed: ReferencePACECrypto.sha1(Data(mrzKey.utf8)),
+            counter: 3,
             mode: .aes128
         )
         let encryptedNonce = try? CryptoUtils.aesEncrypt(

@@ -73,31 +73,8 @@ struct AESSecureMessagingTests {
         #expect(truncatedMAC.count == 8, "Truncated MAC should be 8 bytes")
     }
 
-    // MARK: - DES Secure Messaging Vector Test
-
-    @Test
-    func `3DES Secure Messaging with ICAO test vectors`() throws {
-        // ICAO 9303 test vectors for BAC secure messaging
-        let ksEnc = try #require(Data(hexString: "8FDCFE759E40A4DF4575160B3BFB79FB"))
-        let ksMac = try #require(Data(hexString: "2AE92531E55707D9C4CEF8C2D6E5AD70"))
-        let ssc = try #require(Data(hexString: "73061884A0E57AA7"))
-
-        // These are known-good values from the reference implementation
-        #expect(ksEnc.count == 16)
-        #expect(ksMac.count == 16)
-        #expect(ssc.count == 8)
-
-        // Create SM transport and verify it can be constructed
-        let mock = MockTransport()
-        let sm = SecureMessagingTransport(
-            transport: mock,
-            ksEnc: ksEnc,
-            ksMac: ksMac,
-            ssc: ssc,
-            mode: .tripleDES
-        )
-        #expect(sm.identifier == mock.identifier)
-    }
+    // 3DES (ICAO 9303-11 Appendix D.4) and AES-128 end-to-end SM vectors live in
+    // PassportConformanceTests.
 
     // MARK: - AES SM Transport Construction
 

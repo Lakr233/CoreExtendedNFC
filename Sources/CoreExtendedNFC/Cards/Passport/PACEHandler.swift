@@ -133,6 +133,13 @@ public enum PACEHandler {
             .tripleDES
         }
 
+        // Derive K_π before touching the chip so invalid passwords fail without RF traffic.
+        let passwordKey = try derivePasswordKey(
+            password: password,
+            keyReference: keyReference,
+            mode: smMode
+        )
+
         // Step 1: MSE:Set AT — select PACE protocol
         let oidData = ChipAuthenticationHandler.encodeOID(paceInfo.protocolOID)
         let mseAPDU = CommandAPDU.mseSetAT(oid: oidData, keyRef: keyReference.rawValue)
@@ -159,12 +166,6 @@ public enum PACEHandler {
         let encryptedNonce = try parseTag80FromDynamicAuth(step1Response.data)
 
         // Step 3: Decrypt nonce using password-derived key
-        let passwordKey = derivePasswordKey(
-            password: password,
-            keyReference: keyReference,
-            mode: smMode
-        )
-
         let decryptedNonce: Data
         switch smMode {
         case .tripleDES:
@@ -297,30 +298,32 @@ public enum PACEHandler {
 
     /// Derive the password encryption key for PACE nonce decryption.
     ///
-    /// For MRZ: K_π = KDF(SHA-1(MRZ_information), 3)
-    /// For CAN/PIN/PUK: K_π = KDF(password bytes, 3)
+    /// - MRZ: `K_π = KDF_π(SHA-1(MRZ_information))` using the **full** 20-byte hash
+    ///   (ICAO 9303-11 §9.7.3; only BAC truncates the hash to 16 bytes).
+    /// - CAN/PIN/PUK: `K_π = KDF_π(password)` with the password encoded as ISO-8859-1.
+    ///
+    /// - Throws: `NFCError.secureMessagingError` when a CAN/PIN/PUK cannot be encoded as ISO-8859-1.
     static func derivePasswordKey(
         password: String,
         keyReference: KeyReference,
         mode: SMEncryptionMode
-    ) -> Data {
+    ) throws -> Data {
         let passwordData: Data
         if keyReference == .mrz {
-            // For MRZ, use the existing Kseed derivation
-            passwordData = KeyDerivation.generateKseed(mrzKey: password)
+            passwordData = HashUtils.sha1(Data(password.utf8))
         } else {
             // ICAO 9303 encodes CAN/PIN/PUK as ISO-8859-1 character data.
             guard let isoData = password.data(using: .isoLatin1, allowLossyConversion: false) else {
-                preconditionFailure(
+                throw NFCError.secureMessagingError(
                     "PACE password for \(keyReference) contains characters that cannot be represented in ISO-8859-1."
                 )
             }
             passwordData = isoData
         }
 
-        return deriveKey(
+        return KeyDerivation.deriveKey(
             keySeed: passwordData,
-            counter: 3,
+            counter: KeyDerivation.Mode.pace.rawValue,
             mode: mode
         )
     }
@@ -334,60 +337,37 @@ public enum PACEHandler {
         mode: SMEncryptionMode
     ) -> (ksEnc: Data, ksMac: Data) {
         (
-            ksEnc: deriveKey(keySeed: sharedSecret, counter: 1, mode: mode),
-            ksMac: deriveKey(keySeed: sharedSecret, counter: 2, mode: mode)
+            ksEnc: KeyDerivation.deriveKey(keySeed: sharedSecret, counter: 1, mode: mode),
+            ksMac: KeyDerivation.deriveKey(keySeed: sharedSecret, counter: 2, mode: mode)
         )
     }
 
     /// Compute PACE authentication token.
     ///
-    /// T = MAC(KSmac, publicKey_other)
+    /// `T = MAC(KSmac, 7F49 { 06 <OID> || 86 <publicKey_other> })`
+    /// (ICAO 9303-11 §4.4.3.4, BSI TR-03110-3 A.2.4.2).
+    ///
+    /// - AES: AES-CMAC (RFC 4493) over the unpadded input — CMAC pads internally —
+    ///   truncated to 8 bytes.
+    /// - 3DES: ISO/IEC 9797-1 MAC algorithm 3 over the Method 2 padded input.
     static func computeAuthToken(
         ksMac: Data,
         publicKeyOther: Data,
         oid: Data,
         mode: SMEncryptionMode
     ) throws -> Data {
-        // Build the authentication input:
-        // 7F49 { 06 <OID> || 86 <publicKey> }
         var authInput = Data()
         authInput.append(contentsOf: ASN1Parser.encodeTLV(tag: 0x06, value: oid))
         authInput.append(contentsOf: ASN1Parser.encodeTLV(tag: 0x86, value: publicKeyOther))
         let wrappedInput = ASN1Parser.encodeTLV(tag: 0x7F49, value: authInput)
 
-        // Pad and MAC
-        let blockSize = mode.blockSize
-        let padded = ISO9797Padding.pad(wrappedInput, blockSize: blockSize)
-
         switch mode {
         case .tripleDES:
+            let padded = ISO9797Padding.pad(wrappedInput, blockSize: mode.blockSize)
             return try ISO9797MAC.mac(key: ksMac, message: padded)
         case .aes128, .aes192, .aes256:
-            let fullMAC = try AESCMAC.mac(key: ksMac, message: padded)
+            let fullMAC = try AESCMAC.mac(key: ksMac, message: wrappedInput)
             return Data(fullMAC.prefix(8))
-        }
-    }
-
-    private static func deriveKey(
-        keySeed: Data,
-        counter: UInt8,
-        mode: SMEncryptionMode
-    ) -> Data {
-        var input = keySeed
-        input.append(contentsOf: [0x00, 0x00, 0x00, counter])
-
-        switch mode {
-        case .tripleDES:
-            let hash = HashUtils.sha1(input)
-            let ka = KeyDerivation.adjustParity(Data(hash[0 ..< 8]))
-            let kb = KeyDerivation.adjustParity(Data(hash[8 ..< 16]))
-            return ka + kb
-        case .aes128:
-            return Data(HashUtils.sha1(input).prefix(16))
-        case .aes192:
-            return Data(HashUtils.sha256(input).prefix(24))
-        case .aes256:
-            return Data(HashUtils.sha256(input).prefix(32))
         }
     }
 

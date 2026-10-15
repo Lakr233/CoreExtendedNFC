@@ -116,7 +116,25 @@ public enum CryptoUtils {
 
     // MARK: - Internal
 
+    /// Generate cryptographically random bytes, throwing if the system generator fails.
+    ///
+    /// Protocol nonces (BAC RND.IFD/K.IFD, AA challenges) must never fall back to
+    /// all-zero bytes, so callers in those paths use this variant.
+    static func secureRandomBytes(count: Int) throws -> Data {
+        var bytes = Data(count: count)
+        let status = bytes.withUnsafeMutableBytes { ptr -> Int32 in
+            guard let baseAddress = ptr.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, count, baseAddress)
+        }
+        guard status == errSecSuccess else {
+            throw NFCError.cryptoError("SecRandomCopyBytes failed with status \(status)")
+        }
+        return bytes
+    }
+
     /// Generate cryptographically random bytes.
+    ///
+    /// - Important: Ignores generator failures. Prefer `secureRandomBytes(count:)`.
     static func randomBytes(count: Int) -> Data {
         var bytes = Data(count: count)
         _ = bytes.withUnsafeMutableBytes { ptr in

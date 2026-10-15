@@ -102,6 +102,22 @@ enum DG15Parser {
         }
     }
 
+    /// Extract the DER SubjectPublicKeyInfo from DG15, unchanged.
+    ///
+    /// ECDSA keys may carry explicit ECParameters instead of a named-curve OID
+    /// (BSI TR-03111, ICAO 9303-11 §6.1); passing the original SPKI to the verifier
+    /// keeps those parameters intact.
+    static func subjectPublicKeyInfo(_ data: Data) -> Data? {
+        guard let nodes = try? ASN1Parser.parseTLV(data) else { return nil }
+        let spkiData = nodes.first(where: { $0.tag == 0x6F })?.value ?? data
+        guard let spkiNodes = try? ASN1Parser.parseTLV(spkiData),
+              let spkiSeq = spkiNodes.first(where: { $0.tag == 0x30 })
+        else {
+            return nil
+        }
+        return ASN1Parser.encodeTLV(tag: 0x30, value: spkiSeq.value)
+    }
+
     /// Parse an RSA public key from the BIT STRING content.
     ///
     /// RSAPublicKey ::= SEQUENCE {

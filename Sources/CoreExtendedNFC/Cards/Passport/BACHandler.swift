@@ -29,6 +29,14 @@ public enum BACHandler {
     ) async throws -> SecureMessagingTransport {
         NFCLog.info("Starting BAC authentication", source: "Passport")
 
+        // Validate caller-supplied randomness before any RF traffic (ICAO 9303-11 §9.7.2).
+        if let rndIFD, rndIFD.count != 8 {
+            throw NFCError.bacFailed("rndIFD must be 8 bytes, got \(rndIFD.count)")
+        }
+        if let kIFD, kIFD.count != 16 {
+            throw NFCError.bacFailed("kIFD must be 16 bytes, got \(kIFD.count)")
+        }
+
         // Step 1: Derive basic access keys from MRZ
         let kseed = KeyDerivation.generateKseed(mrzKey: mrzKey)
         let kenc = KeyDerivation.deriveKey(keySeed: kseed, mode: .enc)
@@ -45,18 +53,17 @@ public enum BACHandler {
         guard challengeResponse.data.count == 8 else {
             throw NFCError.bacFailed("GET CHALLENGE returned \(challengeResponse.data.count) bytes, expected 8")
         }
-        let rndICC = challengeResponse.data
+        let rndICC = Data(challengeResponse.data)
 
         // Step 3: Generate our random values
-        let rndIFDValue = rndIFD ?? CryptoUtils.randomBytes(count: 8)
-        let kIFDValue = kIFD ?? CryptoUtils.randomBytes(count: 16)
+        let rndIFDValue = try rndIFD.map { Data($0) } ?? CryptoUtils.secureRandomBytes(count: 8)
+        let kIFDValue = try kIFD.map { Data($0) } ?? CryptoUtils.secureRandomBytes(count: 16)
 
         // Step 4: Build concatenation S = rndIFD || rndICC || kIFD
         var s = Data()
         s.append(rndIFDValue)
         s.append(rndICC)
         s.append(kIFDValue)
-        assert(s.count == 32)
 
         // Step 5: Encrypt S with Kenc using 3DES-CBC (IV=0)
         let eifd = try CryptoUtils.tripleDESEncrypt(key: kenc, message: s)
@@ -68,7 +75,6 @@ public enum BACHandler {
         // Step 7: MUTUAL AUTHENTICATE with eifd || mifd (40 bytes)
         var authData = eifd
         authData.append(mifd)
-        assert(authData.count == 40)
 
         NFCLog.debug("MUTUAL AUTHENTICATE", source: "Passport")
         let authAPDU = CommandAPDU.mutualAuthenticate(data: authData)
@@ -82,8 +88,9 @@ public enum BACHandler {
         }
 
         // Step 8: Parse response — encrypted (32 bytes) || MAC (8 bytes)
-        let responseEncrypted = Data(authResponse.data.prefix(32))
-        let responseMac = Data(authResponse.data.suffix(8))
+        let authResponseData = Data(authResponse.data)
+        let responseEncrypted = Data(authResponseData.prefix(32))
+        let responseMac = Data(authResponseData.suffix(8))
 
         // Verify response MAC
         let paddedResponseEncrypted = ISO9797Padding.pad(responseEncrypted, blockSize: 8)
@@ -93,7 +100,10 @@ public enum BACHandler {
         }
 
         // Decrypt response
-        let responseDecrypted = try CryptoUtils.tripleDESDecrypt(key: kenc, message: responseEncrypted)
+        let responseDecrypted = try Data(CryptoUtils.tripleDESDecrypt(key: kenc, message: responseEncrypted))
+        guard responseDecrypted.count == 32 else {
+            throw NFCError.bacFailed("MUTUAL AUTHENTICATE plaintext has \(responseDecrypted.count) bytes, expected 32")
+        }
 
         // Parse decrypted response: rndICC' (8) || rndIFD' (8) || kICC (16)
         let rndICCPrime = Data(responseDecrypted[0 ..< 8])
@@ -123,7 +133,6 @@ public enum BACHandler {
         var ssc = Data()
         ssc.append(Data(rndICC[4 ..< 8]))
         ssc.append(Data(rndIFDValue[4 ..< 8]))
-        assert(ssc.count == 8)
 
         NFCLog.info("BAC succeeded, secure messaging established", source: "Passport")
 

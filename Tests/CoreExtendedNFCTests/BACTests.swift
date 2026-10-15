@@ -88,7 +88,9 @@ struct BACTests {
 
         // Second APDU: MUTUAL AUTHENTICATE
         #expect(mock.sentAPDUs[1].ins == 0x82)
-        #expect(mock.sentAPDUs[1].data?.count == 40)
+        // ICAO 9303-11 Appendix D.3: E_IFD || M_IFD
+        #expect(mock.sentAPDUs[1].data == Data(hexString:
+            "72C29C2371CC9BDB65B779B8E8D37B29ECC154AA56A8799FAE2F498F76ED92F25F1448EEA8AD90A7"))
     }
 
     @Test

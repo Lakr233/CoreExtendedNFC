@@ -27,16 +27,23 @@ enum DG2Parser {
 
         // Find biometric data within the hierarchy
         // Search recursively for tag 0x5F2E (primitive) or 0x7F2E (constructed)
-        if let imageData = findBiometricData(in: dg2Node.value) {
+        if let imageData = findBiometricData(in: dg2Node.value, depth: 0) {
+            guard !imageData.isEmpty else {
+                throw NFCError.dataGroupParseFailed("DG2: biometric data object is empty")
+            }
             return imageData
         }
 
         throw NFCError.dataGroupParseFailed("DG2: could not find biometric image data (0x5F2E/0x7F2E)")
     }
 
+    /// Maximum TLV nesting depth searched for biometric data. Real DG2 files nest
+    /// about four levels; the cap bounds recursion on hostile chip data.
+    static let maxSearchDepth = 32
+
     /// Recursively search for biometric image data in DG2 TLV structure.
-    private static func findBiometricData(in data: Data) -> Data? {
-        guard let nodes = try? ASN1Parser.parseTLV(data) else { return nil }
+    private static func findBiometricData(in data: Data, depth: Int) -> Data? {
+        guard depth < maxSearchDepth, let nodes = try? ASN1Parser.parseTLV(data) else { return nil }
 
         for node in nodes {
             // Tag 0x5F2E: primitive biometric data
@@ -49,7 +56,7 @@ enum DG2Parser {
             }
             // Recurse into constructed nodes
             if node.isConstructed {
-                if let found = findBiometricData(in: node.value) {
+                if let found = findBiometricData(in: node.value, depth: depth + 1) {
                     return found
                 }
             }
@@ -63,7 +70,11 @@ enum DG2Parser {
     /// The biometric data begins with an ISO 19794-5 facial record header.
     /// We scan for JPEG (0xFFD8), JP2 boxed JPEG2000 (0x0000000C), or
     /// a raw JPEG2000 codestream (0xFF4FFF51).
-    private static func extractImage(from data: Data) -> Data {
+    private static func extractImage(from input: Data) -> Data {
+        let data = Data(input)
+        // An empty or 1-byte biometric data object holds no image signature.
+        guard data.count >= 2 else { return data }
+
         // Look for JPEG signature (FFD8)
         for i in 0 ..< data.count - 1 {
             if data[i] == 0xFF, data[i + 1] == 0xD8 {

@@ -17,6 +17,7 @@ enum ActiveAuthenticationVerifier {
         challenge: Data,
         signature: Data,
         publicKey: ActiveAuthPublicKey,
+        subjectPublicKeyInfo: Data? = nil,
         securityInfos: SecurityInfos?
     ) -> ActiveAuthenticationResult {
         switch publicKey {
@@ -34,6 +35,7 @@ enum ActiveAuthenticationVerifier {
                 signature: signature,
                 curveOID: curveOID,
                 publicPoint: publicPoint,
+                subjectPublicKeyInfo: subjectPublicKeyInfo,
                 securityInfos: securityInfos
             )
 
@@ -104,6 +106,7 @@ enum ActiveAuthenticationVerifier {
         signature: Data,
         curveOID: String,
         publicPoint: Data,
+        subjectPublicKeyInfo: Data?,
         securityInfos: SecurityInfos?
     ) -> ActiveAuthenticationResult {
         guard let signatureOID = securityInfos?.activeAuthInfos.first?.signatureAlgorithmOID,
@@ -117,10 +120,24 @@ enum ActiveAuthenticationVerifier {
         }
 
         #if canImport(OpenSSL)
-            do {
-                let publicKey = try readECPublicKey(curveOID: curveOID, publicPoint: publicPoint)
-                defer { EVP_PKEY_free(publicKey) }
+            // Prefer the DG15 SubjectPublicKeyInfo as stored: it may use explicit
+            // ECParameters, which cannot be rebuilt from a curve OID.
+            let loadedKey: OpaquePointer? = if let subjectPublicKeyInfo {
+                try? readPublicKey(subjectPublicKeyInfoDER: subjectPublicKeyInfo)
+            } else {
+                try? readECPublicKey(curveOID: curveOID, publicPoint: publicPoint)
+            }
+            guard let publicKey = loadedKey, EVP_PKEY_get_base_id(publicKey) == EVP_PKEY_EC else {
+                if let loadedKey { EVP_PKEY_free(loadedKey) }
+                return ActiveAuthenticationResult(
+                    success: false,
+                    details: "ECDSA Active Authentication public key could not be loaded (curve \(curveOID))",
+                    status: .unsupportedKeyType
+                )
+            }
+            defer { EVP_PKEY_free(publicKey) }
 
+            do {
                 let derSignature = try convertPlainECDSASignatureToDER(signature)
                 let verified = verifySignature(
                     data: challenge,
@@ -326,7 +343,11 @@ enum ActiveAuthenticationVerifier {
             bitStringValue.append(publicPoint)
             let subjectPublicKey = ASN1Parser.encodeTLV(tag: 0x03, value: bitStringValue)
             let spki = ASN1Parser.encodeTLV(tag: 0x30, value: algorithmIdentifier + subjectPublicKey)
+            return try readPublicKey(subjectPublicKeyInfoDER: spki)
+        }
 
+        /// Load a DER SubjectPublicKeyInfo (named or explicit parameters) into an EVP_PKEY.
+        private static func readPublicKey(subjectPublicKeyInfoDER spki: Data) throws -> OpaquePointer {
             guard let input = BIO_new(BIO_s_mem()) else {
                 throw NFCError.cryptoError("BIO_new failed")
             }

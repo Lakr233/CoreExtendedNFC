@@ -77,9 +77,11 @@ public struct PassiveAuthenticationResult: Sendable, Equatable, Codable {
     /// Whether hash verification passed for each data group.
     public let dataGroupHashResults: [DataGroupId: Bool]
 
-    /// Whether all requested data group hashes matched.
+    /// Whether at least one data group hash was compared and every comparison matched.
+    ///
+    /// An empty result (nothing compared, e.g. unsupported hash algorithm) is not valid.
     public var allHashesValid: Bool {
-        dataGroupHashResults.values.allSatisfy(\.self)
+        !dataGroupHashResults.isEmpty && dataGroupHashResults.values.allSatisfy(\.self)
     }
 
     /// Data groups that failed hash verification.
@@ -355,8 +357,10 @@ enum SODParser {
             case 0x30:
                 // Could be hashAlgorithm or LDSVersionInfo or DataGroupHash
                 let subChildren = (try? child.children()) ?? []
-                if subChildren.count >= 2, subChildren[0].tag == 0x06 {
-                    // AlgorithmIdentifier: OID + optional parameters
+                if subChildren.count >= 1, subChildren[0].tag == 0x06 {
+                    // AlgorithmIdentifier: OID + optional parameters (RFC 5754 §2: SHA-2
+                    // identifiers SHOULD omit the NULL parameters). The LDSSecurityObject
+                    // hashAlgorithm governs DG hashes (ICAO 9303-10 §4.6.2.2).
                     let oid = DG14Parser.decodeOID(subChildren[0].value)
                     if hashAlgOID.isEmpty || Self.hashAlgorithmNames[oid] != nil {
                         hashAlgOID = oid
@@ -517,6 +521,14 @@ enum SODParser {
             }
 
             results[dgId] = (computedHash == expectedHash)
+        }
+
+        // ICAO 9303-11 §5.1: every data group read must be checked against the SOD.
+        // A DG1–DG16 that was read but has no hash in the SOD cannot be authenticated.
+        for (dgId, _) in rawDataGroups where dgId != .com && dgId != .sod {
+            if sodContent.dataGroupHashes[dgId] == nil {
+                results[dgId] = false
+            }
         }
 
         let allValid = !results.isEmpty && results.values.allSatisfy(\.self)

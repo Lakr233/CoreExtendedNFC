@@ -15,7 +15,9 @@ public enum MRZKeyGenerator {
     /// Format: documentNumber + checkDigit + dateOfBirth + checkDigit + dateOfExpiry + checkDigit
     ///
     /// - Parameters:
-    ///   - documentNumber: The document number (up to 9 characters, padded with `<`).
+    ///   - documentNumber: The document number. Shorter numbers are padded with `<` to
+    ///     9 characters; longer TD1 numbers (ICAO 9303-5 §4.2.2 overflow into optional data)
+    ///     are used in full, as the BAC/PACE MRZ information requires. Lowercase is uppercased.
     ///   - dateOfBirth: Date of birth in YYMMDD format.
     ///   - dateOfExpiry: Date of expiry in YYMMDD format.
     /// - Returns: The MRZ key string for BAC key derivation.
@@ -24,8 +26,11 @@ public enum MRZKeyGenerator {
         dateOfBirth: String,
         dateOfExpiry: String
     ) -> String {
-        // Pad document number to 9 characters with `<` if needed
-        let paddedDocNumber = documentNumber.padding(toLength: 9, withPad: "<", startingAt: 0)
+        let normalizedDocNumber = documentNumber.uppercased()
+        // Pad to 9 characters with `<`; never truncate long document numbers.
+        let paddedDocNumber = normalizedDocNumber.count >= 9
+            ? normalizedDocNumber
+            : normalizedDocNumber + String(repeating: "<", count: 9 - normalizedDocNumber.count)
 
         let docCheckDigit = checkDigit(paddedDocNumber)
         let dobCheckDigit = checkDigit(dateOfBirth)
@@ -45,15 +50,18 @@ public enum MRZKeyGenerator {
     /// - `0`–`9` → 0–9
     /// - `A`–`Z` → 10–35
     /// - `<` → 0
+    ///
+    /// Lowercase ASCII letters are treated as uppercase. Only ASCII digits count as
+    /// digits; any other character (including non-ASCII digits) is valued 0 like `<`.
     public static func checkDigit(_ input: String) -> Character {
         let weights = [7, 3, 1]
         var sum = 0
 
-        for (index, char) in input.enumerated() {
-            let value: Int = if let digit = char.wholeNumberValue {
-                digit
-            } else if char >= "A", char <= "Z" {
-                Int(char.asciiValue! - Character("A").asciiValue!) + 10
+        for (index, char) in input.uppercased().enumerated() {
+            let value: Int = if let ascii = char.asciiValue, ascii >= 0x30, ascii <= 0x39 {
+                Int(ascii - 0x30)
+            } else if let ascii = char.asciiValue, ascii >= 0x41, ascii <= 0x5A {
+                Int(ascii - 0x41) + 10
             } else {
                 // `<` and any other filler
                 0

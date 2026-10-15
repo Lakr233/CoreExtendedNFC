@@ -91,10 +91,10 @@ public enum SecurityProtocol: String, Sendable, Hashable, Codable {
     case taRSAPSSSHA256 = "0.4.0.127.0.7.2.2.2.1.4"
     /// id-TA-ECDSA-SHA-1
     case taECDSASHA1 = "0.4.0.127.0.7.2.2.2.2.1"
-    /// id-TA-ECDSA-SHA-256
-    case taECDSASHA256 = "0.4.0.127.0.7.2.2.2.2.2"
-    /// id-TA-ECDSA-SHA-224
-    case taECDSASHA224 = "0.4.0.127.0.7.2.2.2.2.3"
+    /// id-TA-ECDSA-SHA-224 (BSI TR-03110-3 Appendix A: id-TA-ECDSA 2)
+    case taECDSASHA224 = "0.4.0.127.0.7.2.2.2.2.2"
+    /// id-TA-ECDSA-SHA-256 (BSI TR-03110-3 Appendix A: id-TA-ECDSA 3)
+    case taECDSASHA256 = "0.4.0.127.0.7.2.2.2.2.3"
     /// id-TA-ECDSA-SHA-384
     case taECDSASHA384 = "0.4.0.127.0.7.2.2.2.2.4"
     /// id-TA-ECDSA-SHA-512
@@ -393,29 +393,40 @@ enum DG14Parser {
     /// Decode a DER-encoded OID value into its dotted-decimal string representation.
     ///
     /// ASN.1 OID encoding:
-    /// - First octet encodes first two components: value = first * 40 + second
-    /// - Subsequent octets use base-128 encoding with continuation bits (bit 7)
+    /// - Every subidentifier uses base-128 encoding with continuation bits (bit 7)
+    /// - The first subidentifier encodes the first two arcs (X.690 §8.19.4):
+    ///   value < 40 → 0.value, value < 80 → 1.(value − 40), otherwise 2.(value − 80)
+    ///
+    /// Returns an empty string for malformed encodings (truncated or oversized subidentifiers).
     static func decodeOID(_ data: Data) -> String {
         guard !data.isEmpty else { return "" }
 
-        var components: [Int] = []
-
-        // First byte: first = value / 40, second = value % 40
-        let first = Int(data[0]) / 40
-        let second = Int(data[0]) % 40
-        components.append(first)
-        components.append(second)
-
-        // Remaining bytes: base-128 variable-length encoding
-        var value = 0
-        for i in 1 ..< data.count {
-            let byte = data[i]
-            value = (value << 7) | Int(byte & 0x7F)
+        var subidentifiers: [UInt64] = []
+        var value: UInt64 = 0
+        var inProgress = false
+        for byte in data {
+            // Reject subidentifiers that would overflow 64 bits.
+            guard value <= (UInt64.max >> 7) else { return "" }
+            value = (value << 7) | UInt64(byte & 0x7F)
+            inProgress = true
             if byte & 0x80 == 0 {
-                components.append(value)
+                subidentifiers.append(value)
                 value = 0
+                inProgress = false
             }
         }
+        guard !inProgress, let firstSubidentifier = subidentifiers.first else { return "" }
+
+        var components: [UInt64]
+        switch firstSubidentifier {
+        case 0 ..< 40:
+            components = [0, firstSubidentifier]
+        case 40 ..< 80:
+            components = [1, firstSubidentifier - 40]
+        default:
+            components = [2, firstSubidentifier - 80]
+        }
+        components.append(contentsOf: subidentifiers.dropFirst())
 
         return components.map(String.init).joined(separator: ".")
     }

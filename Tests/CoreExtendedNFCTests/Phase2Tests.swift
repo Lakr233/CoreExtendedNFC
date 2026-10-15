@@ -434,19 +434,19 @@ struct Phase2Tests {
     // MARK: - PACE Handler
 
     @Test
-    func `PACE password key derivation for MRZ`() {
-        let key = PACEHandler.derivePasswordKey(
-            password: "L898902C<364081251204159",
+    func `PACE password key derivation for MRZ`() throws {
+        // ICAO 9303-11 Appendix G.1: K_π = KDF(SHA-1(MRZ), 3) over the full 20-byte hash.
+        let key = try PACEHandler.derivePasswordKey(
+            password: "T22000129364081251010318",
             keyReference: .mrz,
             mode: .aes128
         )
-        // Should derive a 16-byte key using Kseed → KDF mode 3 (pace)
-        #expect(key.count == 16)
+        #expect(key == Data(hexString: "89DED1B26624EC1E634C1989302849DD"))
     }
 
     @Test
-    func `PACE password key derivation for CAN`() {
-        let key = PACEHandler.derivePasswordKey(
+    func `PACE password key derivation for CAN`() throws {
+        let key = try PACEHandler.derivePasswordKey(
             password: "123456",
             keyReference: .can,
             mode: .aes128
@@ -456,7 +456,7 @@ struct Phase2Tests {
 
     @Test
     func `PACE password key derivation for CAN AES-256 uses password bytes`() throws {
-        let key = PACEHandler.derivePasswordKey(
+        let key = try PACEHandler.derivePasswordKey(
             password: "123456",
             keyReference: .can,
             mode: .aes256
@@ -524,15 +524,15 @@ struct Phase2Tests {
 
     @Test
     func `CA session key derivation`() {
-        let sharedSecret = Data(repeating: 0xEF, count: 32)
+        // ICAO 9303-11 Appendix G.1 shared secret K and the resulting AES-128 session keys.
+        let sharedSecret = Data(hexString: "28768D20701247DAE81804C9E780EDE582A9996DB4A315020B2733197DB84925")!
         let (ksEnc, ksMac) = ChipAuthenticationHandler.deriveCASessionKeys(
             sharedSecret: sharedSecret,
             mode: .aes128
         )
 
-        #expect(ksEnc.count == 16)
-        #expect(ksMac.count == 16)
-        #expect(ksEnc != ksMac)
+        #expect(ksEnc == Data(hexString: "F5F0E35C0D7161EE6724EE513A0D9A7F"))
+        #expect(ksMac == Data(hexString: "FE251C7858B356B24514B3BD5F4297D1"))
     }
 
     @Test
