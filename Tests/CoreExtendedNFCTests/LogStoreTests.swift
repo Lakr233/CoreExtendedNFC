@@ -22,16 +22,94 @@ struct LogStoreTests {
         let (store, directory) = try makeStore()
         defer { try? FileManager.default.removeItem(at: directory) }
 
+        // Markers must not occur inside the ISO 8601 timestamp: a bare "0-" matched
+        // dates such as "2026-10-15" and made this test fail every October.
         let message = String(repeating: "x", count: 40)
         for index in 0 ..< 5 {
-            store.append(level: .debug, category: "Tail", message: "\(index)-\(message)")
+            store.append(level: .debug, category: "Tail", message: "entry#\(index)#\(message)")
         }
         store.flush()
 
         let tail = store.readTail(maxBytes: 128)
-        #expect(!tail.contains("0-"))
-        #expect(tail.contains("4-"))
-        #expect(tail.count <= 200) // guard against unexpectedly large tails
+        #expect(!tail.contains("entry#0#"))
+        #expect(!tail.contains("entry#3#"))
+        #expect(tail.contains("entry#4#"))
+        #expect(tail.utf8.count <= 128)
+        #expect(tail.hasSuffix("\n"))
+    }
+
+    @Test
+    func `readTail survives a cut inside a multibyte character`() throws {
+        let (store, directory) = try makeStore()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // "é" is C3 A9. 10 × 2 bytes + "\nlast\n" = 26 bytes; a 25-byte tail starts on 0xA9.
+        let content = Data(String(repeating: "é", count: 10).utf8) + Data("\nlast\n".utf8)
+        #expect(FileManager.default.createFile(atPath: store.logFileURL.path, contents: content))
+
+        let tail = store.readTail(maxBytes: 25)
+        #expect(tail == "last\n")
+    }
+
+    @Test
+    func `readTail of a single partial line skips continuation bytes`() {
+        let data = Data([0xA9, 0xC3, 0xA9, 0x41])
+        #expect(LogStore.decodeTail(data, isTruncated: true) == "éA")
+        #expect(LogStore.decodeTail(Data("ok".utf8), isTruncated: false) == "ok")
+    }
+
+    @Test
+    func `clear does not trap when maxFiles is zero`() throws {
+        let (store, directory) = try makeStore(maxFiles: 0)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        store.append(level: .info, category: "Zero", message: "one")
+        store.flush()
+        store.clear()
+
+        #expect(store.readTail().isEmpty)
+    }
+
+    @Test
+    func `synchronous calls on the store's own queue do not deadlock`() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = DispatchQueue(label: "LogStoreTests.custom")
+        let store = LogStore(directory: directory, queue: queue)
+
+        store.append(level: .info, category: "Queue", message: "on-queue")
+        let finished = DispatchSemaphore(value: 0)
+        let tail = LockedValue("")
+        queue.async {
+            store.flush()
+            let text = store.readTail()
+            tail.withLock { $0 = text }
+            store.clear()
+            finished.signal()
+        }
+
+        #expect(finished.wait(timeout: .now() + 5) == .success)
+        #expect(tail.withLock { $0 }.contains("on-queue"))
+    }
+
+    @Test
+    func `logger configuration tolerates concurrent reads and writes`() async {
+        let previous = NFCLogConfiguration.logger
+        defer { NFCLogConfiguration.logger = previous }
+
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0 ..< 64 {
+                group.addTask {
+                    if index.isMultiple(of: 2) {
+                        NFCLogConfiguration.logger = CountingLogger()
+                    } else {
+                        NFCLog.debug("probe", source: "Tests")
+                    }
+                }
+            }
+        }
+        #expect(NFCLogConfiguration.logger != nil)
     }
 
     @Test
@@ -117,6 +195,10 @@ struct LogStoreTests {
         #expect(LogCategoryResolver.resolve(category: nil, fileID: "/tmp/Other.swift") == "App")
         #expect(LogCategoryResolver.resolve(category: "Custom", fileID: "/tmp/Other.swift") == "Custom")
     }
+}
+
+private struct CountingLogger: NFCLogger {
+    func log(_: LogLevel, _: String, source _: String) {}
 }
 
 private func makeStore(maxFileSize: Int = 512, maxFiles: Int = 3) throws -> (LogStore, URL) {

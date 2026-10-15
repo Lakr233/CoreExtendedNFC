@@ -9,7 +9,14 @@ public protocol NFCLogger: Sendable {
 
 /// Global configuration for the NFC logging subsystem.
 public enum NFCLogConfiguration: Sendable {
-    public nonisolated(unsafe) static var logger: (any NFCLogger)?
+    private static let storage = LockedValue<(any NFCLogger)?>(nil)
+
+    /// The active logger. Reads and writes are synchronised, so it can be
+    /// replaced at any time while NFC work is running on other threads.
+    public static var logger: (any NFCLogger)? {
+        get { storage.withLock { $0 } }
+        set { storage.withLock { $0 = newValue } }
+    }
 }
 
 /// Internal shorthand for logging throughout the library.

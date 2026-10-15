@@ -10,11 +10,13 @@ public final class LogStore: @unchecked Sendable {
     let logDirectory: URL
     let logFileName: String
 
-    private lazy var timestampFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
+    /// Formatting with `ISO8601DateFormatter` is thread-safe; it is created eagerly so
+    /// concurrent first calls to ``append(level:category:message:)`` never race on lazy init.
+    private let timestampFormatter: ISO8601DateFormatter
+
+    /// Identifies `queue` so synchronous entry points can run inline when the caller
+    /// is already on it (a custom queue passed to `init`), instead of deadlocking.
+    private let queueKey = DispatchSpecificKey<ObjectIdentifier>()
 
     public init(
         directory: URL? = nil,
@@ -26,15 +28,23 @@ public final class LogStore: @unchecked Sendable {
     ) {
         self.fileManager = fileManager
         self.maxFileSize = maxFileSize
-        self.maxFiles = maxFiles
+        // At least one rotated file is always kept; `maxFiles < 1` would otherwise
+        // build an invalid `1 ... maxFiles` range in `clear()`.
+        self.maxFiles = max(1, maxFiles)
         logFileName = fileName
-        self.queue = queue ?? DispatchQueue(label: "wiki.qaq.coreextendednfc.logstore", qos: .utility)
+        let resolvedQueue = queue ?? DispatchQueue(label: "wiki.qaq.coreextendednfc.logstore", qos: .utility)
+        self.queue = resolvedQueue
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        timestampFormatter = formatter
 
         let base = directory ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = base.appendingPathComponent("Logs", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         logDirectory = dir
+        resolvedQueue.setSpecific(key: queueKey, value: ObjectIdentifier(self))
     }
 
     var logFileURL: URL {
@@ -58,28 +68,57 @@ public final class LogStore: @unchecked Sendable {
         }
     }
 
+    /// Read at most `maxBytes` UTF-8 bytes from the end of the current log file.
+    ///
+    /// When the file is longer than `maxBytes`, the leading partial line is dropped,
+    /// so the result starts on a line boundary and never on a split multi-byte character.
     public func readTail(maxBytes: Int = 128 * 1024) -> String {
-        queue.sync {
+        performSync {
             guard let handle = try? FileHandle(forReadingFrom: logFileURL) else { return "" }
             defer { try? handle.close() }
 
+            let limit = UInt64(max(0, maxBytes))
             let fileSize = (try? handle.seekToEnd()) ?? 0
-            let startOffset = fileSize > UInt64(maxBytes) ? fileSize - UInt64(maxBytes) : 0
+            let startOffset = fileSize > limit ? fileSize - limit : 0
             try? handle.seek(toOffset: startOffset)
             let data = (try? handle.readToEnd()) ?? Data()
-            return String(data: data, encoding: .utf8) ?? ""
+            return Self.decodeTail(data, isTruncated: startOffset > 0)
         }
     }
 
     public func clear() {
-        queue.sync {
+        performSync {
             try? fileManager.removeItem(at: logFileURL)
             removeRotatedFiles()
         }
     }
 
     public func flush() {
-        queue.sync {}
+        performSync {}
+    }
+
+    /// Decode a tail slice of the log as UTF-8 without ever failing outright.
+    static func decodeTail(_ data: Data, isTruncated: Bool) -> String {
+        var bytes = data[...]
+        if isTruncated {
+            if let newline = bytes.firstIndex(of: 0x0A) {
+                // Drop the partial first line.
+                bytes = bytes[bytes.index(after: newline)...]
+            } else {
+                // A single partial line: skip UTF-8 continuation bytes (10xxxxxx).
+                while let first = bytes.first, first & 0xC0 == 0x80 {
+                    bytes = bytes.dropFirst()
+                }
+            }
+        }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    private func performSync<T>(_ work: () -> T) -> T {
+        if DispatchQueue.getSpecific(key: queueKey) == ObjectIdentifier(self) {
+            return work()
+        }
+        return queue.sync(execute: work)
     }
 
     private func formattedLine(level: LogLevel, category: String, message: String) -> Data {
