@@ -144,12 +144,12 @@ class TransitBalanceViewController: StackScrollController {
                 displayResults(balance)
             } catch {
                 manager.invalidate(after: error)
-                guard !NFCErrorMessage.isCancellation(error) else {
+                guard !NFCErrorMessage.isCancellation(error, session: manager) else {
                     AppLogStore.shared.info("Transit card scan cancelled", source: "Transit")
                     return
                 }
                 AppLogStore.shared.error("Transit card scan failed: \(error)", source: "Transit")
-                if !presentNFCErrorAlertIfNeeded(for: error) {
+                if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                     presentErrorAlert(for: error)
                 }
             }

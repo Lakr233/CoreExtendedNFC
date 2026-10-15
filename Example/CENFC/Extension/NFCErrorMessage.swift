@@ -11,6 +11,15 @@ nonisolated enum NFCErrorMessage {
         return (error as? NFCError)?.isUserCancellation == true
     }
 
+    /// Whether `error` from an operation on `session` means the user ended it.
+    ///
+    /// Also true when the user dismissed the NFC sheet and the failure raced that
+    /// cancel (``NFCSessionManager/wasCanceledByUser``).
+    @MainActor
+    static func isCancellation(_ error: Error, session: NFCSessionManager?) -> Bool {
+        isCancellation(error) || session?.wasCanceledByUser == true
+    }
+
     /// A localized, human-readable description of `error`.
     ///
     /// `NFCError` conforms to `LocalizedError`, so this never shows a raw enum dump.

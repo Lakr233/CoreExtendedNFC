@@ -295,7 +295,7 @@ class RawCommunicationViewController: StackScrollController {
 
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 appendLog("TX: \(commandData.hexDump)\nERROR: \(NFCErrorMessage.message(for: error))")
             }
         }

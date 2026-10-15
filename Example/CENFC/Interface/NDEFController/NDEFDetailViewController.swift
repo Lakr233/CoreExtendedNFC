@@ -130,7 +130,7 @@ class NDEFEditorViewController: StackScrollController {
             manager.invalidate()
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 presentErrorAlert(for: error)
             }
         }

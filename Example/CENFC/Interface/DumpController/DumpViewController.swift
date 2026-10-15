@@ -366,7 +366,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
             handleNewDump(record)
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 presentErrorAlert(for: error)
             }
         }

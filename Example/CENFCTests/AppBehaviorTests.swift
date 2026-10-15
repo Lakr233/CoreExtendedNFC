@@ -144,6 +144,40 @@ struct NFCErrorMessageTests {
         #expect(!NFCErrorMessage.isCancellation(NFCError.sessionTimeout))
         #expect(!NFCErrorMessage.message(for: NFCError.tagLocked).contains("tagLocked"))
     }
+
+    @Test
+    @MainActor
+    func `A session the user did not cancel does not silence errors`() {
+        let session = NFCSessionManager()
+        #expect(!session.wasCanceledByUser)
+        #expect(!NFCErrorMessage.isCancellation(NFCError.tagLocked, session: session))
+        #expect(NFCErrorMessage.isCancellation(NFCError.userCanceled, session: session))
+        #expect(NFCErrorMessage.isCancellation(CancellationError(), session: nil))
+    }
+
+    @Test
+    @MainActor
+    func `Passport detail lists data groups that were not read`() {
+        let passport = PassportModel(
+            ldsVersion: nil, unicodeVersion: nil,
+            availableDataGroups: [.dg1, .dg2, .dg3, .dg14],
+            mrz: nil, faceImageData: nil, signatureImageData: nil,
+            additionalPersonalDetails: nil, additionalDocumentDetails: nil,
+            securityInfos: nil, securityInfoRaw: nil,
+            activeAuthPublicKey: nil, activeAuthPublicKeyRaw: nil,
+            sod: nil, sodRaw: nil,
+            passiveAuthResult: nil, activeAuthResult: nil,
+            rawDataGroups: [.dg1: Data([0x61])],
+            dataGroupReadStatus: [
+                .dg1: .init(state: .read),
+                .dg2: .init(state: .notRead),
+                .dg3: .init(state: .unavailable, detail: "6982"),
+                .dg15: .init(state: .notPresent),
+            ]
+        )
+        let summary = PassportDetailViewController.unreadDataGroupsSummary(passport)
+        #expect(summary == "DG2 (Face Image): \(String(localized: "Not read")); DG3 (Fingerprints): \(String(localized: "Unavailable"))")
+    }
 }
 
 @MainActor

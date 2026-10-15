@@ -470,7 +470,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
             handleNewScan(ScanRecord(cardInfo: refinedInfo))
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 presentErrorAlert(for: error)
             }
         }

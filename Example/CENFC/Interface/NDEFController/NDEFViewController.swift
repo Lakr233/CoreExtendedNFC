@@ -389,7 +389,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             showImportSummary(imported: imported, duplicated: duplicated)
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 presentErrorAlert(for: error)
             }
         }
@@ -415,7 +415,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             manager.invalidate()
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 presentErrorAlert(for: error)
             }
         }
@@ -470,7 +470,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             manager.invalidate()
         } catch {
             manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error) {
+            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 presentErrorAlert(for: error)
             }
         }

@@ -296,6 +296,14 @@ class PassportDetailViewController: StackScrollController {
             description: String(localized: "Data groups present on the chip as advertised by COM."),
             value: record.dataGroupsSummary
         )
+        if let unread = Self.unreadDataGroupsSummary(record.passport) {
+            addInfoRow(
+                icon: "exclamationmark.triangle",
+                title: String(localized: "Data Groups Not Read"),
+                description: String(localized: "Data groups listed by the chip that were not read in this session."),
+                value: unread
+            )
+        }
         addInfoRow(
             icon: "internaldrive",
             title: String(localized: "Total Raw Size"),
@@ -314,6 +322,23 @@ class PassportDetailViewController: StackScrollController {
         }
 
         addSectionFooter(String(localized: "eMRTD chip metadata and raw data group information."))
+    }
+
+    /// "DG2 (Face Image): Not read; DG3 (Fingerprints): Unavailable" for the data groups that were not read,
+    /// or `nil` when every listed data group was read (or no status was recorded).
+    static func unreadDataGroupsSummary(_ passport: PassportModel) -> String? {
+        guard let status = passport.dataGroupReadStatus else { return nil }
+        let entries: [String] = DataGroupId.allCases.compactMap { dataGroup in
+            guard let result = status[dataGroup] else { return nil }
+            let state: String? = switch result.state {
+            case .read, .notPresent: nil
+            case .unavailable: String(localized: "Unavailable")
+            case .failed: String(localized: "Failed")
+            case .notRead: String(localized: "Not read")
+            }
+            return state.map { "\(dataGroup.name): \($0)" }
+        }
+        return entries.isEmpty ? nil : entries.joined(separator: "; ")
     }
 
     // MARK: - Export Info

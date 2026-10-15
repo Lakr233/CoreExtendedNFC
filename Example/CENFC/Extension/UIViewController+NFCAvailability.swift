@@ -11,12 +11,18 @@ extension UIViewController {
     ///
     /// - Returns: `true` if the error was handled (alert shown or silently
     ///   ignored), `false` if the caller should handle it.
-    func presentNFCErrorAlertIfNeeded(for error: Error) -> Bool {
+    ///
+    /// Pass the operation's `session` so a failure that raced the user's cancel
+    /// is also treated as a cancel.
+    func presentNFCErrorAlertIfNeeded(for error: Error, session: NFCSessionManager? = nil) -> Bool {
+        if NFCErrorMessage.isCancellation(error, session: session) {
+            return true
+        }
         if case .nfcNotAvailable? = error as? NFCError {
             presentNFCNotAvailableAlert()
             return true
         }
-        return NFCErrorMessage.isCancellation(error)
+        return false
     }
 
     /// Shows an "Error" alert describing `error` in the user's language.
@@ -53,7 +59,7 @@ extension NFCSessionManager {
     /// The system sheet shows the failure instead of the success checkmark that a
     /// plain ``invalidate()`` displays. A cancelled session is closed quietly.
     func invalidate(after error: Error) {
-        if NFCErrorMessage.isCancellation(error) {
+        if NFCErrorMessage.isCancellation(error, session: self) {
             invalidate()
         } else {
             invalidate(errorMessage: NFCErrorMessage.message(for: error))
