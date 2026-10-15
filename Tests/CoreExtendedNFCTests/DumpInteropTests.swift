@@ -165,4 +165,119 @@ struct DumpInteropTests {
             _ = try dump.exportLibNFCMFD()
         }
     }
+
+    // MARK: - Import / export / diff robustness
+
+    @Test
+    func `diffSummary tolerates DESFire files with the same id in different apps`() {
+        let info = CardInfo(type: .mifareDesfireEV1, uid: Data(count: 7))
+        let lhs = MemoryDump(cardInfo: info, files: [.init(fileID: 1, data: Data([1])), .init(fileID: 1, data: Data([2]))])
+        let rhs = MemoryDump(cardInfo: info, files: [.init(fileID: 1, data: Data([1])), .init(fileID: 1, data: Data([3]))])
+
+        #expect(lhs.diffSummary(against: lhs).fileChanges == 0) // before: traps
+        // The second occurrence differs and is counted, not silently merged away.
+        #expect(lhs.diffSummary(against: rhs).fileChanges == 1)
+    }
+
+    @Test
+    func `diffSummary tolerates repeated pages and fact keys`() {
+        let info = CardInfo(type: .ntag213, uid: Data(count: 7))
+        let dump = MemoryDump(
+            cardInfo: info,
+            pages: [.init(number: 4, data: Data(count: 4)), .init(number: 4, data: Data(count: 4))],
+            facts: [.init(key: "K", value: "1"), .init(key: "K", value: "2")]
+        )
+        let diff = dump.diffSummary(against: dump) // before: traps
+        #expect(!diff.hasDifferences)
+    }
+
+    @Test
+    func `exports tolerate duplicate page numbers`() throws {
+        let dump = MemoryDump(
+            cardInfo: CardInfo(type: .ntag213, uid: Data(count: 7)),
+            pages: [.init(number: 4, data: Data([1, 1, 1, 1])), .init(number: 4, data: Data([2, 2, 2, 2]))]
+        )
+        let text = try dump.exportFlipperNFC() // before: traps
+        #expect(text.contains("Page 4: 02 02 02 02"))
+        _ = try dump.exportProxmark3MFU()
+    }
+
+    @Test
+    func `Flipper import rejects page numbers outside 0 to 255`() {
+        for pageLine in ["Page 300: 00 00 00 00", "Page 256: 00 00 00 00", "Page -1: 00 00 00 00"] {
+            let text = "Filetype: Flipper NFC device\nDevice type: NTAG/Ultralight\nUID: 04 01 02 03 04 05 06\nPages total: 1\n\(pageLine)"
+            #expect(throws: NFCError.self) { // before: traps
+                _ = try MemoryDump.importFlipperNFC(text)
+            }
+        }
+    }
+
+    @Test
+    func `Flipper import rejects duplicate page lines`() {
+        let text = "Filetype: Flipper NFC device\nDevice type: NTAG/Ultralight\nUID: 04 01 02 03 04 05 06\nPages total: 2\nPage 0: 00 00 00 00\nPage 0: 11 11 11 11"
+        #expect(throws: NFCError.self) {
+            _ = try MemoryDump.importFlipperNFC(text)
+        }
+    }
+
+    @Test
+    func `Proxmark import keeps plain 16-page binaries intact`() throws {
+        let plain = Data((0 ..< 64).map { UInt8($0) })
+        let dump = try MemoryDump.importProxmark3MFU(plain)
+        #expect(dump.pages.count == 16) // before: 2
+        #expect(dump.pages.first?.data == Data([0, 1, 2, 3]))
+        #expect(dump.pages.last?.number == 15)
+    }
+
+    @Test
+    func `Proxmark import synthesises the Type 2 ATQA most-significant byte first`() throws {
+        let dump = try MemoryDump.importProxmark3MFU(Data(count: 64))
+        #expect(dump.cardInfo.atqa == Data([0x00, 0x44]))
+        #expect(CardIdentifier.identify(atqa: try #require(dump.cardInfo.atqa), sak: 0x00) == .mifareUltralight)
+    }
+
+    @Test
+    func `Proxmark import detects the mfu_dump_t header by its last-page index`() throws {
+        // 56-byte header: version[8] tbo[2] tbo1[1] pages[1] signature[32] counters[12].
+        var header = Data(count: 56)
+        header.replaceSubrange(0 ..< 8, with: Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]))
+        header[11] = 44 // last page index of NTAG213 (45 pages)
+        let pages = Data((0 ..< 45 * 4).map { UInt8(truncatingIfNeeded: $0) })
+
+        let dump = try MemoryDump.importProxmark3MFU(header + pages)
+        #expect(dump.pages.count == 45)
+        #expect(dump.cardInfo.type == .ntag213)
+        #expect(dump.pages[0].data == Data([0, 1, 2, 3]))
+    }
+
+    @Test
+    func `Proxmark import rejects more than 256 pages`() {
+        #expect(throws: NFCError.self) { // before: traps
+            _ = try MemoryDump.importProxmark3MFU(Data(count: 257 * 4))
+        }
+    }
+
+    @Test
+    func `Flipper and Proxmark export keep pages beyond the inferred memory map`() throws {
+        let pages = (0 ..< 20).map { MemoryDump.Page(number: UInt8($0), data: Data(repeating: UInt8($0), count: 4)) }
+        let dump = MemoryDump(cardInfo: CardInfo(type: .mifareUltralight, uid: Data(count: 7)), pages: pages)
+
+        let text = try dump.exportFlipperNFC()
+        #expect(text.contains("Pages total: 20")) // before: 16
+        #expect(text.contains("Page 19: 13 13 13 13"))
+
+        let binary = try dump.exportProxmark3MFU()
+        #expect(binary.count == 56 + 20 * 4)
+        #expect(binary[11] == 19)
+    }
+
+    @Test
+    func `Export of a page-255 dump does not overflow the page count`() throws {
+        let dump = MemoryDump(
+            cardInfo: CardInfo(type: .smartMX, uid: Data(count: 7)),
+            pages: [.init(number: 255, data: Data([1, 2, 3, 4]))]
+        )
+        let text = try dump.exportFlipperNFC() // before: UInt8 overflow trap in inferredPageTotal
+        #expect(text.contains("Pages total: 256"))
+    }
 }

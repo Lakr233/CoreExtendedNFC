@@ -270,7 +270,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             message: "Flipper Zero export is currently available only for page-based Type 2 style dumps."
         )
         let totalPages = inferredPageTotal(for: orderedPages)
-        let pageMap = Dictionary(uniqueKeysWithValues: orderedPages.map { (Int($0.number), $0.data) })
+        let pageMap = Self.pageMap(orderedPages)
 
         var lines = [
             "Filetype: Flipper NFC device",
@@ -305,7 +305,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             message: "Proxmark3 MFU export is currently available only for page-based Type 2 style dumps."
         )
         let totalPages = inferredPageTotal(for: orderedPages)
-        let pageMap = Dictionary(uniqueKeysWithValues: orderedPages.map { (Int($0.number), $0.data) })
+        let pageMap = Self.pageMap(orderedPages)
 
         var result = Data(repeating: 0x00, count: 56 + totalPages * 4)
 
@@ -333,7 +333,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
                 atqa: parsed.atqa,
                 sak: parsed.sak
             ),
-            pages: parsed.pages.map { .init(number: UInt8($0.number), data: $0.data) },
+            pages: try parsed.pages.map { try $0.validatedPage() },
             facts: [
                 .init(key: "Imported From", value: "Flipper Zero .nfc"),
                 .init(key: "Pages Total", value: "\(parsed.totalPages)"),
@@ -351,10 +351,11 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             cardInfo: CardInfo(
                 type: parsed.cardType,
                 uid: parsed.uid,
-                atqa: parsed.cardType.family == .ntag || parsed.cardType.family == .mifareUltralight ? Data([0x44, 0x00]) : nil,
+                // ATQA 0x0044 (Type 2), stored most-significant byte first like CardIdentifier expects.
+                atqa: parsed.cardType.family == .ntag || parsed.cardType.family == .mifareUltralight ? Data([0x00, 0x44]) : nil,
                 sak: parsed.cardType.family == .ntag || parsed.cardType.family == .mifareUltralight ? 0x00 : nil
             ),
-            pages: parsed.pages.map { .init(number: UInt8($0.number), data: $0.data) },
+            pages: try parsed.pages.map { try $0.validatedPage() },
             facts: [
                 .init(key: "Imported From", value: "Proxmark3 MFU"),
                 .init(key: "Pages Total", value: "\(parsed.pages.count)"),
@@ -451,29 +452,56 @@ public struct MemoryDump: Sendable, Codable, Equatable {
     }
 
     /// Produce a stable diff summary against another dump.
+    ///
+    /// Entries are matched by key (page number, block number, file identifier, fact key).
+    /// Repeated keys never trap: the n-th occurrence of a key is compared with the
+    /// n-th occurrence in the other dump.
     public func diffSummary(against other: MemoryDump) -> DiffSummary {
         DiffSummary(
             sameCardFamily: cardInfo.type.family == other.cardInfo.type.family,
             sameUID: cardInfo.uid == other.cardInfo.uid,
             byteDelta: exportBinary().count - other.exportBinary().count,
             pageChanges: keyedDifferenceCount(
-                lhs: Dictionary(uniqueKeysWithValues: pages.map { (Int($0.number), $0.data) }),
-                rhs: Dictionary(uniqueKeysWithValues: other.pages.map { (Int($0.number), $0.data) })
+                lhs: Self.keyedByOccurrence(pages.map { (Int($0.number), $0.data) }),
+                rhs: Self.keyedByOccurrence(other.pages.map { (Int($0.number), $0.data) })
             ),
             blockChanges: keyedDifferenceCount(
-                lhs: Dictionary(uniqueKeysWithValues: blocks.map { ($0.number, $0.data) }),
-                rhs: Dictionary(uniqueKeysWithValues: other.blocks.map { ($0.number, $0.data) })
+                lhs: Self.keyedByOccurrence(blocks.map { ($0.number, $0.data) }),
+                rhs: Self.keyedByOccurrence(other.blocks.map { ($0.number, $0.data) })
             ),
             fileChanges: keyedDifferenceCount(
-                lhs: Dictionary(uniqueKeysWithValues: files.map { ($0.displayIdentifier, $0.data) }),
-                rhs: Dictionary(uniqueKeysWithValues: other.files.map { ($0.displayIdentifier, $0.data) })
+                lhs: Self.keyedByOccurrence(files.map { ($0.identifier, $0.data) }),
+                rhs: Self.keyedByOccurrence(other.files.map { ($0.identifier, $0.data) })
             ),
             ndefChanged: ndefMessage != other.ndefMessage,
             factChanges: keyedDifferenceCount(
-                lhs: Dictionary(uniqueKeysWithValues: facts.map { ($0.key, $0.value) }),
-                rhs: Dictionary(uniqueKeysWithValues: other.facts.map { ($0.key, $0.value) })
+                lhs: Self.keyedByOccurrence(facts.map { ($0.key, $0.value) }),
+                rhs: Self.keyedByOccurrence(other.facts.map { ($0.key, $0.value) })
             )
         )
+    }
+
+    private struct OccurrenceKey<Key: Hashable>: Hashable {
+        let key: Key
+        let occurrence: Int
+    }
+
+    private static func keyedByOccurrence<Key: Hashable, Value>(
+        _ pairs: [(Key, Value)]
+    ) -> [OccurrenceKey<Key>: Value] {
+        var seen: [Key: Int] = [:]
+        var result: [OccurrenceKey<Key>: Value] = [:]
+        for (key, value) in pairs {
+            let occurrence = seen[key, default: 0]
+            seen[key] = occurrence + 1
+            result[OccurrenceKey(key: key, occurrence: occurrence)] = value
+        }
+        return result
+    }
+
+    /// Page number to data. A repeated page number keeps the last occurrence instead of trapping.
+    private static func pageMap(_ pages: [Page]) -> [Int: Data] {
+        Dictionary(pages.map { (Int($0.number), $0.data) }, uniquingKeysWith: { _, last in last })
     }
 
     private func keyedDifferenceCount<Key: Hashable, Value: Equatable>(
@@ -559,12 +587,15 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         return pages.sorted(by: { $0.number < $1.number })
     }
 
+    /// Number of pages to export: the memory map size for known Type 2 layouts, but never
+    /// fewer than the pages actually present, so no captured page is dropped.
     private func inferredPageTotal(for orderedPages: [Page]) -> Int {
+        let pagesPresent = orderedPages.last.map { Int($0.number) + 1 } ?? 0
         switch cardInfo.type.family {
         case .ntag, .mifareUltralight:
-            Int(UltralightMemoryMap.forType(cardInfo.type).totalPages)
+            return max(Int(UltralightMemoryMap.forType(cardInfo.type).totalPages), pagesPresent)
         default:
-            Int((orderedPages.last?.number ?? 0) + 1)
+            return max(pagesPresent, 1)
         }
     }
 
@@ -585,11 +616,21 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         }
     }
 
-    private struct FlipperNFCFile {
-        struct PageRecord {
-            let number: Int
-            let data: Data
+    /// A page parsed from an imported file, before its number is range-checked.
+    private struct ImportedPageRecord {
+        let number: Int
+        let data: Data
+
+        func validatedPage() throws -> Page {
+            guard let pageNumber = UInt8(exactly: number) else {
+                throw NFCError.invalidResponse(Data("Page \(number)".utf8))
+            }
+            return Page(number: pageNumber, data: data)
         }
+    }
+
+    private struct FlipperNFCFile {
+        typealias PageRecord = ImportedPageRecord
 
         let uid: Data
         let atqa: Data?
@@ -613,6 +654,12 @@ public struct MemoryDump: Sendable, Codable, Equatable {
                 if key.hasPrefix("Page "), let pageNumber = Int(key.dropFirst(5)) {
                     guard let pageData = Data(hexString: value), pageData.count == 4 else {
                         throw NFCError.invalidResponse(Data(value.utf8))
+                    }
+                    // Type 2 page addresses are one byte (0...255), and each page appears once.
+                    guard UInt8(exactly: pageNumber) != nil,
+                          !pageRecords.contains(where: { $0.number == pageNumber })
+                    else {
+                        throw NFCError.invalidResponse(Data(line.utf8))
                     }
                     pageRecords.append(.init(number: pageNumber, data: pageData))
                 } else {
@@ -657,9 +704,22 @@ public struct MemoryDump: Sendable, Codable, Equatable {
     }
 
     private struct Proxmark3MFUDump {
-        struct PageRecord {
-            let number: Int
-            let data: Data
+        typealias PageRecord = ImportedPageRecord
+
+        /// Size of the Proxmark3 `mfu_dump_t` header that precedes page data:
+        /// version[8], tbo[2], tbo1[1], pages[1], signature[32], counter_tearing[3][4].
+        static let headerLength = 56
+        /// Offset of `pages` in the header: the index of the last page in the dump.
+        static let lastPageIndexOffset = 11
+
+        /// Whether `data` is a headered Proxmark3 dump: the header's last-page index must
+        /// agree with the number of 4-byte pages that follow it.
+        static func hasHeader(_ data: Data) -> Bool {
+            guard data.count >= headerLength + 4,
+                  (data.count - headerLength).isMultiple(of: 4)
+            else { return false }
+            let lastPageIndex = Int(data[data.startIndex + lastPageIndexOffset])
+            return lastPageIndex + 1 == (data.count - headerLength) / 4
         }
 
         let cardType: CardType
@@ -670,9 +730,9 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             let version: Data?
             let payload: Data
 
-            if data.count >= 56, (data.count - 56).isMultiple(of: 4) {
-                version = Data(data[0 ..< 8])
-                payload = Data(data.dropFirst(56))
+            if Self.hasHeader(data) {
+                version = Data(data.prefix(8))
+                payload = Data(data.dropFirst(Self.headerLength))
             } else if data.count.isMultiple(of: 4) {
                 version = nil
                 payload = data
@@ -681,7 +741,8 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             }
 
             let pageCount = payload.count / 4
-            guard pageCount > 0 else {
+            // Type 2 page addresses are one byte, so at most 256 pages.
+            guard pageCount > 0, pageCount <= 256 else {
                 throw NFCError.invalidResponse(data)
             }
 
