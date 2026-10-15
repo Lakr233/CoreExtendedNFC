@@ -34,6 +34,10 @@ public enum NFCError: Error, Sendable {
     // MARK: MIFARE
 
     case authenticationFailed
+    /// ISO/IEC 7816-4 VERIFY was refused, or the PIN is blocked.
+    /// `remainingAttempts` is the retry counter from `63Cx`, `0` when the PIN
+    /// is blocked (`63C0`, `6983`, `6984`), and `nil` when the card did not say.
+    case pinVerificationFailed(remainingAttempts: Int?)
     case writeFailed(page: UInt8)
     case tagLocked
 
@@ -96,6 +100,15 @@ extension NFCError: LocalizedError {
             String(localized: "The card kept sending response frames past the limit of \(maxFrames).", bundle: .module)
         case .authenticationFailed:
             String(localized: "Authentication with the tag failed.", bundle: .module)
+        case let .pinVerificationFailed(remainingAttempts):
+            switch remainingAttempts {
+            case .none:
+                String(localized: "PIN verification failed.", bundle: .module)
+            case 0:
+                String(localized: "The PIN is blocked. No attempts remain.", bundle: .module)
+            case let .some(count):
+                String(localized: "PIN verification failed. \(count) attempt(s) remaining.", bundle: .module)
+            }
         case let .writeFailed(page):
             String(localized: "Writing page \(Int(page)) failed.", bundle: .module)
         case .tagLocked:

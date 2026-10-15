@@ -145,6 +145,26 @@
         }
       }
     },
+    "PIN verification failed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PIN 验证失败。"
+          }
+        }
+      }
+    },
+    "PIN verification failed. %lld attempt(s) remaining." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PIN 验证失败，还剩 %lld 次尝试机会。"
+          }
+        }
+      }
+    },
     "Reading..." : {
       "localizations" : {
         "zh-Hans" : {
@@ -191,6 +211,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "NFC 会话已取消。"
+          }
+        }
+      }
+    },
+    "The PIN is blocked. No attempts remain." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PIN 已锁定，没有剩余尝试次数。"
           }
         }
       }

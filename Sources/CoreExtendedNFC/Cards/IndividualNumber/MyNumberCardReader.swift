@@ -25,7 +25,12 @@ public struct MyNumberCardReader: Sendable {
         var tokenInfo: String?
         var individualNumber: String?
 
-        for item in items {
+        // Each field is read once even if requested twice, so the PIN VERIFY
+        // (which costs a retry on failure) is sent at most once.
+        var seen = Set<MyNumberCardItem>()
+        let uniqueItems = items.filter { seen.insert($0).inserted }
+
+        for item in uniqueItems {
             switch item {
             case .tokenInfo:
                 tokenInfo = try await readTokenInfo()
@@ -59,6 +64,12 @@ public struct MyNumberCardReader: Sendable {
     ///
     /// Requires the 4-digit card-info-input-support PIN.
     ///
+    /// Before the PIN is sent, an empty VERIFY (ISO/IEC 7816-4 §11.5.6, `Lc`
+    /// absent) reads the retry counter. When the PIN is already blocked
+    /// (`63C0`, `6983`, `6984`) the PIN is never transmitted and
+    /// ``NFCError/pinVerificationFailed(remainingAttempts:)`` is thrown with `0`.
+    /// A wrong PIN throws the same error with the counter the card reports.
+    ///
     /// Official EF 0001 payload layout:
     /// `[0x10, 0x01, 0x0C, 12 ASCII digits, trailer(2 bytes)]` (17 bytes total).
     public func readIndividualNumber(cardInfoInputSupportPIN: String) async throws -> String {
@@ -67,14 +78,18 @@ public struct MyNumberCardReader: Sendable {
         try await selectDF(MyNumberCardConstants.cardInfoInputSupportAID)
         try await selectEF(MyNumberCardConstants.cardInfoInputSupportPINEFID)
 
-        let verifyResponse = try await verify(pinData)
-        if verifyResponse.sw1 == 0x63 {
-            let remaining = Int(verifyResponse.sw2 & 0x0F)
-            throw NFCError.unsupportedOperation(
-                "Card-info-input-support PIN verification failed (\(remaining) attempt(s) remaining)"
-            )
+        let statusResponse = try await verify(Data())
+        if Self.isPINBlocked(statusResponse) {
+            throw NFCError.pinVerificationFailed(remainingAttempts: 0)
         }
-        try requireSuccess(verifyResponse)
+        // 9000 on the empty VERIFY means the PIN is already verified in this
+        // session, so there is nothing to send.
+        if !statusResponse.isSuccess {
+            let verifyResponse = try await verify(pinData)
+            if !verifyResponse.isSuccess {
+                throw Self.verificationError(for: verifyResponse)
+            }
+        }
 
         try await selectEF(MyNumberCardConstants.individualNumberEFID)
         let numberResponse = try await readBinary(length: MyNumberCardConstants.individualNumberLength)
@@ -96,11 +111,40 @@ public struct MyNumberCardReader: Sendable {
         try await selectEF(efid)
 
         let response = try await verify(Data())
-        guard response.sw1 == 0x63 else {
+        if Self.isPINBlocked(response) {
+            return 0
+        }
+        guard let remaining = Self.retryCounter(response) else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
+        return remaining
+    }
 
+    /// Retry counter from a `63Cx` status (ISO/IEC 7816-4 §5.6: `63Cx` = counter
+    /// `x`). `6300` and other `63xx` warnings carry no counter.
+    static func retryCounter(_ response: ResponseAPDU) -> Int? {
+        guard response.sw1 == 0x63, response.sw2 & 0xF0 == 0xC0 else { return nil }
         return Int(response.sw2 & 0x0F)
+    }
+
+    /// `63C0` (no tries left), `6983` (authentication method blocked) or
+    /// `6984` (reference data not usable).
+    static func isPINBlocked(_ response: ResponseAPDU) -> Bool {
+        if retryCounter(response) == 0 { return true }
+        return response.sw1 == 0x69 && (response.sw2 == 0x83 || response.sw2 == 0x84)
+    }
+
+    static func verificationError(for response: ResponseAPDU) -> NFCError {
+        if isPINBlocked(response) {
+            return .pinVerificationFailed(remainingAttempts: 0)
+        }
+        if let remaining = retryCounter(response) {
+            return .pinVerificationFailed(remainingAttempts: remaining)
+        }
+        if response.sw1 == 0x63 {
+            return .pinVerificationFailed(remainingAttempts: nil)
+        }
+        return .unexpectedStatusWord(response.sw1, response.sw2)
     }
 
     // MARK: - Private
@@ -171,20 +215,19 @@ public struct MyNumberCardReader: Sendable {
             return parseOfficialIndividualNumberPayload(data)
         }
 
-        let tlvPayload = data.count > 1 ? Data(data.dropFirst()) : data
-
-        if let nodes = try? ASN1Parser.parseTLV(tlvPayload),
-           let firstValue = nodes.first?.value,
-           let candidate = String(data: firstValue, encoding: .utf8),
-           candidate.count == MyNumberCardConstants.individualNumberDigitsCount,
-           candidate.allSatisfy(\.isNumber)
-        {
-            return candidate
+        // Otherwise accept only the same layout with a different trailer
+        // length: header 0x10, then TLV `01 0C` holding 12 ASCII digits. No
+        // free-text search for "any 12 digits", which could return garbage.
+        guard data.count > 1, data.first == MyNumberCardConstants.individualNumberHeaderByte else {
+            return nil
         }
-
-        let fallback = String(decoding: data, as: UTF8.self)
-        if let matchRange = fallback.range(of: #"\d{12}"#, options: .regularExpression) {
-            return String(fallback[matchRange])
+        if let nodes = try? ASN1Parser.parseTLV(Data(data.dropFirst())),
+           let first = nodes.first,
+           first.tag == UInt(MyNumberCardConstants.individualNumberTag),
+           first.value.count == MyNumberCardConstants.individualNumberDigitsCount,
+           first.value.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 })
+        {
+            return String(decoding: first.value, as: UTF8.self)
         }
 
         return nil

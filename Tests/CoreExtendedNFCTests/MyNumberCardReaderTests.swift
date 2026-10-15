@@ -33,6 +33,7 @@ struct MyNumberCardReaderTests {
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT card-info-input-support AP
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT EF 0011
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC3), // VERIFY (empty) -> 3 tries left
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // VERIFY PIN
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT EF 0001
             ResponseAPDU(data: payload, sw1: 0x90, sw2: 0x00), // READ BINARY(17)
@@ -42,13 +43,14 @@ struct MyNumberCardReaderTests {
         let number = try await reader.readIndividualNumber(cardInfoInputSupportPIN: "1234")
 
         #expect(number == "123456789012")
-        #expect(transport.sentAPDUs.count == 5)
+        #expect(transport.sentAPDUs.count == 6)
         #expect(transport.sentAPDUs[0].data == MyNumberCardConstants.cardInfoInputSupportAID)
         #expect(transport.sentAPDUs[1].data == MyNumberCardConstants.cardInfoInputSupportPINEFID)
-        #expect(transport.sentAPDUs[2].ins == 0x20)
-        #expect(transport.sentAPDUs[2].data == Data("1234".utf8))
-        #expect(transport.sentAPDUs[3].data == MyNumberCardConstants.individualNumberEFID)
-        #expect(transport.sentAPDUs[4].le == MyNumberCardConstants.individualNumberLength)
+        #expect(transport.sentAPDUs[2].bytes == Data([0x00, 0x20, 0x00, 0x80]))
+        #expect(transport.sentAPDUs[3].ins == 0x20)
+        #expect(transport.sentAPDUs[3].data == Data("1234".utf8))
+        #expect(transport.sentAPDUs[4].data == MyNumberCardConstants.individualNumberEFID)
+        #expect(transport.sentAPDUs[5].le == MyNumberCardConstants.individualNumberLength)
     }
 
     @Test
@@ -59,6 +61,7 @@ struct MyNumberCardReaderTests {
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC3),
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: payload, sw1: 0x90, sw2: 0x00),
@@ -81,20 +84,156 @@ struct MyNumberCardReaderTests {
     }
 
     @Test
-    func `Read My Number individual number supports legacy ascii payload fallback`() async throws {
+    func `Individual number without the official layout is rejected, not regex-scanned`() async {
+        // Plain ASCII digits (or digits behind a wrong header) are not the EF 0001
+        // layout; a free "any 12 digits" match could return the wrong number.
+        for body in [Data("123456789012".utf8), Data([0x30, 0x01, 0x0C]) + Data("123456789012".utf8)] {
+            let transport = MockTransport()
+            transport.apduResponses = [
+                ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC3),
+                ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: body, sw1: 0x90, sw2: 0x00),
+            ]
+            let error = await #expect(throws: NFCError.self) {
+                _ = try await MyNumberCardReader(transport: transport)
+                    .readIndividualNumber(cardInfoInputSupportPIN: "1234")
+            }
+            guard case .invalidResponse? = error else {
+                Issue.record("expected invalidResponse, got \(String(describing: error))")
+                continue
+            }
+        }
+    }
+
+    @Test
+    func `Individual number with the official TLV and a short trailer is accepted`() async throws {
+        let transport = MockTransport()
+        let payload = Data([0x10, 0x01, 0x0C]) + Data("987654321098".utf8)
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC3),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: payload, sw1: 0x90, sw2: 0x00),
+        ]
+        let number = try await MyNumberCardReader(transport: transport)
+            .readIndividualNumber(cardInfoInputSupportPIN: "1234")
+        #expect(number == "987654321098")
+    }
+
+    @Test(arguments: [(UInt8(0x63), UInt8(0xC0)), (UInt8(0x69), UInt8(0x83)), (UInt8(0x69), UInt8(0x84))])
+    func `Blocked PIN is never transmitted`(sw1: UInt8, sw2: UInt8) async {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT AP
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT EF 0011
+            ResponseAPDU(data: Data(), sw1: sw1, sw2: sw2), // VERIFY (empty)
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // would accept a PIN
+        ]
+
+        let error = await #expect(throws: NFCError.self) {
+            _ = try await MyNumberCardReader(transport: transport)
+                .readIndividualNumber(cardInfoInputSupportPIN: "1234")
+        }
+        #expect(Self.remainingAttempts(error) == .some(0))
+        #expect(transport.sentAPDUs.count == 3)
+        #expect(!transport.sentAPDUs.contains { $0.data == Data("1234".utf8) })
+    }
+
+    @Test
+    func `Wrong PIN reports the remaining attempts from 63Cx`() async {
         let transport = MockTransport()
         transport.apduResponses = [
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data("123456789012".utf8), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC3),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC2),
         ]
+        let error = await #expect(throws: NFCError.self) {
+            _ = try await MyNumberCardReader(transport: transport)
+                .readIndividualNumber(cardInfoInputSupportPIN: "1234")
+        }
+        #expect(Self.remainingAttempts(error) == .some(2))
+    }
 
-        let reader = MyNumberCardReader(transport: transport)
-        let number = try await reader.readIndividualNumber(cardInfoInputSupportPIN: "1234")
+    @Test
+    func `6300 is not read as zero remaining attempts`() async {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0x00), // no counter: PIN may still be sent
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0x00), // wrong PIN, no counter
+        ]
+        let error = await #expect(throws: NFCError.self) {
+            _ = try await MyNumberCardReader(transport: transport)
+                .readIndividualNumber(cardInfoInputSupportPIN: "1234")
+        }
+        #expect(Self.remainingAttempts(error) == .some(nil))
+        #expect(transport.sentAPDUs.count == 4)
 
-        #expect(number == "123456789012")
+        let lookup = MockTransport()
+        lookup.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0x00),
+        ]
+        let lookupError = await #expect(throws: NFCError.self) {
+            _ = try await MyNumberCardReader(transport: lookup)
+                .lookupRemainingPINAttempts(for: .cardInfoInputSupport)
+        }
+        guard case .unexpectedStatusWord(0x63, 0x00)? = lookupError else {
+            Issue.record("expected unexpectedStatusWord 6300, got \(String(describing: lookupError))")
+            return
+        }
+    }
+
+    @Test
+    func `Duplicate requested items send VERIFY only once`() async throws {
+        let transport = MockTransport()
+        let payload = Data([0x10, 0x01, 0x0C]) + Data("123456789012".utf8) + Data([0x00, 0x00])
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x63, sw2: 0xC3),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: payload, sw1: 0x90, sw2: 0x00),
+        ]
+        let result = try await MyNumberCardReader(transport: transport).read(
+            items: [.individualNumber, .individualNumber],
+            cardInfoInputSupportPIN: "1234"
+        )
+        #expect(result.individualNumber == "123456789012")
+        #expect(transport.sentAPDUs.filter { $0.data == Data("1234".utf8) }.count == 1)
+        #expect(transport.sentAPDUs.count == 6)
+    }
+
+    @Test
+    func `PIN error descriptions distinguish blocked, counted and unknown`() {
+        let blocked = NFCError.pinVerificationFailed(remainingAttempts: 0).errorDescription
+        let counted = NFCError.pinVerificationFailed(remainingAttempts: 2).errorDescription
+        let unknown = NFCError.pinVerificationFailed(remainingAttempts: nil).errorDescription
+        #expect(blocked != nil && counted != nil && unknown != nil)
+        #expect(Set([blocked, counted, unknown]).count == 3)
+        #expect(counted?.contains("2") == true)
+    }
+
+    @Test
+    func `Lookup reports zero attempts for a blocked PIN`() async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x83),
+        ]
+        let remaining = try await MyNumberCardReader(transport: transport)
+            .lookupRemainingPINAttempts(for: .cardInfoInputSupport)
+        #expect(remaining == 0)
     }
 
     @Test
@@ -166,5 +305,11 @@ struct MyNumberCardReaderTests {
         #expect(dump.files[0].identifier == MyNumberCardConstants.jpkiTokenEFID)
         #expect(dump.facts.contains(where: { $0.key == "JPKI Token" }))
         #expect(dump.capabilities.contains(.authenticationRequired))
+    }
+
+    /// `.some(count)` for `.pinVerificationFailed(count)`, `nil` for any other error.
+    private static func remainingAttempts(_ error: NFCError?) -> Int?? {
+        guard case let .pinVerificationFailed(remaining)? = error else { return nil }
+        return .some(remaining)
     }
 }
