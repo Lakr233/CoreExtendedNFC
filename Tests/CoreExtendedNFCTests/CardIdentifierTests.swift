@@ -82,3 +82,31 @@ struct CardIdentifierTests {
         }
     }
 }
+
+/// ATQA byte-order convention: AN10833 notation (MSB first, `00 44`), with an explicit
+/// converter for ISO/IEC 14443-3 transmission order (LSB first, `44 00`).
+struct CardIdentifierATQAOrderTests {
+    @Test
+    func `16-bit ATQA values match AN10833 table`() {
+        #expect(CardIdentifier.identify(atqaValue: 0x0044, sak: 0x00) == .mifareUltralight)
+        #expect(CardIdentifier.identify(atqaValue: 0x0004, sak: 0x08) == .mifareClassic1K)
+        #expect(CardIdentifier.identify(atqaValue: 0x0002, sak: 0x18) == .mifareClassic4K)
+        #expect(CardIdentifier.identify(atqaValue: 0x0344, sak: 0x20) == .mifareDesfire)
+    }
+
+    @Test
+    func `Wire-order ATQA converts to the AN10833 value`() {
+        #expect(CardIdentifier.atqaValue(wireOrder: Data([0x44, 0x00])) == 0x0044)
+        #expect(CardIdentifier.atqaValue(wireOrder: Data([0x44, 0x03])) == 0x0344)
+        #expect(CardIdentifier.atqaValue(wireOrder: Data([0x44])) == nil)
+        let sliced = Data([0xFF, 0x44, 0x03]).dropFirst()
+        #expect(CardIdentifier.atqaValue(wireOrder: sliced) == 0x0344)
+    }
+
+    @Test
+    func `Data and value forms agree`() {
+        #expect(CardIdentifier.identify(atqa: Data([0x03, 0x44]), sak: 0x20)
+            == CardIdentifier.identify(atqaValue: 0x0344, sak: 0x20))
+        #expect(CardIdentifier.identify(atqaValue: 0x1234, sak: 0xAB) == .unknown(atqa: Data([0x12, 0x34]), sak: 0xAB))
+    }
+}

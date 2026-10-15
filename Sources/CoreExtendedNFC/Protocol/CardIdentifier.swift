@@ -2,13 +2,37 @@ import Foundation
 
 /// Identifies card type from ATQA and SAK bytes.
 /// Ported from libnfc target-subr.c lookup tables.
+///
+/// ## ATQA byte order
+/// ISO/IEC 14443-3 transmits ATQA least-significant byte first (an NTAG answers
+/// `44 00` on the air), while NXP AN10833 and libnfc write the value as a 16-bit
+/// number (`0x0044`). This library's convention, for ``identify(atqa:sak:)`` and for
+/// `CardInfo.atqa`, is the AN10833 notation: most-significant byte first, so an NTAG
+/// is `Data([0x00, 0x44])`. Convert wire-order bytes with ``atqaValue(wireOrder:)``.
 public enum CardIdentifier {
-    /// Identify a card from its ATQA (2 bytes) and SAK (1 byte).
+    /// Identify a card from its ATQA (2 bytes, most-significant byte first as written
+    /// in AN10833, e.g. `00 44`) and SAK (1 byte).
     /// Note: Ultralight and NTAG share the same ATQA/SAK — use GET_VERSION (0x60) to distinguish.
     public static func identify(atqa: Data, sak: UInt8) -> CardType {
         guard atqa.count >= 2 else { return .unknown(atqa: atqa, sak: sak) }
 
         let atqaValue = UInt16(atqa[atqa.startIndex]) << 8 | UInt16(atqa[atqa.startIndex + 1])
+        return identify(atqaValue: atqaValue, sak: sak, atqaBytes: atqa)
+    }
+
+    /// Identify a card from its ATQA as a 16-bit value (e.g. `0x0044`) and SAK.
+    public static func identify(atqaValue: UInt16, sak: UInt8) -> CardType {
+        identify(atqaValue: atqaValue, sak: sak, atqaBytes: Data([UInt8(atqaValue >> 8), UInt8(atqaValue & 0xFF)]))
+    }
+
+    /// The 16-bit ATQA value from the two bytes in ISO/IEC 14443-3 transmission order
+    /// (least-significant byte first, e.g. `44 00` → `0x0044`). `nil` unless exactly 2 bytes.
+    public static func atqaValue(wireOrder bytes: Data) -> UInt16? {
+        guard bytes.count == 2 else { return nil }
+        return UInt16(bytes[bytes.startIndex + 1]) << 8 | UInt16(bytes[bytes.startIndex])
+    }
+
+    private static func identify(atqaValue: UInt16, sak: UInt8, atqaBytes atqa: Data) -> CardType {
 
         // Match the most specific ATQA+SAK combinations first.
         // Reference: NXP AN10833 "MIFARE Type Identification Procedure"

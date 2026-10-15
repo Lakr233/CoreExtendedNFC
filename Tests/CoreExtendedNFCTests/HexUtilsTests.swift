@@ -126,3 +126,31 @@ struct ParityTests {
         #expect(result[2] == 1) // 8 bits → parity 1
     }
 }
+
+struct HexUtilsHardeningTests {
+    @Test
+    func `hexDumpFormatted works on sliced Data`() {
+        #expect(Data([0, 1, 2, 3]).dropFirst(2).hexDumpFormatted == "0000: 02 03")
+        let sliced = Data(0 ..< 20).dropFirst(3) // bytes 03…13
+        #expect(sliced.hexDumpFormatted == "0000: 03 04 05 06 07 08 09 0A\n0008: 0B 0C 0D 0E 0F 10 11 12\n0010: 13")
+    }
+
+    @Test
+    func `Hex string rejects sign characters`() {
+        #expect(Data(hexString: "+1-0") == nil)
+        #expect(Data(hexString: "+1") == nil)
+        #expect(Data(hexString: "-1") == nil)
+        #expect(Data(hexString: "0x0A") == nil)
+    }
+
+    @Test
+    func `Hex string ignores all whitespace`() {
+        #expect(Data(hexString: "0A\t1B\n2c ") == Data([0x0A, 0x1B, 0x2C]))
+        #expect(Data(hexString: "") == Data())
+    }
+
+    @Test
+    func `Hex string rejects non-ASCII digits`() {
+        #expect(Data(hexString: "０１") == nil) // full-width digits
+    }
+}

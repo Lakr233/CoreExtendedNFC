@@ -119,14 +119,13 @@ public extension CommandAPDU {
         )
     }
 
-    /// READ BINARY with a 2-byte offset encoded in `P1 || P2`.
+    /// READ BINARY of up to `length` bytes (clamped to `1 ... 255`; `0` or less asks for 256).
+    ///
+    /// Offsets up to `0x7FFF` are encoded in `P1 || P2` with INS `B0`. Larger offsets
+    /// (DG2/DG3 files beyond 32 KB) use INS `B1` with offset DO `54`, per ISO/IEC 7816-4
+    /// §11.2.3; unwrap the reply with ``ResponseAPDU/binaryData(for:)``, and advance by
+    /// the number of content bytes actually returned. Negative offsets are treated as `0`.
     static func readBinaryChunk(offset: Int, length: Int) -> CommandAPDU {
-        CommandAPDU(
-            cla: 0x00,
-            ins: 0xB0,
-            p1: UInt8((offset >> 8) & 0x7F),
-            p2: UInt8(offset & 0xFF),
-            le: UInt8(min(length, 0xFF))
-        )
+        binaryRead(offset: offset, expectedLength: length <= 0 ? 256 : min(length, 0xFF))
     }
 }

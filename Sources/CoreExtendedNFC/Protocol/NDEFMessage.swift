@@ -24,8 +24,32 @@ public struct NDEFMessage: Sendable, Equatable {
         records = try NDEFRecord.parseMessage(data)
     }
 
+    /// Serialised message bytes (NDEF 1.0 §3). Never traps: a type or ID longer than
+    /// 255 bytes cannot be encoded and is truncated to 255 bytes here. Use
+    /// ``validatedData()`` before writing to a tag to reject such records instead.
     public var data: Data {
         NDEFRecord.serializeMessage(records)
+    }
+
+    /// Serialised message bytes, throwing ``NFCError/unsupportedOperation(_:)`` when a
+    /// record cannot be encoded (type or ID longer than 255 bytes, payload longer than
+    /// 2³² − 1 bytes, or no records at all).
+    public func validatedData() throws -> Data {
+        guard !records.isEmpty else {
+            throw NFCError.unsupportedOperation("An NDEF message needs at least one record")
+        }
+        for record in records {
+            guard record.type.count <= 0xFF else {
+                throw NFCError.unsupportedOperation("NDEF record type is \(record.type.count) bytes; the limit is 255")
+            }
+            guard record.identifier.count <= 0xFF else {
+                throw NFCError.unsupportedOperation("NDEF record ID is \(record.identifier.count) bytes; the limit is 255")
+            }
+            guard UInt64(record.payload.count) <= UInt64(UInt32.max) else {
+                throw NFCError.unsupportedOperation("NDEF record payload is too large")
+            }
+        }
+        return data
     }
 
     public static func text(_ text: String, languageCode: String = "en") -> NDEFMessage {
@@ -132,8 +156,10 @@ public struct NDEFRecord: Sendable, Equatable {
         }
     }
 
+    /// Well-known Text record (RTD-Text 1.0), UTF-8 encoded. The status byte has six bits
+    /// for the language-code length, so codes longer than 63 bytes are truncated.
     public static func text(_ text: String, languageCode: String = "en") -> NDEFRecord {
-        let language = Data(languageCode.utf8)
+        let language = Data(Data(languageCode.utf8).prefix(0x3F))
         let encodedText = Data(text.utf8)
         let status = UInt8(language.count & 0x3F)
         return NDEFRecord(
@@ -172,11 +198,15 @@ public struct NDEFRecord: Sendable, Equatable {
         )
     }
 
+    /// Parse an NDEF message (NDEF 1.0 §3). Chunked payloads (§2.3.3) are reassembled
+    /// into one record carrying the initial chunk's TNF, type and ID.
     static func parseMessage(_ data: Data) throws -> [NDEFRecord] {
+        let data = Data(data) // Rebase so integer offsets index from zero.
         var records: [NDEFRecord] = []
         var offset = 0
         var sawMessageBegin = false
         var sawMessageEnd = false
+        var pendingChunk: NDEFRecord?
 
         while offset < data.count {
             let header = data[offset]
@@ -189,9 +219,6 @@ public struct NDEFRecord: Sendable, Equatable {
             let idLengthPresent = (header & 0x08) != 0
             let tnfValue = header & 0x07
 
-            guard !chunkFlag else {
-                throw NFCError.unsupportedOperation("Chunked NDEF records are not supported")
-            }
             guard let tnf = NDEFTypeNameFormat(rawValue: tnfValue) else {
                 throw NFCError.invalidResponse(Data([tnfValue]))
             }
@@ -228,7 +255,7 @@ public struct NDEFRecord: Sendable, Equatable {
                 identifierLength = 0
             }
 
-            guard offset + typeLength + identifierLength + payloadLength <= data.count else {
+            guard typeLength + identifierLength + payloadLength <= data.count - offset else {
                 throw NFCError.invalidResponse(data)
             }
 
@@ -242,21 +269,52 @@ public struct NDEFRecord: Sendable, Equatable {
             sawMessageBegin = sawMessageBegin || messageBegin
             sawMessageEnd = sawMessageEnd || messageEnd
 
-            records.append(
-                NDEFRecord(
+            // A non-terminating chunk must not end the message (§2.3.3).
+            guard !(chunkFlag && messageEnd) else {
+                throw NFCError.invalidResponse(data)
+            }
+
+            if let initial = pendingChunk {
+                // Middle or terminating chunk: TNF "unchanged", no type, no ID (§2.3.3).
+                guard tnf == .unchanged, typeLength == 0, !idLengthPresent, !messageBegin else {
+                    throw NFCError.invalidResponse(data)
+                }
+                let combined = NDEFRecord(
+                    typeNameFormat: initial.typeNameFormat,
+                    type: initial.type,
+                    identifier: initial.identifier,
+                    payload: initial.payload + payload
+                )
+                if chunkFlag {
+                    pendingChunk = combined
+                } else {
+                    pendingChunk = nil
+                    records.append(combined)
+                }
+            } else {
+                // TNF "unchanged" is only valid inside a chunk sequence (§3.2.6).
+                guard tnf != .unchanged else {
+                    throw NFCError.invalidResponse(data)
+                }
+                let record = NDEFRecord(
                     typeNameFormat: tnf,
                     type: type,
                     identifier: identifier,
                     payload: payload
                 )
-            )
+                if chunkFlag {
+                    pendingChunk = record
+                } else {
+                    records.append(record)
+                }
+            }
 
             if messageEnd {
                 break
             }
         }
 
-        guard sawMessageBegin, sawMessageEnd, !records.isEmpty else {
+        guard pendingChunk == nil, sawMessageBegin, sawMessageEnd, !records.isEmpty else {
             throw NFCError.invalidResponse(data)
         }
 
@@ -268,8 +326,12 @@ public struct NDEFRecord: Sendable, Equatable {
             let (index, record) = pair
             let messageBegin = index == 0
             let messageEnd = index == records.count - 1
-            let shortRecord = record.payload.count < 256
-            let hasIdentifier = !record.identifier.isEmpty
+            // Field widths are fixed; longer values cannot be encoded (see `validatedData()`).
+            let type = record.type.prefix(0xFF)
+            let identifier = record.identifier.prefix(0xFF)
+            let payload = record.payload.prefix(Int(UInt32.max))
+            let shortRecord = payload.count < 256
+            let hasIdentifier = !identifier.isEmpty
 
             var header = record.typeNameFormat.rawValue
             if messageBegin { header |= 0x80 }
@@ -278,11 +340,11 @@ public struct NDEFRecord: Sendable, Equatable {
             if hasIdentifier { header |= 0x08 }
 
             result.append(header)
-            result.append(UInt8(record.type.count))
+            result.append(UInt8(type.count))
             if shortRecord {
-                result.append(UInt8(record.payload.count))
+                result.append(UInt8(payload.count))
             } else {
-                let length = UInt32(record.payload.count)
+                let length = UInt32(payload.count)
                 result.append(contentsOf: [
                     UInt8((length >> 24) & 0xFF),
                     UInt8((length >> 16) & 0xFF),
@@ -291,13 +353,13 @@ public struct NDEFRecord: Sendable, Equatable {
                 ])
             }
             if hasIdentifier {
-                result.append(UInt8(record.identifier.count))
+                result.append(UInt8(identifier.count))
             }
-            result.append(record.type)
+            result.append(type)
             if hasIdentifier {
-                result.append(record.identifier)
+                result.append(identifier)
             }
-            result.append(record.payload)
+            result.append(payload)
         }
     }
 
@@ -311,12 +373,23 @@ public struct NDEFRecord: Sendable, Equatable {
             return .unknown(data: payload)
         }
 
-        let languageData = Data(payload[1 ..< 1 + languageLength])
+        let languageData = Data(payload.dropFirst().prefix(languageLength))
         let textData = Data(payload.dropFirst(1 + languageLength))
         let languageCode = String(data: languageData, encoding: .utf8) ?? "und"
-        let encoding: String.Encoding = usesUTF16 ? .utf16 : .utf8
-        let text = String(data: textData, encoding: encoding) ?? textData.hexString
+        let text = (usesUTF16 ? decodeUTF16Text(textData) : String(data: textData, encoding: .utf8))
+            ?? textData.hexString
         return .text(languageCode: languageCode, text: text)
+    }
+
+    /// RTD-Text 1.0 §3.4: UTF-16 text may start with a BOM; without one it is big-endian.
+    private static func decodeUTF16Text(_ textData: Data) -> String? {
+        if textData.starts(with: [0xFE, 0xFF]) {
+            return String(data: textData.dropFirst(2), encoding: .utf16BigEndian)
+        }
+        if textData.starts(with: [0xFF, 0xFE]) {
+            return String(data: textData.dropFirst(2), encoding: .utf16LittleEndian)
+        }
+        return String(data: textData, encoding: .utf16BigEndian)
     }
 
     private static func parseURIPayload(_ payload: Data) -> Payload {
@@ -324,7 +397,9 @@ public struct NDEFRecord: Sendable, Equatable {
             return .unknown(data: payload)
         }
         let suffix = String(data: payload.dropFirst(), encoding: .utf8) ?? payload.dropFirst().hexString
-        let prefix = uriPrefixMap[Int(prefixCode)]
+        // URI RTD 1.0 §3.2.2: codes 0x24–0xFF are RFU and are treated as 0x00 (no prefix).
+        let index = Int(prefixCode)
+        let prefix = index < uriPrefixMap.count ? uriPrefixMap[index] : ""
         return .uri(prefix + suffix)
     }
 

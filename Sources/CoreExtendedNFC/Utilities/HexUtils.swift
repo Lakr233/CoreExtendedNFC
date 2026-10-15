@@ -11,34 +11,46 @@ public extension Data {
         map { String(format: "%02X", $0) }.joined(separator: " ")
     }
 
-    /// Multi-line hex dump with offsets:
+    /// Multi-line hex dump with offsets counted from the first byte:
     /// 0000: 0A 1B 2C 3D 4E 5F 60 71
     var hexDumpFormatted: String {
         var lines: [String] = []
         for offset in stride(from: 0, to: count, by: 8) {
-            let end = Swift.min(offset + 8, count)
-            let slice = self[offset ..< end]
-            let hex = slice.map { String(format: "%02X", $0) }.joined(separator: " ")
-            lines.append(String(format: "%04X: %@", offset, hex))
+            let lower = index(startIndex, offsetBy: offset)
+            let upper = index(lower, offsetBy: Swift.min(8, count - offset))
+            let hex = self[lower ..< upper].map { String(format: "%02X", $0) }.joined(separator: " ")
+            lines.append(String(format: "%04X: ", offset) + hex)
         }
         return lines.joined(separator: "\n")
     }
 
-    /// Initialize from hex string. Returns nil if the string is not valid hex.
+    /// Initialize from a hex string such as `"0A1B2C"` or `"0A 1B\n2C"`.
+    /// Whitespace is ignored; any other non-hex character (including `+`, `-`
+    /// or a `0x` prefix) or an odd number of digits returns `nil`.
     init?(hexString: String) {
-        let cleaned = hexString.replacingOccurrences(of: " ", with: "")
-        guard cleaned.count.isMultiple(of: 2) else { return nil }
+        var data = Data(capacity: hexString.utf8.count / 2)
+        var highNibble: UInt8?
 
-        var data = Data(capacity: cleaned.count / 2)
-        var index = cleaned.startIndex
-        while index < cleaned.endIndex {
-            let nextIndex = cleaned.index(index, offsetBy: 2)
-            guard let byte = UInt8(cleaned[index ..< nextIndex], radix: 16) else {
-                return nil
+        for scalar in hexString.unicodeScalars {
+            if scalar.properties.isWhitespace {
+                continue
             }
-            data.append(byte)
-            index = nextIndex
+            let nibble: UInt8
+            switch scalar.value {
+            case 0x30 ... 0x39: nibble = UInt8(scalar.value - 0x30) // 0-9
+            case 0x41 ... 0x46: nibble = UInt8(scalar.value - 0x41 + 10) // A-F
+            case 0x61 ... 0x66: nibble = UInt8(scalar.value - 0x61 + 10) // a-f
+            default: return nil
+            }
+            if let high = highNibble {
+                data.append(high << 4 | nibble)
+                highNibble = nil
+            } else {
+                highNibble = nibble
+            }
         }
+
+        guard highNibble == nil else { return nil }
         self = data
     }
 }
