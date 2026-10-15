@@ -7,6 +7,8 @@ import Foundation
 ///   same ID in different applications stay distinct.
 /// - Applications or files that refuse access (91 AE / 91 9D / 91 40) are
 ///   skipped and counted instead of aborting the whole dump.
+/// - Record files with zero records (91 BE on READ_RECORDS) are dumped as
+///   empty files.
 /// - Transaction MAC files (type 0x05) and files whose settings cannot be
 ///   parsed are counted but not read.
 /// - Task cancellation is honoured between applications and files.
@@ -101,7 +103,18 @@ struct DESFireDump: Sendable {
         case .standardData, .backupData:
             return try await commands.readData(fileID: fileID)
         case .linearRecord, .cyclicRecord:
-            return try await commands.readRecords(fileID: fileID)
+            // A record file with no records yet is a valid, empty file. The
+            // PICC answers READ_RECORDS on it with 91 BE (BOUNDARY_ERROR: no
+            // record at the requested offset), so don't ask, and don't abort
+            // if the settings were stale.
+            if settings.currentRecords == 0 {
+                return Data()
+            }
+            do {
+                return try await commands.readRecords(fileID: fileID)
+            } catch NFCError.desfireError(.boundaryError) {
+                return Data()
+            }
         case .valueFile:
             let value = UInt32(bitPattern: try await commands.getValue(fileID: fileID))
             return Data([

@@ -90,6 +90,39 @@ struct DESFireDumpTests {
     }
 
     @Test
+    func `Empty record files are dumped as empty files instead of aborting`() async throws {
+        // READ_RECORDS on a record file with no records answers 91 BE
+        // (BOUNDARY_ERROR). The dump must keep going.
+        let mock = MockTransport()
+        mock.apduResponses = [
+            Self.ok([0x01, 0x00, 0x00]),
+            Self.ok(), // Select
+            Self.ok([0x01, 0x02, 0x03]), // GetFileIDs
+            // Cyclic record file: recSize 16, maxRecords 4, currentRecords 0.
+            Self.ok([0x04, 0x00, 0xEE, 0xEE, 0x10, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            // Linear record file whose settings claim 1 record, but the PICC says 91 BE.
+            Self.ok([0x03, 0x00, 0xEE, 0xEE, 0x10, 0x00, 0x00, 0x04, 0x00, 0x00, 0x01, 0x00, 0x00]),
+            ResponseAPDU(data: Data(), sw1: 0x91, sw2: 0xBE),
+            Self.ok([0x00, 0x00, 0xEE, 0xEE, 0x01, 0x00, 0x00]),
+            Self.ok([0x42]),
+        ]
+
+        let dump = try await CoreExtendedNFC.dumpCard(
+            info: CardInfo(type: .mifareDesfireEV1, uid: mock.identifier),
+            transport: mock
+        )
+
+        #expect(dump.files.map(\.identifier) == [
+            Data([0x01, 0x00, 0x00, 0x01]),
+            Data([0x01, 0x00, 0x00, 0x02]),
+            Data([0x01, 0x00, 0x00, 0x03]),
+        ])
+        #expect(dump.files.map(\.data) == [Data(), Data(), Data([0x42])])
+        // The zero-record file is never read; the stale one is read once.
+        #expect(mock.sentAPDUs.map(\.ins) == [0x6A, 0x5A, 0x6F, 0xF5, 0xF5, 0xBB, 0xF5, 0xBD])
+    }
+
+    @Test
     func `Locked application directory yields an empty dump instead of an error`() async throws {
         let mock = MockTransport()
         mock.apduResponses = [Self.authError]

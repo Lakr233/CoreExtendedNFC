@@ -321,10 +321,13 @@ extension DESFireCommands {
 
         let rndAValue = try validateOrGenerateRandom(rndA, count: 16)
         let challenge = rndAValue + rotateLeft(rndB)
+        // AN12196 §6.6 / AN12343: unlike legacy AuthenticateAES (0xAA), the
+        // EV2First Part 2 command and response are each encrypted with a
+        // zero IV — the IV is NOT chained from E(Kx, RndB).
         let challengeCiphertext = try CryptoUtils.aesEncrypt(
             key: key,
             message: challenge,
-            iv: encryptedRndB
+            iv: Data(count: 16)
         )
         let finalResponse = try await sendAuthenticationContinuation(challengeCiphertext)
 
@@ -335,7 +338,7 @@ extension DESFireCommands {
         let decryptedResponse = try CryptoUtils.aesDecrypt(
             key: key,
             message: finalResponse.data,
-            iv: Data(challengeCiphertext.suffix(16))
+            iv: Data(count: 16)
         )
         guard decryptedResponse.count >= 20 else {
             throw NFCError.invalidResponse(finalResponse.data)

@@ -67,7 +67,14 @@ public struct DESFireFileSettings: Sendable {
             recordSize = UInt32(d[4]) | UInt32(d[5]) << 8 | UInt32(d[6]) << 16
             maxRecords = UInt32(d[7]) | UInt32(d[8]) << 8 | UInt32(d[9]) << 16
             currentRecords = UInt32(d[10]) | UInt32(d[11]) << 8 | UInt32(d[12]) << 16
-            fileSize = (recordSize ?? 0) * (maxRecords ?? 0)
+            // recordSize and maxRecords are 24-bit each, so the product can
+            // exceed UInt32 on a malformed answer; reject instead of trapping.
+            let (total, overflow) = (recordSize ?? 0)
+                .multipliedReportingOverflow(by: maxRecords ?? 0)
+            guard !overflow else {
+                throw NFCError.invalidResponse(data)
+            }
+            fileSize = total
         }
     }
 }

@@ -218,6 +218,15 @@ struct DESFireTests {
         #expect(settings.fileSize == 32)
     }
 
+    @Test
+    func `Record file settings with an overflowing size throw instead of trapping`() {
+        // recordSize 0x010000 * maxRecords 0x010000 = 2^32 does not fit in UInt32.
+        let data = Data([0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
+        #expect(throws: NFCError.self) {
+            _ = try DESFireFileSettings(data: data)
+        }
+    }
+
     // MARK: - Application Operations
 
     @Test
@@ -290,62 +299,61 @@ struct DESFireTests {
     }
 
     @Test
-    func `AuthenticateEV2First derives AES session keys and TI`() async throws {
-        // AN12343 section 10.1 / AN12196 describe the public EV2 flow:
-        // 1. `0x71` starts authentication and the PICC returns `E(Kx, RndB)` (16 bytes).
-        // 2. The PCD answers with `E(Kx, RndA || RndB')`.
-        // 3. The final plaintext is `TI || RndA' || PDcap2 || PCDcap2`.
-        // 4. `SesAuthENCKey` and `SesAuthMACKey` are derived from SV1 / SV2.
-        // Key, RndA and RndB are the AN12196 example values, so the session keys
-        // must equal the AN12196 published SesAuthENCKey / SesAuthMACKey.
-        let key = Data(count: 16)
-        let rndA = try #require(Data(hexString: "13C5DB8A5930439FC3DEF9A4C675360F"))
-        let rndB = try #require(Data(hexString: "B9E2FC789B64BF237CCCAA20EC7E6E48"))
-        let ti = try #require(Data(hexString: "A1B2C3D4"))
-        let pcdCapabilities = try #require(Data(hexString: "010203040506"))
-        let piccCapabilities = try #require(Data(hexString: "0A0B0C0D0E0F"))
-
-        let encryptedRndB = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: rndB,
-            iv: Data(count: 16)
-        )
-        let challengeCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(rndA, Self.rotateLeft(rndB)),
-            iv: encryptedRndB
-        )
-        let responsePlaintext = Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities)
-        let responseCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: responsePlaintext,
-            iv: Data(challengeCiphertext.suffix(16))
-        )
-
+    func `AuthenticateEV2First matches the AN12196 published transcript`() async throws {
+        // NXP AN12196 AuthenticateEV2First example (Kx = 00..00):
+        // 1. `0x71` starts authentication, PICC returns E(Kx, RndB) (16 bytes).
+        // 2. PCD sends E(Kx, RndA || RndB') — encrypted with IV = 0.
+        // 3. PICC returns E(Kx, TI || RndA' || PDcap2 || PCDcap2) — IV = 0.
+        // 4. SesAuthENCKey / SesAuthMACKey are derived from SV1 / SV2.
+        // Every byte below is the AN12196 published value; the mock card does
+        // not reuse any production crypto, so the IV choice is pinned.
         let mock = MockTransport()
-        mock.apduResponses = [
-            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
-            ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
-        ]
+        mock.apduResponses = Self.an12196EV2FirstResponses
 
         let commands = DESFireCommands(transport: mock)
         let session = try await commands.authenticateEV2First(
             keyNo: 0x00,
-            key: key,
-            pcdCapabilities: pcdCapabilities,
-            rndA: rndA
+            key: Data(count: 16),
+            pcdCapabilities: Data(count: 6),
+            rndA: Self.an12196RndA
         )
 
-        #expect(session.scheme == .authenticateEV2First)
-        #expect(session.keyNumber == 0x00)
-        #expect(session.transactionIdentifier == ti)
-        #expect(session.pcdCapabilities == pcdCapabilities)
-        #expect(session.piccCapabilities == piccCapabilities)
-        #expect(session.sessionENCKey == Data(hexString: "1309C877509E5A215007FF0ED19CA564"))
-        #expect(session.sessionMACKey == Data(hexString: "4C6626F5E72EA694202139295C7A7FC7"))
         #expect(mock.sentAPDUs.map(\.ins) == [0x71, 0xAF])
         #expect(mock.sentAPDUs[0].data == Data([0x00, 0x00]))
-        #expect(mock.sentAPDUs[1].data == challengeCiphertext)
+        #expect(
+            mock.sentAPDUs[1].data
+                == Data(hexString: "35C3E05A752E0144BAC0DE51C1F22C56B34408A23D8AEA266CAB947EA8E0118D")
+        )
+        #expect(session.scheme == .authenticateEV2First)
+        #expect(session.keyNumber == 0x00)
+        #expect(session.transactionIdentifier == Data(hexString: "9D00C4DF"))
+        #expect(session.pcdCapabilities == Data(count: 6))
+        #expect(session.piccCapabilities == Data(count: 6))
+        #expect(session.sessionENCKey == Data(hexString: "1309C877509E5A215007FF0ED19CA564"))
+        #expect(session.sessionMACKey == Data(hexString: "4C6626F5E72EA694202139295C7A7FC7"))
+    }
+
+    @Test
+    func `AuthenticateEV2First rejects a Part 2 answer encrypted with a chained IV`() async throws {
+        // Same AN12196 plaintext, but encrypted with IV = last block of the
+        // Part 2 command (the pre-fix behaviour), computed offline with openssl.
+        // A conforming PCD must not accept it: the PICC always uses IV = 0 here.
+        let chainedIVResponse = try #require(Data(
+            hexString: "1A500E438654EDE35BF1D5381C422B8009B8D9AA6875712C5C4F844601482804"
+        ))
+        let mock = MockTransport()
+        mock.apduResponses = [
+            Self.an12196EV2FirstResponses[0],
+            ResponseAPDU(data: chainedIVResponse, sw1: 0x91, sw2: 0x00),
+        ]
+        await #expect(throws: NFCError.self) {
+            _ = try await DESFireCommands(transport: mock).authenticateEV2First(
+                keyNo: 0x00,
+                key: Data(count: 16),
+                pcdCapabilities: Data(count: 6),
+                rndA: Self.an12196RndA
+            )
+        }
     }
 
     @Test
@@ -353,34 +361,15 @@ struct DESFireTests {
         // The ordering assertion here is intentional: authenticate first, then
         // issue the plain-communication file command. That keeps UIKit truthful
         // about current support: authenticated bootstrap, plain read only.
-        let key = try #require(Data(hexString: "000102030405060708090A0B0C0D0E0F"))
-        let rndA = try #require(Data(hexString: "00112233445566778899AABBCCDDEEFF"))
-        let rndB = try #require(Data(hexString: "102132435465768798A9BACBDCEDFE0F"))
-        let ti = try #require(Data(hexString: "A1B2C3D4"))
-        let pcdCapabilities = try #require(Data(hexString: "010203040506"))
-        let piccCapabilities = try #require(Data(hexString: "0A0B0C0D0E0F"))
+        // AN12196 AuthenticateEV2First transcript (hard-coded, IV = 0).
+        let key = Data(count: 16)
+        let rndA = Self.an12196RndA
+        let ti = try #require(Data(hexString: "9D00C4DF"))
+        let pcdCapabilities = Data(count: 6)
         let filePayload = try #require(Data(hexString: "DEADBEEF"))
 
-        let encryptedRndB = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: rndB,
-            iv: Data(count: 16)
-        )
-        let challengeCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(rndA, Self.rotateLeft(rndB)),
-            iv: encryptedRndB
-        )
-        let responseCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities),
-            iv: Data(challengeCiphertext.suffix(16))
-        )
-
         let mock = MockTransport()
-        mock.apduResponses = [
-            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
-            ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
+        mock.apduResponses = Self.an12196EV2FirstResponses + [
             ResponseAPDU(data: filePayload, sw1: 0x91, sw2: 0x00),
         ]
 
@@ -409,34 +398,15 @@ struct DESFireTests {
         // This mirrors the EV2-first transcript from AN12343 section 10.1, then
         // locks the wrapped `READ_RECORDS (0xBB)` request layout we expose as a
         // safe read-only follow-up after authentication.
-        let key = try #require(Data(hexString: "000102030405060708090A0B0C0D0E0F"))
-        let rndA = try #require(Data(hexString: "00112233445566778899AABBCCDDEEFF"))
-        let rndB = try #require(Data(hexString: "102132435465768798A9BACBDCEDFE0F"))
-        let ti = try #require(Data(hexString: "A1B2C3D4"))
-        let pcdCapabilities = try #require(Data(hexString: "010203040506"))
-        let piccCapabilities = try #require(Data(hexString: "0A0B0C0D0E0F"))
+        // AN12196 AuthenticateEV2First transcript (hard-coded, IV = 0).
+        let key = Data(count: 16)
+        let rndA = Self.an12196RndA
+        let ti = try #require(Data(hexString: "9D00C4DF"))
+        let pcdCapabilities = Data(count: 6)
         let recordPayload = try #require(Data(hexString: "10203040"))
 
-        let encryptedRndB = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: rndB,
-            iv: Data(count: 16)
-        )
-        let challengeCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(rndA, Self.rotateLeft(rndB)),
-            iv: encryptedRndB
-        )
-        let responseCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities),
-            iv: Data(challengeCiphertext.suffix(16))
-        )
-
         let mock = MockTransport()
-        mock.apduResponses = [
-            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
-            ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
+        mock.apduResponses = Self.an12196EV2FirstResponses + [
             ResponseAPDU(data: recordPayload, sw1: 0x91, sw2: 0x00),
         ]
 
@@ -590,34 +560,15 @@ struct DESFireTests {
     func `Authenticated EV2 value read performs auth before GET_VALUE`() async throws {
         // Like the other EV2 tests, this anchors the auth transcript to AN12343
         // and regression-locks the follow-up wrapped `GET_VALUE (0x6C)` request.
-        let key = try #require(Data(hexString: "000102030405060708090A0B0C0D0E0F"))
-        let rndA = try #require(Data(hexString: "00112233445566778899AABBCCDDEEFF"))
-        let rndB = try #require(Data(hexString: "102132435465768798A9BACBDCEDFE0F"))
-        let ti = try #require(Data(hexString: "A1B2C3D4"))
-        let pcdCapabilities = try #require(Data(hexString: "010203040506"))
-        let piccCapabilities = try #require(Data(hexString: "0A0B0C0D0E0F"))
+        // AN12196 AuthenticateEV2First transcript (hard-coded, IV = 0).
+        let key = Data(count: 16)
+        let rndA = Self.an12196RndA
+        let ti = try #require(Data(hexString: "9D00C4DF"))
+        let pcdCapabilities = Data(count: 6)
         let valueBytes = Data([0xEF, 0xCD, 0xAB, 0x89])
 
-        let encryptedRndB = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: rndB,
-            iv: Data(count: 16)
-        )
-        let challengeCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(rndA, Self.rotateLeft(rndB)),
-            iv: encryptedRndB
-        )
-        let responseCiphertext = try CryptoUtils.aesEncrypt(
-            key: key,
-            message: Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities),
-            iv: Data(challengeCiphertext.suffix(16))
-        )
-
         let mock = MockTransport()
-        mock.apduResponses = [
-            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
-            ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
+        mock.apduResponses = Self.an12196EV2FirstResponses + [
             ResponseAPDU(data: valueBytes, sw1: 0x91, sw2: 0x00),
         ]
 
@@ -635,6 +586,27 @@ struct DESFireTests {
         #expect(mock.sentAPDUs.map(\.ins) == [0x71, 0xAF, 0x6C])
         #expect(mock.sentAPDUs[2].data == Data([0x08]))
     }
+
+    /// AN12196 AuthenticateEV2First example RndA.
+    private static let an12196RndA = Data([
+        0x13, 0xC5, 0xDB, 0x8A, 0x59, 0x30, 0x43, 0x9F,
+        0xC3, 0xDE, 0xF9, 0xA4, 0xC6, 0x75, 0x36, 0x0F,
+    ])
+
+    /// AN12196 AuthenticateEV2First PICC answers, Kx = 00..00:
+    /// Part 1 E(Kx, RndB), Part 2 E(Kx, TI ‖ RndA' ‖ PDcap2 ‖ PCDcap2) with IV = 0.
+    private static let an12196EV2FirstResponses: [ResponseAPDU] = [
+        ResponseAPDU(
+            data: Data(hexString: "A04C124213C186F22399D33AC2A30215")!,
+            sw1: 0x91,
+            sw2: 0xAF
+        ),
+        ResponseAPDU(
+            data: Data(hexString: "3FA64DB5446D1F34CD6EA311167F5E4985B89690C04A05F17FA7AB2F08120663")!,
+            sw1: 0x91,
+            sw2: 0x00
+        ),
+    ]
 
     private static func rotateLeft(_ data: Data) -> Data {
         guard let first = data.first else { return Data() }
