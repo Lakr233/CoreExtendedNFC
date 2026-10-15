@@ -24,8 +24,10 @@ public struct DESFireVersionInfo: Sendable {
     public let productionYear: UInt8
 
     public init(data: Data) throws {
-        // GET_VERSION returns 28 bytes (7 HW + 7 SW + 14 UID/batch)
-        guard data.count == 28 else {
+        // GET_VERSION returns at least 28 bytes (7 HW + 7 SW + 14 UID/batch).
+        // Some newer parts (e.g. NTAG 424 DNA with a FabKey ID, EV3 variants)
+        // append extra bytes to the third frame; those are ignored here.
+        guard data.count >= 28 else {
             throw NFCError.invalidResponse(data)
         }
         let d = Array(data)
@@ -52,12 +54,16 @@ public struct DESFireVersionInfo: Sendable {
     }
 
     /// Determine DESFire variant from version info.
+    ///
+    /// Hardware major versions per the NXP datasheets: MF3ICD40 = 0x00,
+    /// EV1 (MF3ICDx1) = 0x01, EV2 (MF3DHx2) = 0x12 (0x22 EV2 XL, 0x42 later EV2
+    /// variants), EV3 (MF3DHx3) = 0x33. Same mapping as proxmark3 `getCardType`.
     public var cardType: CardType {
         switch hardwareMajorVersion {
-        case 0: .mifareDesfire
-        case 1: .mifareDesfireEV1
-        case 2: .mifareDesfireEV2
-        case 3: .mifareDesfireEV3
+        case 0x00: .mifareDesfire
+        case 0x01: .mifareDesfireEV1
+        case 0x12, 0x22, 0x42: .mifareDesfireEV2
+        case 0x33: .mifareDesfireEV3
         default: .mifareDesfire
         }
     }
@@ -77,11 +83,8 @@ public extension DESFireCommands {
             throw NFCError.invalidResponse(data)
         }
 
-        var aids: [Data] = []
-        for i in stride(from: 0, to: data.count, by: 3) {
-            aids.append(Data(data[i ..< i + 3]))
-        }
-        return aids
+        let bytes = [UInt8](data)
+        return stride(from: 0, to: bytes.count, by: 3).map { Data(bytes[$0 ..< $0 + 3]) }
     }
 
     /// SELECT_APPLICATION: Select an application by 3-byte AID.

@@ -7,9 +7,12 @@
 //   https://www.nxp.com/docs/en/application-note/AN11004.pdf
 // - NXP AN12343, "MIFARE DESFire Light Features and Hints", section 10.1,
 //   documents the AuthenticateEV2First transcript shape, the returned
-//   `TI || RndA' || PCDcap2 || PDcap2` plaintext, and SV1/SV2 session-key
+//   `TI || RndA' || PDcap2 || PCDcap2` plaintext, and SV1/SV2 session-key
 //   derivation for `SesAuthENCKey` / `SesAuthMACKey`.
 //   https://www.nxp.com/docs/en/application-note/AN12343.pdf
+// - NXP AN12196, "NTAG 424 DNA and NTAG 424 DNA TagTamper features and hints",
+//   AuthenticateEV2First example: Kx = 0, RndA = 13C5DB8A..., RndB = B9E2FC78...,
+//   SesAuthENCKey = 1309C877..., SesAuthMACKey = 4C6626F5... (hard-coded below).
 //
 // Public NXP material does not publish the full legacy EV1 AuthenticateISO
 // 2K3DES byte transcript with session-key concatenation. Those tests therefore
@@ -128,11 +131,80 @@ struct DESFireTests {
     }
 
     @Test
-    func `DESFire EV2 detection`() throws {
+    func `DESFire EV2 and EV3 detection uses datasheet HW major versions`() throws {
+        // NXP MF3D(H)x2 GetVersion: HWMajorVersion 0x12 (EV2); MF3D(H)x3: 0x33 (EV3).
         var data = Data(repeating: 0x00, count: 28)
-        data[3] = 0x02 // HW major version 2 = EV2
-        let info = try DESFireVersionInfo(data: data)
-        #expect(info.cardType == .mifareDesfireEV2)
+        data[0] = 0x04
+        data[3] = 0x12
+        #expect(try DESFireVersionInfo(data: data).cardType == .mifareDesfireEV2)
+        data[3] = 0x22 // EV2 XL
+        #expect(try DESFireVersionInfo(data: data).cardType == .mifareDesfireEV2)
+        data[3] = 0x33
+        #expect(try DESFireVersionInfo(data: data).cardType == .mifareDesfireEV3)
+        data[3] = 0x00
+        #expect(try DESFireVersionInfo(data: data).cardType == .mifareDesfire)
+    }
+
+    @Test
+    func `EV2 session keys match AN12196 vector`() throws {
+        // NXP AN12196 AuthenticateEV2First example, Kx = 00..00.
+        let keys = try DESFireCommands.deriveEV2SessionKeys(
+            staticKey: Data(count: 16),
+            rndA: #require(Data(hexString: "13C5DB8A5930439FC3DEF9A4C675360F")),
+            rndB: #require(Data(hexString: "B9E2FC789B64BF237CCCAA20EC7E6E48"))
+        )
+        #expect(keys.sessionENCKey == Data(hexString: "1309C877509E5A215007FF0ED19CA564"))
+        #expect(keys.sessionMACKey == Data(hexString: "4C6626F5E72EA694202139295C7A7FC7"))
+    }
+
+    // MARK: - Status Mapping and Chaining Bounds
+
+    @Test
+    func `Non-0x91 status is not mapped to a DESFire status`() async {
+        for (sw1, sw2): (UInt8, UInt8) in [(0x6E, 0x00), (0x6D, 0x00), (0x69, 0x9D)] {
+            let mock = MockTransport()
+            mock.apduResponses = [ResponseAPDU(data: Data(), sw1: sw1, sw2: sw2)]
+            do {
+                _ = try await DESFireCommands(transport: mock).getFileIDs()
+                Issue.record("expected throw")
+            } catch let NFCError.unexpectedStatusWord(gotSW1, gotSW2) {
+                #expect(gotSW1 == sw1)
+                #expect(gotSW2 == sw2)
+            } catch {
+                Issue.record("got \(error)")
+            }
+        }
+    }
+
+    @Test
+    func `Endless AF chaining is bounded`() async {
+        let mock = MockTransport()
+        mock.apduResponses = Array(
+            repeating: ResponseAPDU(data: Data([0x00]), sw1: 0x91, sw2: 0xAF),
+            count: DESFireCommands.maxAdditionalFrames + 10
+        )
+        do {
+            _ = try await DESFireCommands(transport: mock).sendCommand(0xBD, data: Data([0x01, 0, 0, 0, 0, 0, 0]))
+            Issue.record("expected throw")
+        } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
+            #expect(sw1 == 0x91)
+            #expect(sw2 == 0xAF)
+        } catch {
+            Issue.record("got \(error)")
+        }
+        #expect(mock.sentAPDUs.count == DESFireCommands.maxAdditionalFrames + 1)
+    }
+
+    // MARK: - File Settings (Transaction MAC)
+
+    @Test
+    func `Parse Transaction MAC file settings`() throws {
+        // MF3D(H)x2/x3 file type 0x05: FileType, FileOption, AccessRights, TMKeyOption, ...
+        for data in [Data([0x05, 0x00, 0xF0, 0xFF, 0x02, 0x00]), Data([0x05, 0x00, 0xF0, 0xFF, 0x00, 0x00, 0x00])] {
+            let settings = try DESFireFileSettings(data: data)
+            #expect(settings.fileType == .transactionMAC)
+            #expect(settings.accessRights == 0xFFF0)
+        }
     }
 
     // MARK: - File Settings
@@ -219,14 +291,16 @@ struct DESFireTests {
 
     @Test
     func `AuthenticateEV2First derives AES session keys and TI`() async throws {
-        // AN12343 section 10.1 describes the public EV2 flow:
-        // 1. `0x71` starts authentication and the PICC returns `E(Kx, RndB) || PDcap2`.
-        // 2. The PCD answers with `E(Kx, RndA || RndB' || PCDcap2)`.
-        // 3. The final plaintext is `TI || RndA' || PCDcap2 || PDcap2`.
+        // AN12343 section 10.1 / AN12196 describe the public EV2 flow:
+        // 1. `0x71` starts authentication and the PICC returns `E(Kx, RndB)` (16 bytes).
+        // 2. The PCD answers with `E(Kx, RndA || RndB')`.
+        // 3. The final plaintext is `TI || RndA' || PDcap2 || PCDcap2`.
         // 4. `SesAuthENCKey` and `SesAuthMACKey` are derived from SV1 / SV2.
-        let key = try #require(Data(hexString: "000102030405060708090A0B0C0D0E0F"))
-        let rndA = try #require(Data(hexString: "00112233445566778899AABBCCDDEEFF"))
-        let rndB = try #require(Data(hexString: "102132435465768798A9BACBDCEDFE0F"))
+        // Key, RndA and RndB are the AN12196 example values, so the session keys
+        // must equal the AN12196 published SesAuthENCKey / SesAuthMACKey.
+        let key = Data(count: 16)
+        let rndA = try #require(Data(hexString: "13C5DB8A5930439FC3DEF9A4C675360F"))
+        let rndB = try #require(Data(hexString: "B9E2FC789B64BF237CCCAA20EC7E6E48"))
         let ti = try #require(Data(hexString: "A1B2C3D4"))
         let pcdCapabilities = try #require(Data(hexString: "010203040506"))
         let piccCapabilities = try #require(Data(hexString: "0A0B0C0D0E0F"))
@@ -241,17 +315,16 @@ struct DESFireTests {
             message: Self.concat(rndA, Self.rotateLeft(rndB)),
             iv: encryptedRndB
         )
-        let responsePlaintext = Self.concat(ti, Self.rotateLeft(rndA), pcdCapabilities, piccCapabilities)
+        let responsePlaintext = Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities)
         let responseCiphertext = try CryptoUtils.aesEncrypt(
             key: key,
             message: responsePlaintext,
             iv: Data(challengeCiphertext.suffix(16))
         )
-        let expectedKeys = try DESFireCommands.deriveEV2SessionKeys(staticKey: key, rndA: rndA, rndB: rndB)
 
         let mock = MockTransport()
         mock.apduResponses = [
-            ResponseAPDU(data: Self.concat(encryptedRndB, piccCapabilities), sw1: 0x91, sw2: 0xAF),
+            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
         ]
 
@@ -268,8 +341,8 @@ struct DESFireTests {
         #expect(session.transactionIdentifier == ti)
         #expect(session.pcdCapabilities == pcdCapabilities)
         #expect(session.piccCapabilities == piccCapabilities)
-        #expect(session.sessionENCKey == expectedKeys.sessionENCKey)
-        #expect(session.sessionMACKey == expectedKeys.sessionMACKey)
+        #expect(session.sessionENCKey == Data(hexString: "1309C877509E5A215007FF0ED19CA564"))
+        #expect(session.sessionMACKey == Data(hexString: "4C6626F5E72EA694202139295C7A7FC7"))
         #expect(mock.sentAPDUs.map(\.ins) == [0x71, 0xAF])
         #expect(mock.sentAPDUs[0].data == Data([0x00, 0x00]))
         #expect(mock.sentAPDUs[1].data == challengeCiphertext)
@@ -300,13 +373,13 @@ struct DESFireTests {
         )
         let responseCiphertext = try CryptoUtils.aesEncrypt(
             key: key,
-            message: Self.concat(ti, Self.rotateLeft(rndA), pcdCapabilities, piccCapabilities),
+            message: Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities),
             iv: Data(challengeCiphertext.suffix(16))
         )
 
         let mock = MockTransport()
         mock.apduResponses = [
-            ResponseAPDU(data: Self.concat(encryptedRndB, piccCapabilities), sw1: 0x91, sw2: 0xAF),
+            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
             ResponseAPDU(data: filePayload, sw1: 0x91, sw2: 0x00),
         ]
@@ -356,13 +429,13 @@ struct DESFireTests {
         )
         let responseCiphertext = try CryptoUtils.aesEncrypt(
             key: key,
-            message: Self.concat(ti, Self.rotateLeft(rndA), pcdCapabilities, piccCapabilities),
+            message: Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities),
             iv: Data(challengeCiphertext.suffix(16))
         )
 
         let mock = MockTransport()
         mock.apduResponses = [
-            ResponseAPDU(data: Self.concat(encryptedRndB, piccCapabilities), sw1: 0x91, sw2: 0xAF),
+            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
             ResponseAPDU(data: recordPayload, sw1: 0x91, sw2: 0x00),
         ]
@@ -537,13 +610,13 @@ struct DESFireTests {
         )
         let responseCiphertext = try CryptoUtils.aesEncrypt(
             key: key,
-            message: Self.concat(ti, Self.rotateLeft(rndA), pcdCapabilities, piccCapabilities),
+            message: Self.concat(ti, Self.rotateLeft(rndA), piccCapabilities, pcdCapabilities),
             iv: Data(challengeCiphertext.suffix(16))
         )
 
         let mock = MockTransport()
         mock.apduResponses = [
-            ResponseAPDU(data: Self.concat(encryptedRndB, piccCapabilities), sw1: 0x91, sw2: 0xAF),
+            ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: responseCiphertext, sw1: 0x91, sw2: 0x00),
             ResponseAPDU(data: valueBytes, sw1: 0x91, sw2: 0x00),
         ]

@@ -311,8 +311,8 @@ extension DESFireCommands {
             throw NFCError.invalidResponse(startResponse.data)
         }
 
+        // Part 1 returns only E(Kx, RndB); PDcap2 arrives in the Part 2 answer.
         let encryptedRndB = Data(startResponse.data.prefix(16))
-        let piccCapabilities = Data(startResponse.data.dropFirst(16))
         let rndB = try CryptoUtils.aesDecrypt(
             key: key,
             message: encryptedRndB,
@@ -341,11 +341,16 @@ extension DESFireCommands {
             throw NFCError.invalidResponse(finalResponse.data)
         }
 
-        let transactionIdentifier = Data(decryptedResponse.prefix(4))
-        let rotatedRndA = Data(decryptedResponse[4 ..< 20])
+        // Decrypted Part 2 answer (AN12343 §10.1, AN12196):
+        // TI (4) ‖ RndA' (16) ‖ PDcap2 (6) ‖ PCDcap2 (6).
+        let plain = [UInt8](decryptedResponse)
+        let transactionIdentifier = Data(plain[0 ..< 4])
+        let rotatedRndA = Data(plain[4 ..< 20])
         guard rotatedRndA == rotateLeft(rndAValue) else {
             throw NFCError.authenticationFailed
         }
+        let piccCapabilities = plain.count >= 26 ? Data(plain[20 ..< 26]) : Data()
+        let echoedPCDCapabilities = plain.count >= 32 ? Data(plain[26 ..< 32]) : pcdCapabilities
 
         let (sessionENCKey, sessionMACKey) = try Self.deriveEV2SessionKeys(
             staticKey: key,
@@ -360,7 +365,7 @@ extension DESFireCommands {
             sessionMACKey: sessionMACKey,
             transactionIdentifier: transactionIdentifier,
             piccCapabilities: piccCapabilities,
-            pcdCapabilities: pcdCapabilities
+            pcdCapabilities: echoedPCDCapabilities
         )
     }
 
@@ -373,13 +378,15 @@ extension DESFireCommands {
             throw NFCError.cryptoError("EV2 session derivation requires 16-byte AES inputs")
         }
 
-        let sharedTail = descendingSlice(rndA, from: 15, to: 14)
-            + xor(
-                descendingSlice(rndA, from: 13, to: 8),
-                descendingSlice(rndB, from: 15, to: 10)
-            )
-            + descendingSlice(rndB, from: 9, to: 0)
-            + descendingSlice(rndA, from: 7, to: 0)
+        // AN12196 / AN12343: SV1 = A5 5A 00 01 00 80 ‖ RndA[15..14] ‖
+        // (RndA[13..8] ⊕ RndB[15..10]) ‖ RndB[9..0] ‖ RndA[7..0].
+        // NXP numbers bytes MSB-first, so byte 15 is array index 0.
+        let a = [UInt8](rndA)
+        let b = [UInt8](rndB)
+        let sharedTail = Data(a[0 ..< 2])
+            + Data(zip(a[2 ..< 8], b[0 ..< 6]).map { $0 ^ $1 })
+            + Data(b[6 ..< 16])
+            + Data(a[8 ..< 16])
 
         let sv1 = Data([0xA5, 0x5A, 0x00, 0x01, 0x00, 0x80]) + sharedTail
         let sv2 = Data([0x5A, 0xA5, 0x00, 0x01, 0x00, 0x80]) + sharedTail
@@ -431,23 +438,6 @@ extension DESFireCommands {
         return Data(data.dropFirst()) + Data([first])
     }
 
-    private static func descendingSlice(_ data: Data, from upper: Int, to lower: Int) -> Data {
-        precondition(upper >= lower)
-        var result = Data()
-        for index in stride(from: upper, through: lower, by: -1) {
-            result.append(data[index])
-        }
-        return result
-    }
-
-    private static func xor(_ lhs: Data, _ rhs: Data) -> Data {
-        precondition(lhs.count == rhs.count)
-        var result = Data(count: lhs.count)
-        for index in 0 ..< lhs.count {
-            result[index] = lhs[index] ^ rhs[index]
-        }
-        return result
-    }
 }
 
 private extension Data {

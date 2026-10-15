@@ -231,51 +231,8 @@ public enum CoreExtendedNFC {
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
-        let commands = DESFireCommands(transport: transport)
-        var files: [MemoryDump.FileData] = []
-
-        let aids = try await commands.getApplicationIDs()
-        for aid in aids {
-            try await commands.selectApplication(aid)
-            let fileIDs = try await commands.getFileIDs()
-
-            for fileID in fileIDs {
-                do {
-                    let settings = try await commands.getFileSettings(fileID)
-                    let data: Data
-                    switch settings.fileType {
-                    case .standardData, .backupData:
-                        data = try await commands.readData(fileID: fileID)
-                    case .linearRecord, .cyclicRecord:
-                        data = try await commands.readRecords(fileID: fileID)
-                    case .valueFile:
-                        let value = try await commands.getValue(fileID: fileID)
-                        data = withUnsafeBytes(of: value.littleEndian) { Data($0) }
-                    }
-                    files.append(MemoryDump.FileData(fileID: fileID, data: data))
-                } catch let error as NFCError {
-                    // Only skip auth/permission errors — re-throw transport failures
-                    switch error {
-                    case .desfireError(.authenticationError),
-                         .desfireError(.permissionDenied),
-                         .desfireError(.noSuchKey):
-                        continue
-                    default:
-                        throw error
-                    }
-                }
-            }
-        }
-
-        return MemoryDump(
-            cardInfo: info,
-            files: files,
-            facts: [
-                .init(key: "Applications", value: "\(aids.count)"),
-                .init(key: "Accessible Files", value: "\(files.count)"),
-            ],
-            capabilities: files.isEmpty ? [.authenticationRequired, .partiallyReadable] : [.partiallyReadable]
-        )
+        try await DESFireDump(commands: DESFireCommands(transport: transport))
+            .dumpAll(cardInfo: info)
     }
 
     private static func dumpType4(

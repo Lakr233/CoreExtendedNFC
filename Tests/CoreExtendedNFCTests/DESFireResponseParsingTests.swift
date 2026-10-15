@@ -55,8 +55,21 @@ struct DESFireResponseParsingTests {
     }
 
     @Test
-    func `GET_VERSION rejects responses longer than 28 bytes`() throws {
-        let data = Data(repeating: 0x00, count: 29)
+    func `GET_VERSION accepts a trailing FabKey ID byte`() throws {
+        // NTAG 424 DNA / newer DESFire parts may append an optional FabKey ID
+        // byte to the third GetVersion frame, giving 29 bytes in total.
+        var data = Data(repeating: 0x00, count: 29)
+        data[3] = 0x33
+        data[27] = 0x21 // production year
+        data[28] = 0x1F // FabKey ID
+        let info = try DESFireVersionInfo(data: data)
+        #expect(info.productionYear == 0x21)
+        #expect(info.cardType == .mifareDesfireEV3)
+    }
+
+    @Test
+    func `GET_VERSION rejects responses shorter than 28 bytes`() throws {
+        let data = Data(repeating: 0x00, count: 27)
         do {
             _ = try DESFireVersionInfo(data: data)
             #expect(Bool(false), "Expected invalidResponse")

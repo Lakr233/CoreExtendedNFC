@@ -7,6 +7,8 @@ public enum DESFireFileType: UInt8, Sendable {
     case valueFile = 0x02
     case linearRecord = 0x03
     case cyclicRecord = 0x04
+    /// Transaction MAC file (EV2/EV3, MF3D(H)x2/x3). Holds TMC (4) ‖ TMV (8).
+    case transactionMAC = 0x05
 }
 
 /// DESFire file settings parsed from GET_FILE_SETTINGS response.
@@ -20,11 +22,17 @@ public struct DESFireFileSettings: Sendable {
     public let currentRecords: UInt32? // for record files
 
     public init(data: Data) throws {
-        guard data.count >= 7 else {
+        // Common header: FileType ‖ FileOption ‖ AccessRights (2).
+        guard data.count >= 4 else {
             throw NFCError.invalidResponse(data)
         }
         let d = Array(data)
         guard let ft = DESFireFileType(rawValue: d[0]) else {
+            throw NFCError.invalidResponse(data)
+        }
+        // Every type except the Transaction MAC file carries at least a 3-byte
+        // size / record-size field after the header.
+        guard ft == .transactionMAC || data.count >= 7 else {
             throw NFCError.invalidResponse(data)
         }
         fileType = ft
@@ -32,6 +40,14 @@ public struct DESFireFileSettings: Sendable {
         accessRights = UInt16(d[2]) | UInt16(d[3]) << 8
 
         switch fileType {
+        case .transactionMAC:
+            // TMAC settings carry TMKeyOption / key version instead of a size;
+            // the file content is TMC (4 bytes) ‖ TMV (8 bytes).
+            fileSize = 12
+            recordSize = nil
+            maxRecords = nil
+            currentRecords = nil
+
         case .standardData, .backupData:
             fileSize = UInt32(d[4]) | UInt32(d[5]) << 8 | UInt32(d[6]) << 16
             recordSize = nil

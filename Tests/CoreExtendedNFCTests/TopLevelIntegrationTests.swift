@@ -239,7 +239,9 @@ struct TopLevelIntegrationTests {
             responses: [
                 ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
                 ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
-                ResponseAPDU(data: Data([0x04, 0x01, 0x01, 0x02, 0x00, 0x18, 0x05]), sw1: 0x91, sw2: 0xAF),
+                // HW frame: NXP, DESFire, HW major 0x12 = EV2 (MF3D(H)x2 datasheet).
+                ResponseAPDU(data: Data([0x04, 0x01, 0x01, 0x12, 0x00, 0x18, 0x05]), sw1: 0x91, sw2: 0xAF),
+                // SW frame: EV2 software major 0x02.
                 ResponseAPDU(data: Data([0x04, 0x01, 0x01, 0x02, 0x00, 0x18, 0x05]), sw1: 0x91, sw2: 0xAF),
                 ResponseAPDU(
                     data: Data([
