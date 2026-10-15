@@ -1,3 +1,6 @@
+import Foundation
+import Testing
+
 // Japan FeliCa IC transit card test suite.
 //
 // ## References
@@ -6,8 +9,6 @@
 // - History: service 0x090F, up to 20 blocks (cyclic)
 // - Date encoding: 2 bytes BE, year(7) month(4) day(5), base 2000
 @testable import CoreExtendedNFC
-import Foundation
-import Testing
 
 struct JapanICTests {
     // MARK: - Balance Reading
@@ -75,6 +76,7 @@ struct JapanICTests {
 
         let tx = result.transactions[0]
         #expect(tx.type == .trip)
+        #expect(tx.amount == nil)
         #expect(tx.balanceAfter == 500)
         #expect(tx.entryStation == "0123")
         #expect(tx.exitStation == "0456")
@@ -117,12 +119,14 @@ struct JapanICTests {
 
         let first = try #require(result.transactions.first)
         #expect(first.type == .purchase)
+        #expect(first.amount == nil)
         #expect(first.balanceAfter == 27)
         #expect(first.entryStation == "9825")
         #expect(first.exitStation == "DCAD")
 
         let topup = result.transactions[15]
         #expect(topup.type == .topup)
+        #expect(topup.amount == nil)
         #expect(topup.balanceAfter == 5377)
         #expect(topup.entryStation == "8117")
     }

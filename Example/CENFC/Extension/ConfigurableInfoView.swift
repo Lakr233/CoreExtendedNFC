@@ -8,6 +8,7 @@ class ConfigurableInfoView: ConfigurableView {
     }
 
     private var onTapBlock: ((ConfigurableInfoView) -> Void) = { _ in }
+    private var wrappedValueHeight: Constraint?
 
     override init() {
         super.init()
@@ -22,6 +23,7 @@ class ConfigurableInfoView: ConfigurableView {
         verticalStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
         valueLabel.addTarget(self, action: #selector(tapped), for: .touchUpInside)
         valueLabel.snp.makeConstraints {
+            wrappedValueHeight = $0.height.greaterThanOrEqualTo(0).constraint
             $0.top.bottom.equalTo(contentContainer)
             $0.leading.greaterThanOrEqualTo(contentContainer)
             $0.trailing.equalTo(contentContainer)
@@ -31,15 +33,41 @@ class ConfigurableInfoView: ConfigurableView {
         }
     }
 
-    func configure(value: String, isDestructive: Bool = false) {
-        let attrString = NSAttributedString(string: value, attributes: [
-            .foregroundColor: isDestructive ? UIColor.systemRed : UIColor.tintColor,
-            .font: UIFont.systemFont(
-                ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize,
-                weight: .semibold
-            ),
-            .underlineStyle: NSUnderlineStyle.single.rawValue,
-        ])
+    override func layoutSubviews() {
+        if let title = valueLabel.attributedTitle(for: .normal), title.length > 0,
+            let font = title.attribute(.font, at: 0, effectiveRange: nil) as? UIFont,
+            font.pointSize != valueFont.pointSize
+        {
+            let scaled = NSMutableAttributedString(attributedString: title)
+            scaled.addAttribute(.font, value: valueFont, range: NSRange(location: 0, length: scaled.length))
+            valueLabel.setAttributedTitle(scaled, for: .normal)
+        }
+        super.layoutSubviews()
+        valueLabel.layoutIfNeeded()
+        if let label = valueLabel.titleLabel, label.numberOfLines == 0, label.bounds.width > 0 {
+            // UIButton keeps a single-line intrinsic height even when its title wraps.
+            let height = label.sizeThatFits(CGSize(width: label.bounds.width, height: .greatestFiniteMagnitude)).height
+            wrappedValueHeight?.update(offset: ceil(height))
+        }
+    }
+
+    private var valueFont: UIFont {
+        .systemFont(ofSize: UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection).pointSize, weight: .semibold)
+    }
+
+    func configure(value: String, isDestructive: Bool = false, wrapValue: Bool = false) {
+        valueLabel.titleLabel?.numberOfLines = wrapValue ? 0 : 1
+        valueLabel.titleLabel?.lineBreakMode = wrapValue ? .byCharWrapping : .byTruncatingMiddle
+        valueLabel.setContentCompressionResistancePriority(wrapValue ? .defaultHigh : .defaultLow, for: .horizontal)
+        verticalStack.setContentCompressionResistancePriority(wrapValue ? .defaultLow : .required, for: .horizontal)
+        wrappedValueHeight?.update(offset: 0)
+        let attrString = NSAttributedString(
+            string: value,
+            attributes: [
+                .foregroundColor: isDestructive ? UIColor.systemRed : UIColor.tintColor,
+                .font: valueFont,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ])
         valueLabel.setAttributedTitle(attrString, for: .normal)
     }
 
@@ -63,7 +91,7 @@ class ConfigurableInfoView: ConfigurableView {
         valueLabel.menu = .init(children: [
             UIDeferredMenuElement.uncached { completion in
                 completion(menu())
-            },
+            }
         ])
     }
 }

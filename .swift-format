@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "indentation": {
+    "spaces": 4
+  },
+  "lineLength": 180,
+  "spacesAroundRangeFormationOperators": true,
+  "spacesBeforeEndOfLineComments": 1
+}

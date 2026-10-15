@@ -1,7 +1,7 @@
 import ConfigurableKit
 import CoreExtendedNFC
-import SnapKit
 import SPIndicator
+import SnapKit
 import Then
 import UIKit
 
@@ -9,6 +9,12 @@ class TransitBalanceViewController: StackScrollController {
     private let dateFormatter = DateFormatter().then {
         $0.dateStyle = .medium
         $0.timeStyle = .none
+    }
+
+    private let singaporeDateFormatter = DateFormatter().then {
+        $0.dateStyle = .medium
+        $0.timeStyle = .medium
+        $0.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)
     }
 
     private var resultSentinel = UIView()
@@ -26,7 +32,11 @@ class TransitBalanceViewController: StackScrollController {
 
         addSectionHeader(String(localized: "Transit Balance"))
         buildScanButton()
-        addSectionFooter(String(localized: "Supports Japan IC (Suica, PASMO, ICOCA…), Korea T-Money/Cashbee, China T-Union."))
+        addSectionFooter(
+            String(
+                localized:
+                    "Supports Japan IC (Suica, PASMO, ICOCA…), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
+            ))
 
         stackView.addArrangedSubview(resultSentinel)
     }
@@ -52,23 +62,28 @@ class TransitBalanceViewController: StackScrollController {
     private func performScan() {
         Task {
             let manager = NFCSessionManager()
+            AppLogStore.shared.info("Starting transit card scan", source: "Transit")
             do {
-                let (coarseInfo, transport) = try await manager.scan(for: [.all])
-                let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-
+                let (info, transport) = try await manager.scan(for: [.all])
+                AppLogStore.shared.info("Detected tag; initial AID=\(info.initialSelectedAID ?? "none")", source: "Transit")
+                // Transit detection must run before refinement changes the selected application.
                 manager.setAlertMessage(String(localized: "Reading..."))
-                let balance = try await CoreExtendedNFC.readTransitBalance(
-                    info: refinedInfo,
-                    transport: transport
+                let balance = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+                AppLogStore.shared.info(
+                    "Read succeeded: balance=\(balance.balanceRaw) \(balance.currencyCode), transactions=\(balance.transactions.count)",
+                    source: "Transit"
                 )
                 manager.setAlertMessage(String(localized: "Done"))
                 manager.invalidate()
 
                 displayResults(balance)
             } catch is CancellationError {
+                manager.invalidate()
+                AppLogStore.shared.info("Transit card scan cancelled", source: "Transit")
                 return
             } catch {
                 manager.invalidate()
+                AppLogStore.shared.error("Transit card scan failed: \(error)", source: "Transit")
                 if !presentNFCErrorAlertIfNeeded(for: error) {
                     presentErrorAlert(for: error)
                 }
@@ -78,7 +93,8 @@ class TransitBalanceViewController: StackScrollController {
 
     // MARK: - Display Results
 
-    private func displayResults(_ balance: TransitBalance) {
+    func displayResults(_ balance: TransitBalance) {
+        dateFormatter.timeZone = balance.currencyCode == "SGD" ? TimeZone(secondsFromGMT: 8 * 60 * 60) : .current
         clearResults()
 
         // Card Info
@@ -120,13 +136,15 @@ class TransitBalanceViewController: StackScrollController {
         addInfoRow(
             icon: "banknote",
             title: String(localized: "Balance"),
-            value: balance.formattedBalance
+            value: balance.formattedBalance,
+            wrapValue: true
         )
 
         addInfoRow(
             icon: "info.circle",
             title: String(localized: "Raw"),
-            value: "\(balance.balanceRaw) \(balance.currencyCode)"
+            value: balance.currencyCode == "SGD" ? String(localized: "\(String(balance.balanceRaw)) SGD cents") : "\(balance.balanceRaw) \(balance.currencyCode)",
+            wrapValue: true
         )
 
         // Transaction History
@@ -134,21 +152,53 @@ class TransitBalanceViewController: StackScrollController {
             addSectionHeader(String(localized: "Transaction History"))
 
             for (index, tx) in balance.transactions.enumerated() {
-                let typeLabel = switch tx.type {
-                case .trip: String(localized: "Trip")
-                case .topup: String(localized: "Top-up")
-                case .purchase: String(localized: "Purchase")
-                case .unknown: String(localized: "Unknown")
+                let typeLabel =
+                    switch tx.type {
+                    case .trip: String(localized: "Trip")
+                    case .topup: String(localized: "Top-up")
+                    case .purchase: String(localized: "Purchase")
+                    case .unknown: String(localized: "Unknown")
+                    }
+
+                var details = [typeLabel]
+                if tx.type == .unknown, let rawType = tx.metadata["transactionType"] {
+                    details.append(String(localized: "Type: 0x\(rawType)"))
+                }
+                if let date = tx.date {
+                    if balance.currencyCode == "SGD" {
+                        details.append(String(localized: "\(singaporeDateFormatter.string(from: date)) (Singapore time)"))
+                    } else {
+                        details.append(dateFormatter.string(from: date))
+                    }
+                }
+                if let entry = tx.entryStation {
+                    details.append(String(localized: "Entry: \(entry)"))
+                }
+                if let exit = tx.exitStation {
+                    details.append(String(localized: "Exit: \(exit)"))
+                }
+                if let route = tx.metadata["busRoute"] {
+                    details.append(String(localized: "Bus: \(route)"))
                 }
 
-                let dateStr = tx.date.map { dateFormatter.string(from: $0) } ?? ""
-                let description = dateStr.isEmpty ? typeLabel : "\(typeLabel) · \(dateStr)"
-
+                let value: String
+                if let amount = tx.amount {
+                    if balance.currencyCode == "SGD" {
+                        let change = tx.metadata["balanceChange"].flatMap(Int.init)
+                        let sign = change.map { $0 < 0 ? "−" : $0 > 0 ? "+" : "" } ?? ""
+                        value = sign + String(format: "S$%.2f", Double(amount) / 100)
+                    } else {
+                        value = tx.balanceAfter.map { "\(amount) → \($0)" } ?? "\(amount)"
+                    }
+                } else {
+                    value = tx.balanceAfter.map { "— → \($0)" } ?? "—"
+                }
                 addInfoRow(
                     icon: tx.type == .topup ? "plus.circle" : "arrow.right.circle",
                     title: "#\(index + 1)",
-                    description: description,
-                    value: "\(tx.amount) → \(tx.balanceAfter)"
+                    description: details.joined(separator: " · "),
+                    value: value,
+                    wrapValue: true
                 )
             }
 
@@ -159,7 +209,9 @@ class TransitBalanceViewController: StackScrollController {
     private func clearResults() {
         if let idx = stackView.arrangedSubviews.firstIndex(of: resultSentinel) {
             let toRemove = stackView.arrangedSubviews.suffix(from: idx + 1)
-            toRemove.forEach { $0.removeFromSuperview() }
+            for view in toRemove {
+                view.removeFromSuperview()
+            }
         }
     }
 

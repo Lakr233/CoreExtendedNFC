@@ -202,7 +202,7 @@ public struct TUnionReader: Sendable {
         )
         let merged = (transactions + trips).sorted { lhs, rhs in
             switch (lhs.date, rhs.date) {
-            case let (left?, right?):
+            case (let left?, let right?):
                 left > right
             case (_?, nil):
                 true
@@ -266,7 +266,7 @@ public struct TUnionReader: Sendable {
         return TransitTransaction(
             type: isTopUp ? .topup : .purchase,
             amount: signedAmount,
-            balanceAfter: 0,
+            balanceAfter: nil,
             date: parseBCDDateTime(dateBytes),
             entryStation: station,
             exitStation: nil,
@@ -287,8 +287,8 @@ public struct TUnionReader: Sendable {
         }
         return TransitTransaction(
             type: .trip,
-            amount: 0,
-            balanceAfter: 0,
+            amount: nil,
+            balanceAfter: nil,
             date: nil,
             entryStation: nil,
             exitStation: nil,
@@ -313,7 +313,7 @@ public struct TUnionReader: Sendable {
         let dayStr = String(hex.dropFirst(6).prefix(2))
 
         guard let year = Int(yearStr), let month = Int(monthStr), let day = Int(dayStr),
-              month >= 1, month <= 12, day >= 1, day <= 31
+            month >= 1, month <= 12, day >= 1, day <= 31
         else { return nil }
 
         var components = DateComponents()
@@ -336,7 +336,7 @@ public struct TUnionReader: Sendable {
         let minute = values[5]
         let second = values[6]
         guard year > 0, month >= 1, month <= 12, day >= 1, day <= 31,
-              hour <= 23, minute <= 59, second <= 59
+            hour <= 23, minute <= 59, second <= 59
         else { return nil }
 
         var components = DateComponents()

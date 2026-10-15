@@ -9,13 +9,14 @@ extension StackScrollController {
         description: String = "",
         value: String,
         isDestructive: Bool = false,
+        wrapValue: Bool = false,
         extraMenuActions: [UIMenuElement] = []
     ) {
         let infoView = ConfigurableInfoView()
         infoView.configure(icon: UIImage(systemName: icon))
         infoView.configure(title: String.LocalizationValue(stringLiteral: title))
         infoView.configure(description: String.LocalizationValue(stringLiteral: description))
-        infoView.configure(value: value, isDestructive: isDestructive)
+        infoView.configure(value: value, isDestructive: isDestructive, wrapValue: wrapValue)
         infoView.use { [weak self] in
             let valueAction = UIAction(title: value, attributes: .disabled) { _ in }
             let copyAction = UIAction(
