@@ -130,4 +130,122 @@ struct Type4Tests {
         let ndef = try await reader.readNDEF()
         #expect(ndef.isEmpty)
     }
+
+    // MARK: - Termination and bounds (NFC Forum T4T 2.0/3.0 §5.1)
+
+    private static let ok = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
+    private static let cc20 = Data([
+        0x00, 0x0F, 0x20, 0x00, 0x3B, 0x00, 0x34,
+        0x04, 0x06, 0xE1, 0x04, 0x00, 0x32, 0x00, 0x00,
+    ])
+
+    @Test
+    func `readNDEF throws on empty 9000 READ BINARY instead of looping`() async {
+        let mock = MockTransport()
+        mock.apduResponses = [
+            Self.ok, Self.ok,
+            ResponseAPDU(data: Self.cc20, sw1: 0x90, sw2: 0x00),
+            Self.ok,
+            ResponseAPDU(data: Data([0x00, 0x05]), sw1: 0x90, sw2: 0x00),
+        ] + Array(repeating: Self.ok, count: 50)
+        do {
+            _ = try await Type4Reader(transport: mock).readNDEF()
+            Issue.record("expected throw")
+        } catch NFCError.invalidResponse {
+        } catch {
+            Issue.record("wrong error \(error)")
+        }
+        #expect(mock.sentAPDUs.count == 6)
+    }
+
+    @Test
+    func `readNDEF rejects NLEN larger than the NDEF file`() async {
+        let mock = MockTransport()
+        // Max NDEF file size 0x32 = 50 → NLEN must be <= 48.
+        mock.apduResponses = [
+            Self.ok, Self.ok,
+            ResponseAPDU(data: Self.cc20, sw1: 0x90, sw2: 0x00),
+            Self.ok,
+            ResponseAPDU(data: Data([0xFF, 0xFF]), sw1: 0x90, sw2: 0x00),
+        ]
+        await #expect(throws: NFCError.self) {
+            _ = try await Type4Reader(transport: mock).readNDEF()
+        }
+        #expect(mock.sentAPDUs.count == 5)
+    }
+
+    @Test
+    func `CC parse rejects MLe or MLc of zero`() {
+        var noMLc = Self.cc20
+        noMLc[5] = 0x00
+        noMLc[6] = 0x00
+        #expect(throws: NFCError.self) { _ = try Type4CC(data: noMLc) }
+
+        var noMLe = Self.cc20
+        noMLe[3] = 0x00
+        noMLe[4] = 0x00
+        #expect(throws: NFCError.self) { _ = try Type4CC(data: noMLe) }
+    }
+
+    @Test
+    func `CC parse rejects unsupported major mapping version`() {
+        var cc = Self.cc20
+        cc[2] = 0x40
+        #expect(throws: NFCError.self) { _ = try Type4CC(data: cc) }
+    }
+
+    @Test
+    func `CC parse accepts T4T 3.0 Extended NDEF File Control TLV`() throws {
+        let data = Data([
+            0x00, 0x11, 0x30, 0x00, 0xFF, 0x00, 0xFF,
+            0x06, 0x08, 0xE1, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        ])
+        let cc = try Type4CC(data: data)
+        #expect(cc.usesExtendedNDEFFile)
+        #expect(cc.maxNDEFFileSize == 0x0001_0000)
+        #expect(cc.ndefMaxSize == 0xFFFF)
+        #expect(cc.ndefFileID == Data([0xE1, 0x04]))
+        #expect(cc.ndefLengthFieldSize == 4)
+        #expect(cc.encoded == data)
+    }
+
+    @Test
+    func `Extended NDEF file is read with a 4-byte ENLEN`() async throws {
+        let mock = MockTransport()
+        let ccHead = Data([
+            0x00, 0x11, 0x30, 0x00, 0xFF, 0x00, 0xFF,
+            0x06, 0x08, 0xE1, 0x04, 0x00, 0x00, 0x10, 0x00,
+        ])
+        let message = Data([0xD0, 0x00, 0x00])
+        mock.apduResponses = [
+            Self.ok, Self.ok,
+            ResponseAPDU(data: ccHead, sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data([0x00, 0x00]), sw1: 0x90, sw2: 0x00),
+            Self.ok,
+            ResponseAPDU(data: Data([0x00, 0x00, 0x00, 0x03]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: message, sw1: 0x90, sw2: 0x00),
+        ]
+        let ndef = try await Type4Reader(transport: mock).readNDEF()
+        #expect(ndef == message)
+        // CC tail read at offset 15, ENLEN read with Le = 4, data read at offset 4.
+        #expect(mock.sentAPDUs[3].p2 == 15)
+        #expect(mock.sentAPDUs[5].le == 4)
+        #expect(mock.sentAPDUs[6].p2 == 4)
+    }
+
+    @Test
+    func `writeNDEF chunks by MLc and writes NLEN last`() async throws {
+        let mock = MockTransport()
+        let cc = Data([
+            0x00, 0x0F, 0x20, 0x00, 0x3B, 0x00, 0x02,
+            0x04, 0x06, 0xE1, 0x04, 0x00, 0x32, 0x00, 0x00,
+        ])
+        mock.apduResponses = [Self.ok, Self.ok, ResponseAPDU(data: cc, sw1: 0x90, sw2: 0x00)]
+            + Array(repeating: Self.ok, count: 10)
+        try await Type4Reader(transport: mock).writeNDEF(Data([1, 2, 3]))
+
+        let updates = mock.sentAPDUs.filter { $0.ins == 0xD6 }
+        #expect(updates.map(\.p2) == [0, 2, 4, 0])
+        #expect(updates.map { $0.data ?? Data() } == [Data([0, 0]), Data([1, 2]), Data([3]), Data([0, 3])])
+    }
 }
