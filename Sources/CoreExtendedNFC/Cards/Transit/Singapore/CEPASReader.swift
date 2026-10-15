@@ -7,8 +7,9 @@ import Foundation
 /// history is not supported. Call before application-refinement probes.
 public struct CEPASReader: Sendable {
     private let transport: any ISO7816TagTransporting
-    // CEPAS timestamps start at 1995-01-01 00:00 in Singapore (UTC+08:00).
-    private static let epoch = Date(timeIntervalSince1970: 788_918_400)
+    // CEPAS timestamps start at 1995-01-01 00:00 in Singapore (UTC+08:00),
+    // i.e. 1994-12-31T16:00:00Z (same epoch as FareBot / Metrodroid).
+    private static let epoch = Date(timeIntervalSince1970: 788_889_600)
 
     public init(transport: any ISO7816TagTransporting) {
         self.transport = transport
