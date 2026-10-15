@@ -531,11 +531,11 @@ enum SODParser {
             }
         }
 
-        let allValid = !results.isEmpty && results.values.allSatisfy(\.self)
-
         // Use signatureNotVerified when hashes pass — makes clear that CMS
-        // signature verification was NOT performed
-        let status: PassiveAuthStatus = if allValid {
+        // signature verification was NOT performed. When nothing was compared (only
+        // COM/SOD read, or every covered data group absent) there is no mismatch to
+        // report either: the result stays neutral and its hash results stay empty.
+        let status: PassiveAuthStatus = if results.values.allSatisfy(\.self) {
             .signatureNotVerified
         } else {
             .hashMismatch

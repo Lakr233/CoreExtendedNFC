@@ -63,6 +63,11 @@ public struct PassportModel: Sendable, Codable, Equatable {
     /// Step-by-step status for passport security mechanisms.
     public let securityReport: PassportSecurityReport
 
+    /// Outcome of each data group the reader tried or skipped, keyed by `DataGroupId`.
+    ///
+    /// `nil` for models built before per-data-group status existed.
+    public let dataGroupReadStatus: [DataGroupId: PassportDataGroupReadResult]?
+
     /// Best-effort face image bytes for DG2.
     ///
     /// Older saved records may have persisted the full ISO 19794-5 facial record
@@ -108,7 +113,8 @@ public struct PassportModel: Sendable, Codable, Equatable {
         passiveAuthResult: PassiveAuthenticationResult?,
         activeAuthResult: ActiveAuthenticationResult?,
         rawDataGroups: [DataGroupId: Data],
-        securityReport: PassportSecurityReport = .init()
+        securityReport: PassportSecurityReport = .init(),
+        dataGroupReadStatus: [DataGroupId: PassportDataGroupReadResult]? = nil
     ) {
         self.cardAccess = cardAccess
         self.cardAccessRaw = cardAccessRaw
@@ -130,6 +136,33 @@ public struct PassportModel: Sendable, Codable, Equatable {
         self.activeAuthResult = activeAuthResult
         self.rawDataGroups = rawDataGroups
         self.securityReport = securityReport
+        self.dataGroupReadStatus = dataGroupReadStatus
+    }
+}
+
+/// What happened to one data group during `PassportReader.readPassport`.
+public enum PassportDataGroupReadState: String, Sendable, Equatable, Codable {
+    /// The file was read completely.
+    case read
+    /// EF.COM does not list this data group, so it was never selected.
+    case notPresent
+    /// The chip reported the file as absent or protected (e.g. 6A82, or 6982 for EAC data groups).
+    case unavailable
+    /// Selected, but the file could not be read completely (short read, bad header);
+    /// no partial bytes are kept.
+    case failed
+    /// Not read because secure messaging ended earlier in the session.
+    case notRead
+}
+
+/// Per-data-group read outcome with a human-readable reason.
+public struct PassportDataGroupReadResult: Sendable, Equatable, Codable {
+    public let state: PassportDataGroupReadState
+    public let detail: String
+
+    public init(state: PassportDataGroupReadState, detail: String = "") {
+        self.state = state
+        self.detail = detail
     }
 }
 

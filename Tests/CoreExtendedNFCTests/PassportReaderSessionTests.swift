@@ -89,10 +89,184 @@ struct PassportReaderSessionTests {
         }
     }
 
+    @Test
+    func `Plain 6982 on an EAC data group marks it unavailable and keeps the others`() async throws {
+        let dg1 = Self.makeDG1()
+        let dg2 = ASN1Parser.encodeTLV(tag: 0x75, value: Data(repeating: 0xAB, count: 300))
+        let sod = ASN1Parser.encodeTLV(tag: 0x77, value: Data(repeating: 0x01, count: 40))
+        let dg3 = ASN1Parser.encodeTLV(tag: 0x63, value: Data(repeating: 0x02, count: 40))
+        let chip = SimulatedBACChip(files: [
+            DataGroupId.dg1.fileID: dg1,
+            DataGroupId.dg2.fileID: dg2,
+            DataGroupId.dg3.fileID: dg3,
+            DataGroupId.sod.fileID: sod,
+        ])
+        chip.plainReadStatus = [DataGroupId.dg3.fileID: 0x6982]
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.dg1, .dg3, .dg2, .sod],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg1] == dg1)
+        #expect(model.rawDataGroups[.dg2] == dg2)
+        #expect(model.rawDataGroups[.sod] == sod)
+        #expect(model.rawDataGroups[.dg3] == nil)
+        #expect(model.dataGroupReadStatus?[.dg3]?.state == .unavailable)
+        #expect(model.dataGroupReadStatus?[.dg1]?.state == .read)
+    }
+
+    @Test
+    func `Data groups EF.COM does not list are never selected`() async throws {
+        let dg1 = Self.makeDG1()
+        // COM lists only DG1 (tag 61).
+        let com = Self.makeCOM(tags: [0x61])
+        let chip = SimulatedBACChip(files: [DataGroupId.com.fileID: com, DataGroupId.dg1.fileID: dg1])
+        chip.plainNotFoundForMissingFiles = true
+        chip.endSessionAfterPlainError = true
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.com, .dg7, .dg1],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg1] == dg1)
+        #expect(model.rawDataGroups[.com] == com)
+        #expect(model.dataGroupReadStatus?[.dg7]?.state == .notPresent)
+        #expect(chip.selectedFileIDs == [vectorHex("011E"), vectorHex("0101")])
+    }
+
+    @Test
+    func `Secure messaging ending after a plain error returns the data groups already read`() async throws {
+        let dg1 = Self.makeDG1()
+        let dg2 = ASN1Parser.encodeTLV(tag: 0x75, value: Data(repeating: 0xAB, count: 64))
+        let chip = SimulatedBACChip(files: [DataGroupId.dg1.fileID: dg1, DataGroupId.dg2.fileID: dg2])
+        chip.plainNotFoundForMissingFiles = true
+        chip.endSessionAfterPlainError = true
+
+        // No COM requested, so DG11 is selected, draws a plain 6A82 and the chip drops SM.
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.dg1, .dg11, .dg2, .dg12],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg1] == dg1)
+        #expect(model.rawDataGroups[.dg2] == nil)
+        #expect(model.dataGroupReadStatus?[.dg11]?.state == .unavailable)
+        #expect(model.dataGroupReadStatus?[.dg2]?.state == .notRead)
+        #expect(model.dataGroupReadStatus?[.dg12]?.state == .notRead)
+        #expect(chip.selectedFileIDs == [vectorHex("0101"), vectorHex("010B")])
+        // Only DG2's SELECT reaches the keyless chip; DG12 is not tried once SM has ended.
+        #expect(chip.commandsWithoutSession == 1)
+    }
+
+    @Test
+    func `A lost tag while reading EF.CardAccess ends the read`() async {
+        let transport = MockTransport()
+        transport.apduFailures = [0: .tagConnectionLost]
+
+        let error = await #expect(throws: NFCError.self) {
+            _ = try await PassportReader(transport: transport).readPassport(mrzKey: Self.mrzKey, dataGroups: [.dg1])
+        }
+        guard case .tagConnectionLost? = error else {
+            Issue.record("Expected tagConnectionLost, got \(String(describing: error))")
+            return
+        }
+        #expect(transport.sentAPDUs.count == 1)
+    }
+
+    @Test
+    func `Cancellation while reading EF.CardAccess ends the read`() async {
+        let transport = CancellingTransport()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await PassportReader(transport: transport).readPassport(mrzKey: Self.mrzKey, dataGroups: [.dg1])
+        }
+        #expect(transport.sentCount == 1)
+    }
+
+    @Test
+    func `A lost tag during PACE ends the read instead of falling back to BAC`() async {
+        // PACEInfo { id-PACE-ECDH-GM-AES-CBC-CMAC-128, version 2, parameterId 12 } (BSI TR-03110-3 A.1.1)
+        let cardAccess = vectorHex("3114" + "3012" + "060A04007F00070202040202" + "020102" + "02010C")
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT MF
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT EF.CardAccess
+            ResponseAPDU(data: Data(cardAccess.prefix(4)), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: cardAccess, sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT eMRTD application
+        ]
+        transport.apduFailures = [5: .tagConnectionLost] // MSE:Set AT
+
+        let error = await #expect(throws: NFCError.self) {
+            _ = try await PassportReader(transport: transport).readPassport(mrzKey: Self.mrzKey, dataGroups: [.dg1])
+        }
+        guard case .tagConnectionLost? = error else {
+            Issue.record("Expected tagConnectionLost, got \(String(describing: error))")
+            return
+        }
+        #expect(transport.sentAPDUs.count == 6)
+        #expect(transport.sentAPDUs.last?.ins == 0x22)
+        #expect(!transport.sentAPDUs.contains { $0.ins == 0x84 })
+    }
+
+    @Test
+    func `EF.CardAccess longer than 64 KB is rejected from its header`() async {
+        // SET with a 4-byte length of 0x9FFFF0 bytes: under the old 10 MB limit, far above 64 KB.
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT MF
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT EF.CardAccess
+            ResponseAPDU(data: vectorHex("31839FFF"), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: vectorHex("F0300D060A04"), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT eMRTD application
+        ]
+
+        await #expect(throws: NFCError.self) {
+            _ = try await PassportReader(transport: transport).readPassport(mrzKey: Self.mrzKey, dataGroups: [.dg1])
+        }
+        #expect(transport.sentAPDUs.count(where: { $0.ins == 0xB0 }) == 2)
+        #expect(transport.sentAPDUs.count == 5)
+        #expect(transport.sentAPDUs.last?.p1 == 0x04)
+    }
+
+    @Test
+    func `Read order puts COM and DG1 first and EAC data groups last`() {
+        #expect(PassportReader.readOrder(for: [.dg3, .sod, .dg2, .dg1, .com, .dg2]) == [.com, .dg1, .sod, .dg2, .dg3])
+    }
+
+    private static func makeCOM(tags: [UInt8]) -> Data {
+        ASN1Parser.encodeTLV(
+            tag: 0x60,
+            value: ASN1Parser.encodeTLV(tag: 0x5F01, value: Data("0107".utf8))
+                + ASN1Parser.encodeTLV(tag: 0x5F36, value: Data("040000".utf8))
+                + ASN1Parser.encodeTLV(tag: 0x5C, value: Data(tags))
+        )
+    }
+
     private static func makeDG1() -> Data {
         let mrz = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<"
             + "L898902C36UTO7408122F1204159ZE184226B<<<<<10"
         return ASN1Parser.encodeTLV(tag: 0x61, value: ASN1Parser.encodeTLV(tag: 0x5F1F, value: Data(mrz.utf8)))
+    }
+}
+
+/// A transport whose first command observes the calling task being cancelled.
+private final class CancellingTransport: NFCTagTransport, @unchecked Sendable {
+    let identifier = Data([0x04, 0x01, 0x02, 0x03])
+    private(set) var sentCount = 0
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("Raw transport is not used")
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        sentCount += 1
+        throw CancellationError()
     }
 }
 
@@ -103,7 +277,15 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
     var plainSuccessForProtectedCommands = false
     var plainNotFoundForMissingFiles = false
     var endOfFileOffset: Int?
+    /// Files that can be selected but whose READ BINARY gets this plain status word
+    /// (e.g. 6982 for an EAC-protected DG3 under BAC).
+    var plainReadStatus: [Data: UInt16] = [:]
+    /// ICAO-strict behaviour: after answering with a plain status word the chip deletes
+    /// its session keys, and every later protected command gets a plain 6988.
+    var endSessionAfterPlainError = false
     private(set) var oddReadBinaryCount = 0
+    private(set) var selectedFileIDs: [Data] = []
+    private(set) var commandsWithoutSession = 0
 
     private let files: [Data: Data]
     private let mrzKey = "L898902C<369080619406236"
@@ -162,7 +344,10 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
 
     private func handleProtected(_ apdu: CommandAPDU) throws -> ResponseAPDU {
         guard let keys = sessionKeys else {
-            return ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x82)
+            commandsWithoutSession += 1
+            return endSessionAfterPlainError
+                ? ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x88)
+                : ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x82)
         }
         if plainSuccessForProtectedCommands {
             return ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
@@ -193,16 +378,19 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
         let (data, sw): (Data, UInt16)
         switch apdu.ins {
         case 0xA4:
+            selectedFileIDs.append(commandData)
             if files[commandData] != nil {
                 selectedFile = commandData
                 (data, sw) = (Data(), 0x9000)
             } else if plainNotFoundForMissingFiles {
-                incrementSSC()
-                return ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82)
+                return plainError(0x6A82)
             } else {
                 (data, sw) = (Data(), 0x6A82)
             }
         case 0xB0:
+            if let selectedFile, let status = plainReadStatus[selectedFile] {
+                return plainError(status)
+            }
             let offset = (Int(apdu.p1 & 0x7F) << 8) | Int(apdu.p2)
             (data, sw) = read(offset: offset, length: expected)
         case 0xB1:
@@ -219,6 +407,15 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
 
         incrementSSC()
         return try protectResponse(data: data, sw: sw, oddINS: apdu.ins & 0x01 == 0x01, keys: keys)
+    }
+
+    /// Answer a protected command with an unprotected status word.
+    private func plainError(_ sw: UInt16) -> ResponseAPDU {
+        incrementSSC()
+        if endSessionAfterPlainError {
+            sessionKeys = nil
+        }
+        return ResponseAPDU(data: Data(), sw1: UInt8(sw >> 8), sw2: UInt8(sw & 0xFF))
     }
 
     private func read(offset: Int, length: Int) -> (Data, UInt16) {

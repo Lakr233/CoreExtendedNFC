@@ -613,7 +613,9 @@ private final class PassportNegotiationTransport: NFCTagTransport, @unchecked Se
             return try mutualAuthenticateResponse(for: apdu)
         default:
             guard !scriptedResponses.isEmpty else {
-                throw NFCError.tagConnectionLost
+                // The chip rejects the rest of PACE (6A80 wrong data). A lost tag would
+                // end the whole read instead of falling back to BAC.
+                return ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x80)
             }
             return scriptedResponses.removeFirst()
         }

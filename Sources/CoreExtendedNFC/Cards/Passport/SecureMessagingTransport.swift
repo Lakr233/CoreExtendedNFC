@@ -70,6 +70,19 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
     private let mode: SMEncryptionMode
     /// Serializes command/response pairs so concurrent callers cannot desynchronize the SSC.
     private let exchangeGate = AsyncExchangeGate()
+    /// Set once an exchange failed in a way that leaves the SSC out of step with the chip
+    /// (transport error, cancellation mid-exchange, unauthenticated response). Only read
+    /// or mutated while `exchangeGate` is held.
+    private var sessionEndReason: String?
+
+    /// Whether an earlier failed exchange ended this secure messaging session.
+    var isSessionEnded: Bool {
+        get async {
+            await exchangeGate.acquire()
+            defer { exchangeGate.release() }
+            return sessionEndReason != nil
+        }
+    }
 
     public var identifier: Data {
         underlying.identifier
@@ -100,27 +113,52 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
     /// consume two consecutive SSC values.
     ///
     /// - Throws: `NFCError.unexpectedStatusWord` when the chip answers with a plain
-    ///   status word (no secure messaging data objects), which ends the SM session;
-    ///   `NFCError.secureMessagingError` when the response cannot be authenticated.
+    ///   status word (no secure messaging data objects). Both SSC steps are still
+    ///   consumed, so the caller may try another command; ICAO-strict chips end the
+    ///   session there (ICAO 9303-11 §9.8), and the next command then fails.
+    ///   `NFCError.secureMessagingError` when the response cannot be authenticated, or
+    ///   when an earlier exchange ended the session.
+    ///   Any other failure (transport loss, `CancellationError` between `61xx`
+    ///   GET RESPONSE frames) also ends the session: the chip may have consumed an SSC
+    ///   value this side did not, so every later MAC would be wrong.
     public func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
         await exchangeGate.acquire()
         defer { exchangeGate.release() }
 
-        incrementSSC()
-        let protectedAPDU = try protect(apdu)
-
-        // Send with bounded GET RESPONSE (61xx) chaining at the raw level. The protected
-        // command is not re-issued on 6Cxx: that would consume a second SSC on the chip.
-        let underlying = underlying
-        let assembledResponse = try await APDUExchange.transmit(
-            protectedAPDU,
-            retryOnWrongLength: false
-        ) { command in
-            try await underlying.sendAPDU(command)
+        if let sessionEndReason {
+            throw NFCError.secureMessagingError("Secure messaging session ended: \(sessionEndReason)")
         }
 
-        incrementSSC()
-        return try unprotect(assembledResponse)
+        do {
+            incrementSSC()
+            let protectedAPDU = try protect(apdu)
+
+            // Send with bounded GET RESPONSE (61xx) chaining at the raw level. The protected
+            // command is not re-issued on 6Cxx: that would consume a second SSC on the chip.
+            let underlying = underlying
+            let assembledResponse = try await APDUExchange.transmit(
+                protectedAPDU,
+                retryOnWrongLength: false
+            ) { command in
+                try await underlying.sendAPDU(command)
+            }
+
+            incrementSSC()
+            return try unprotect(assembledResponse)
+        } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
+            // Plain status word: both SSC steps were consumed in step with the chip.
+            // 6987/6988 (SM data objects missing/incorrect) mean the chip no longer
+            // runs secure messaging at all (ISO/IEC 7816-4 §5.6).
+            if sw1 == 0x69, sw2 == 0x87 || sw2 == 0x88 {
+                sessionEndReason = String(format: "chip reported a secure messaging error (SW=%02X%02X)", sw1, sw2)
+            }
+            throw NFCError.unexpectedStatusWord(sw1, sw2)
+        } catch {
+            sessionEndReason = error is CancellationError
+                ? "an exchange was cancelled before its response was complete"
+                : error.localizedDescription
+            throw error
+        }
     }
 
     // MARK: - Protect (Encrypt + MAC outgoing APDU)

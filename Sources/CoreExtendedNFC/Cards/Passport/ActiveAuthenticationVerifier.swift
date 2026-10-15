@@ -121,12 +121,12 @@ enum ActiveAuthenticationVerifier {
 
         #if canImport(OpenSSL)
             // Prefer the DG15 SubjectPublicKeyInfo as stored: it may use explicit
-            // ECParameters, which cannot be rebuilt from a curve OID.
-            let loadedKey: OpaquePointer? = if let subjectPublicKeyInfo {
-                try? readPublicKey(subjectPublicKeyInfoDER: subjectPublicKeyInfo)
-            } else {
-                try? readECPublicKey(curveOID: curveOID, publicPoint: publicPoint)
-            }
+            // ECParameters, which cannot be rebuilt from a curve OID. When OpenSSL rejects
+            // the stored encoding (e.g. non-DER BER from the chip), rebuild a named-curve
+            // key from the parsed curve OID and point instead.
+            let loadedKey: OpaquePointer? = subjectPublicKeyInfo.flatMap {
+                try? readPublicKey(subjectPublicKeyInfoDER: $0)
+            } ?? (try? readECPublicKey(curveOID: curveOID, publicPoint: publicPoint))
             guard let publicKey = loadedKey, EVP_PKEY_get_base_id(publicKey) == EVP_PKEY_EC else {
                 if let loadedKey { EVP_PKEY_free(loadedKey) }
                 return ActiveAuthenticationResult(

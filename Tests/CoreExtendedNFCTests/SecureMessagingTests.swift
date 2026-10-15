@@ -119,4 +119,46 @@ struct SecureMessagingTests {
         let sentData = try #require(sentAPDU.data)
         #expect(sentData.contains(0x8E))
     }
+
+    @Test
+    func `Cancellation between GET RESPONSE frames ends the secure messaging session`() async throws {
+        let chip = CancelOnFirstCommandTransport()
+        let sm = SecureMessagingTransport(
+            transport: chip,
+            ksEnc: Data(repeating: 0x01, count: 16),
+            ksMac: Data(repeating: 0x02, count: 16),
+            ssc: Data(repeating: 0x00, count: 8)
+        )
+        let readBinary = CommandAPDU(cla: 0x00, ins: 0xB0, p1: 0x00, p2: 0x00, le: 0x10)
+
+        // The chip answers 61xx; the task is cancelled before GET RESPONSE, so the chip has
+        // consumed the response SSC while the transport has not.
+        let first = Task { try await sm.sendAPDU(readBinary) }
+        await #expect(throws: CancellationError.self) { _ = try await first.value }
+        #expect(chip.commandCount == 1)
+
+        // Any later command would carry a stale SSC: it must be refused, not sent.
+        let error = await #expect(throws: NFCError.self) { _ = try await sm.sendAPDU(readBinary) }
+        guard case .secureMessagingError? = error else {
+            Issue.record("Expected secureMessagingError, got \(String(describing: error))")
+            return
+        }
+        #expect(chip.commandCount == 1)
+    }
+}
+
+/// Answers the first command with 61 10 (more data) and cancels the calling task.
+private final class CancelOnFirstCommandTransport: NFCTagTransport, @unchecked Sendable {
+    let identifier = Data([0x04, 0x01, 0x02, 0x03])
+    private(set) var commandCount = 0
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("Raw transport is not used")
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        commandCount += 1
+        withUnsafeCurrentTask { $0?.cancel() }
+        return ResponseAPDU(data: Data(), sw1: 0x61, sw2: 0x10)
+    }
 }

@@ -98,6 +98,35 @@ struct SODParserTests {
     // MARK: - Passive Auth Semantics
 
     @Test
+    func `No data group compared is not reported as a hash mismatch`() {
+        let sodContent = SODContent(
+            hashAlgorithmOID: "2.16.840.1.101.3.4.2.1",
+            hashAlgorithm: "SHA-256",
+            // SHA-256("\x61\x00")
+            dataGroupHashes: [.dg1: vectorHex("FFE9AAEAA2A2D5048174DF0B80599EF0197EC024C4B051BC9860CFF58EF7F9F3")],
+            ldsVersion: nil,
+            unicodeVersion: nil,
+            documentSignerCertificate: nil,
+            signedAttributes: nil,
+            signature: nil,
+            signatureAlgorithmOID: nil,
+            encapsulatedContent: nil
+        )
+
+        // Only COM and the SOD itself were read: nothing the SOD covers was compared.
+        let result = SODParser.verifyHashes(
+            sodContent: sodContent,
+            rawDataGroups: [.com: Data([0x60, 0x00]), .sod: Data([0x77, 0x00])]
+        )
+
+        #expect(result.dataGroupHashResults.isEmpty)
+        #expect(result.failedDataGroups.isEmpty)
+        #expect(result.status != .hashMismatch)
+        #expect(result.status == .signatureNotVerified)
+        #expect(!result.allHashesValid)
+    }
+
+    @Test
     func `Hash comparison success reports signatureNotVerified, not full verification`() {
         let rawDG1 = Data(repeating: 0x42, count: 100)
         let expectedHash = HashUtils.sha256(rawDG1)

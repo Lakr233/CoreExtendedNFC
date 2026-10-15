@@ -59,6 +59,9 @@ public struct PassportReader: Sendable {
                     : "EF.CardAccess does not advertise PACE."
             )
         } catch {
+            // A missing or malformed EF.CardAccess only means "no PACE"; a lost tag or a
+            // cancelled task ends the whole read.
+            if isSessionTerminating(error) { throw error }
             cardAccessStage = PassportSecurityStageResult(
                 status: .notSupported,
                 detail: "EF.CardAccess unavailable: \(error.localizedDescription)"
@@ -98,6 +101,7 @@ public struct PassportReader: Sendable {
                     detail: "BAC was skipped because PACE succeeded."
                 )
             } catch {
+                if isSessionTerminating(error) { throw error }
                 paceStage = PassportSecurityStageResult(
                     status: .fallback,
                     detail: "PACE could not complete: \(error.localizedDescription). Falling back to BAC."
@@ -121,35 +125,40 @@ public struct PassportReader: Sendable {
             throw NFCError.secureMessagingError("No secure messaging transport was established")
         }
 
-        // Step 3: Read each requested DataGroup
-        var rawDataGroups: [DataGroupId: Data] = [:]
+        // Step 3: Read each requested DataGroup.
+        //
+        // EF.COM is read first and, once parsed, only the data groups it lists are
+        // selected: selecting an absent file draws a plain 6A82, and ICAO 9303-11 §9.8
+        // lets the chip end secure messaging on any unprotected reply. DG1 follows COM,
+        // and EAC-protected DG3/DG4 (likely a plain 6982 under BAC/PACE) go last, so
+        // an ICAO-strict chip ending the session there cannot cost DG1/DG2/SOD.
+        var session = DataGroupReadSession(transport: smTransport)
+        let readOrder = Self.readOrder(for: dataGroups)
 
-        for (index, dgId) in dataGroups.enumerated() {
+        for (index, dgId) in readOrder.enumerated() {
             try Task.checkCancellation()
-            onProgress?("Reading \(dgId.name) (\(index + 1)/\(dataGroups.count))...")
-
-            do {
-                let dgData = try await readDataGroup(dgId, transport: smTransport)
-                rawDataGroups[dgId] = dgData
-                NFCLog.info("Read \(dgId.name): \(dgData.count) bytes", source: "Passport")
-            } catch NFCError.dataGroupNotAvailable {
-                // Only a data group the chip reports as absent/inaccessible is skipped.
-                // Transport loss, secure messaging failures and short reads propagate:
-                // after an SM error the chip has torn down the session (ICAO 9303-11 §9.8).
-                continue
-            }
+            guard session.shouldSelect(dgId) else { continue }
+            onProgress?("Reading \(dgId.name) (\(index + 1)/\(readOrder.count))...")
+            try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
         }
 
-        // Step 4: If DG15 is available and AA was requested but DG15 wasn't in the list, read it
-        if performActiveAuth, rawDataGroups[.dg15] == nil, !dataGroups.contains(.dg15) {
+        // Step 4: If AA was requested but DG15 wasn't in the list, read it when present.
+        if performActiveAuth, !readOrder.contains(.dg15), session.isListedInCOM(.dg15) ?? true,
+           session.secureMessagingEnded == nil
+        {
+            try Task.checkCancellation()
             onProgress?("Reading DG15 (Active Auth Key)...")
-            do {
-                let dg15Data = try await readDataGroup(.dg15, transport: smTransport)
-                rawDataGroups[.dg15] = dg15Data
-            } catch NFCError.dataGroupNotAvailable {
-                // DG15 not available — AA not supported by this document
-            }
+            try await session.read(.dg15) { try await readDataGroup(.dg15, transport: smTransport) }
         }
+
+        // A read that could not even deliver DG1 (or anything at all) is a failed read,
+        // not a partial one.
+        if let failure = session.firstFailure,
+           session.rawDataGroups.isEmpty || (readOrder.contains(.dg1) && session.rawDataGroups[.dg1] == nil)
+        {
+            throw failure
+        }
+        let rawDataGroups = session.rawDataGroups
 
         // Step 5: Parse and assemble
         onProgress?("Processing...")
@@ -165,7 +174,8 @@ public struct PassportReader: Sendable {
                 chipAuthentication: .init(),
                 passiveAuthentication: .init(),
                 activeAuthentication: .init()
-            )
+            ),
+            dataGroupReadStatus: session.status
         )
 
         let chipAuthenticationStage = buildChipAuthenticationStage(model.securityInfos)
@@ -180,7 +190,13 @@ public struct PassportReader: Sendable {
             publicKey: model.activeAuthPublicKey,
             result: nil
         )
-        if performActiveAuth, let publicKey = model.activeAuthPublicKey {
+        if performActiveAuth, model.activeAuthPublicKey != nil, let reason = session.secureMessagingEnded {
+            activeAuthenticationStage = PassportSecurityStageResult(
+                status: .skipped,
+                detail: "Active Authentication was not attempted because secure messaging ended: \(reason)"
+            )
+        }
+        if performActiveAuth, session.secureMessagingEnded == nil, let publicKey = model.activeAuthPublicKey {
             onProgress?("Verifying chip authenticity...")
             let aaResult: ActiveAuthenticationResult
             do {
@@ -232,7 +248,8 @@ public struct PassportReader: Sendable {
                     chipAuthentication: chipAuthenticationStage,
                     passiveAuthentication: passiveAuthenticationStage,
                     activeAuthentication: activeAuthenticationStage
-                )
+                ),
+                dataGroupReadStatus: model.dataGroupReadStatus
             )
         } else {
             model = PassportModel(
@@ -262,7 +279,8 @@ public struct PassportReader: Sendable {
                     chipAuthentication: chipAuthenticationStage,
                     passiveAuthentication: passiveAuthenticationStage,
                     activeAuthentication: activeAuthenticationStage
-                )
+                ),
+                dataGroupReadStatus: model.dataGroupReadStatus
             )
         }
 
@@ -275,21 +293,54 @@ public struct PassportReader: Sendable {
     private func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -> Data {
         // SELECT EF
         let selectAPDU = CommandAPDU.selectEF(id: dgId.fileID)
-        let selectResponse: ResponseAPDU
-        do {
-            selectResponse = try await transport.sendAPDU(selectAPDU)
-        } catch NFCError.unexpectedStatusWord(0x6A, 0x82) {
-            // Some chips answer "file not found" with a plain, unprotected status word.
-            throw NFCError.dataGroupNotAvailable(dgId.name)
-        }
+        let selectResponse = try await sendMappingUnavailable(selectAPDU, transport: transport, context: "SELECT \(dgId.name)")
 
         guard selectResponse.isSuccess else {
-            throw NFCError.dataGroupNotAvailable(dgId.name)
+            throw NFCError.dataGroupNotAvailable(
+                "SELECT \(dgId.name): SW=\(String(format: "%04X", selectResponse.statusWord))"
+            )
         }
 
         // Read the full file contents
-        return try await readBinaryAll(transport: transport)
+        return try await readBinaryAll(transport: transport, maxLength: Self.maxFileLength(for: dgId))
     }
+
+    /// Status words meaning "this file is absent or protected", not a broken session:
+    /// 6A82 file not found, 6982 security status not satisfied (EAC DG3/DG4),
+    /// 6A88 referenced data not found, 6986 command not allowed (no current EF).
+    static let fileUnavailableStatusWords: Set<UInt16> = [0x6A82, 0x6982, 0x6A88, 0x6986]
+
+    /// Send `apdu`, turning a plain (unprotected) "file unavailable" status word into
+    /// ``NFCError/dataGroupNotAvailable(_:)``. Chips commonly answer those errors without
+    /// secure messaging.
+    private func sendMappingUnavailable(
+        _ apdu: CommandAPDU,
+        transport: any NFCTagTransport,
+        context: String
+    ) async throws -> ResponseAPDU {
+        do {
+            return try await transport.sendAPDU(apdu)
+        } catch let NFCError.unexpectedStatusWord(sw1, sw2)
+            where Self.fileUnavailableStatusWords.contains(UInt16(sw1) << 8 | UInt16(sw2))
+        {
+            throw NFCError.dataGroupNotAvailable("\(context): plain SW=\(String(format: "%02X%02X", sw1, sw2))")
+        }
+    }
+
+    /// Largest file this reader accepts for `dgId` (ICAO 9303-10 sizes, generous margins).
+    /// Image data groups may be large; everything else is a few kilobytes at most, so a
+    /// corrupt or hostile length field cannot make the reader allocate or read megabytes.
+    static func maxFileLength(for dgId: DataGroupId) -> Int {
+        switch dgId {
+        case .dg2, .dg3, .dg4, .dg5, .dg6, .dg7:
+            largeFileMaxLength
+        default:
+            smallFileMaxLength
+        }
+    }
+
+    static let smallFileMaxLength = 64 * 1024
+    static let largeFileMaxLength = 10 * 1024 * 1024
 
     /// Read the entire contents of the currently selected EF using READ BINARY.
     ///
@@ -299,16 +350,16 @@ public struct PassportReader: Sendable {
     /// Handles multi-byte length fields (0x81, 0x82, 0x83) by reading additional
     /// header bytes if the initial 4-byte read doesn't contain the complete
     /// tag + length header.
-    private func readBinaryAll(transport: any NFCTagTransport) async throws -> Data {
+    private func readBinaryAll(transport: any NFCTagTransport, maxLength: Int) async throws -> Data {
         // Read initial header bytes — 4 bytes covers tag (1-2) + short length (1)
         // but may not cover long-form lengths (0x82 = 3 bytes, 0x83 = 4 bytes)
         let headerAPDU = CommandAPDU.readBinaryChunk(offset: 0, length: 4)
-        let headerResponse = try await transport.sendAPDU(headerAPDU)
+        let headerResponse = try await sendMappingUnavailable(headerAPDU, transport: transport, context: "READ BINARY header")
 
-        guard headerResponse.isSuccess else {
+        // 6282: end of file before Le bytes; a file shorter than 4 bytes still returns its data.
+        guard headerResponse.isSuccess || headerResponse.statusWord == 0x6282 else {
             let statusWord = String(format: "%04X", headerResponse.statusWord)
-            // 6982: access conditions not satisfied (e.g. EAC-protected DG3/DG4); 6A82: file not found.
-            if headerResponse.statusWord == 0x6982 || headerResponse.statusWord == 0x6A82 {
+            if Self.fileUnavailableStatusWords.contains(headerResponse.statusWord) {
                 throw NFCError.dataGroupNotAvailable("READ BINARY header: SW=\(statusWord)")
             }
             throw NFCError.dataGroupParseFailed("READ BINARY header failed: SW=\(statusWord)")
@@ -355,15 +406,17 @@ public struct PassportReader: Sendable {
         let headerSize = tagBytes + parsedLength.header
         let totalLength = headerSize + parsedLength.content
 
-        // Sanity check: reject absurdly large lengths (> 10 MB) to prevent memory issues
-        guard totalLength <= 10 * 1024 * 1024 else {
-            throw NFCError.dataGroupParseFailed("TLV total length \(totalLength) exceeds maximum allowed (10 MB)")
+        // Reject lengths beyond this file's cap before reading or allocating anything.
+        guard totalLength <= maxLength else {
+            throw NFCError.dataGroupParseFailed(
+                "TLV total length \(totalLength) exceeds the \(maxLength)-byte maximum for this file"
+            )
         }
 
         // Now read the complete file. The result must contain exactly `totalLength` bytes:
         // a short or failed read is an error, never a silently truncated data group.
         var fileData = Data()
-        fileData.reserveCapacity(totalLength)
+        fileData.reserveCapacity(min(totalLength, Self.smallFileMaxLength))
         var offset = 0
         let chunkSize = PassportConstants.maxReadLength
 
@@ -420,7 +473,8 @@ public struct PassportReader: Sendable {
         trustAnchorsDER: [Data],
         cardAccess: SecurityInfos?,
         cardAccessRaw: Data?,
-        securityReport: PassportSecurityReport
+        securityReport: PassportSecurityReport,
+        dataGroupReadStatus: [DataGroupId: PassportDataGroupReadResult]
     ) -> PassportModel {
         // COM
         var ldsVersion: String?
@@ -528,7 +582,8 @@ public struct PassportReader: Sendable {
             passiveAuthResult: passiveAuthResult,
             activeAuthResult: nil,
             rawDataGroups: rawDataGroups,
-            securityReport: securityReport
+            securityReport: securityReport,
+            dataGroupReadStatus: dataGroupReadStatus
         )
     }
 
@@ -547,7 +602,7 @@ public struct PassportReader: Sendable {
             )
         }
 
-        return try await readBinaryAll(transport: transport)
+        return try await readBinaryAll(transport: transport, maxLength: Self.smallFileMaxLength)
     }
 
     private func buildChipAuthenticationStage(_ securityInfos: SecurityInfos?) -> PassportSecurityStageResult {
@@ -581,6 +636,13 @@ public struct PassportReader: Sendable {
                 detail: sodPresent
                     ? "SOD was read, but passive authentication did not complete."
                     : "SOD was not available, so passive authentication could not run."
+            )
+        }
+
+        if passiveAuthResult.dataGroupHashResults.isEmpty, passiveAuthResult.status != .unsupportedHashAlgorithm {
+            return PassportSecurityStageResult(
+                status: .skipped,
+                detail: "SOD was read, but no data group it covers was read, so no hashes were compared."
             )
         }
 
@@ -687,5 +749,107 @@ public struct PassportReader: Sendable {
             subjectPublicKeyInfo: subjectPublicKeyInfo,
             securityInfos: securityInfos
         )
+    }
+}
+
+// MARK: - Data group read loop
+
+extension PassportReader {
+    /// Order in which requested data groups are read: COM first (its list decides what
+    /// is selected), then DG1, then the rest as requested, with the EAC-protected DG3/DG4
+    /// last. Duplicates are dropped.
+    static func readOrder(for requested: [DataGroupId]) -> [DataGroupId] {
+        var seen = Set<DataGroupId>()
+        let unique = requested.filter { seen.insert($0).inserted }
+
+        func rank(_ dgId: DataGroupId) -> Int {
+            switch dgId {
+            case .com: 0
+            case .dg1: 1
+            case .dg3, .dg4: 3
+            default: 2
+            }
+        }
+
+        return unique.enumerated()
+            .sorted { lhs, rhs in
+                (rank(lhs.element), lhs.offset) < (rank(rhs.element), rhs.offset)
+            }
+            .map(\.element)
+    }
+}
+
+/// Bookkeeping for the data group loop of `PassportReader.readPassport`.
+///
+/// A data group the chip reports as absent or protected is marked unavailable and the
+/// loop goes on. When secure messaging ends (MAC failure, SM status word, interrupted
+/// exchange), the remaining data groups are marked not read and everything read so far
+/// is kept. Session loss and cancellation propagate.
+struct DataGroupReadSession {
+    let transport: SecureMessagingTransport
+    private(set) var rawDataGroups: [DataGroupId: Data] = [:]
+    private(set) var status: [DataGroupId: PassportDataGroupReadResult] = [:]
+    /// Data groups listed in EF.COM, once COM was read and parsed.
+    private(set) var listedInCOM: Set<DataGroupId>?
+    /// Why secure messaging ended, once it has.
+    private(set) var secureMessagingEnded: String?
+    /// First error that cost a data group (anything but "not available").
+    private(set) var firstFailure: (any Error)?
+
+    init(transport: SecureMessagingTransport) {
+        self.transport = transport
+    }
+
+    /// Whether EF.COM lists `dgId`; `nil` when COM was not read or could not be parsed.
+    func isListedInCOM(_ dgId: DataGroupId) -> Bool? {
+        listedInCOM.map { $0.contains(dgId) }
+    }
+
+    /// Whether `dgId` should be selected. Records why when it should not.
+    mutating func shouldSelect(_ dgId: DataGroupId) -> Bool {
+        if let secureMessagingEnded {
+            status[dgId] = PassportDataGroupReadResult(
+                state: .notRead,
+                detail: "Secure messaging ended before this data group: \(secureMessagingEnded)"
+            )
+            return false
+        }
+        if dgId != .com, dgId != .sod, isListedInCOM(dgId) == false {
+            status[dgId] = PassportDataGroupReadResult(
+                state: .notPresent,
+                detail: "EF.COM does not list \(dgId.name)."
+            )
+            return false
+        }
+        return true
+    }
+
+    /// Run `body` to read `dgId` and record the outcome.
+    mutating func read(_ dgId: DataGroupId, _ body: () async throws -> Data) async throws {
+        do {
+            let data = try await body()
+            rawDataGroups[dgId] = data
+            status[dgId] = PassportDataGroupReadResult(state: .read, detail: "\(data.count) bytes")
+            NFCLog.info("Read \(dgId.name): \(data.count) bytes", source: "Passport")
+            if dgId == .com, let parsed = try? COMParser.parse(data) {
+                listedInCOM = Set(parsed.dataGroups)
+            }
+        } catch let NFCError.dataGroupNotAvailable(reason) {
+            status[dgId] = PassportDataGroupReadResult(state: .unavailable, detail: reason)
+        } catch {
+            if isSessionTerminating(error) { throw error }
+            if firstFailure == nil { firstFailure = error }
+            let reason = error.localizedDescription
+            NFCLog.error("Reading \(dgId.name) failed: \(reason)", source: "Passport")
+            if await transport.isSessionEnded {
+                secureMessagingEnded = reason
+                status[dgId] = PassportDataGroupReadResult(
+                    state: .notRead,
+                    detail: "Secure messaging ended while reading this data group: \(reason)"
+                )
+            } else {
+                status[dgId] = PassportDataGroupReadResult(state: .failed, detail: reason)
+            }
+        }
     }
 }

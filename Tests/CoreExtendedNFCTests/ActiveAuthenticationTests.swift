@@ -195,6 +195,42 @@ struct ActiveAuthenticationTests {
     }
 
     @Test
+    func `ECDSA Active Authentication falls back to the curve OID when the DG15 SPKI is not DER`() throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let challenge = Data([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF])
+        let derSignature = try privateKey.signature(for: challenge).derRepresentation
+        let plainSignature = try derSignatureToPlain(derSignature, componentLength: 32)
+
+        let securityInfos = SecurityInfos(
+            paceInfos: [],
+            chipAuthInfos: [],
+            chipAuthPublicKeyInfos: [],
+            activeAuthInfos: [ActiveAuthenticationInfo(
+                protocolOID: SecurityProtocol.aaRSA.rawValue,
+                securityProtocol: .aaRSA,
+                version: 1,
+                signatureAlgorithmOID: "0.4.0.127.0.7.1.1.4.1.3"
+            )]
+        )
+
+        // BER indefinite-length SEQUENCE: valid BER, rejected by OpenSSL's DER decoder.
+        let berSPKI = Data([0x30, 0x80, 0x00, 0x00])
+        let result = ActiveAuthenticationVerifier.verify(
+            challenge: challenge,
+            signature: plainSignature,
+            publicKey: .ecdsa(
+                curveOID: "1.2.840.10045.3.1.7",
+                publicPoint: privateKey.publicKey.x963Representation
+            ),
+            subjectPublicKeyInfo: berSPKI,
+            securityInfos: securityInfos
+        )
+
+        #expect(result.status == .verified)
+        #expect(result.success)
+    }
+
+    @Test
     func `ECDSA Active Authentication verifier fails for wrong challenge`() throws {
         let privateKey = P256.Signing.PrivateKey()
         let challenge = Data([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF])
