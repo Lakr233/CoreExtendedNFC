@@ -147,6 +147,7 @@ struct NFCErrorMessageTests {
 }
 
 @MainActor
+@Suite(.serialized)
 struct AlertQueueTests {
     @Test
     func `Back-to-back alerts are shown one after another`() async throws {
@@ -172,6 +173,35 @@ struct AlertQueueTests {
 
         await withCheckedContinuation { continuation in
             second.dismiss(animated: false) { continuation.resume() }
+        }
+    }
+
+    @Test
+    func `An alert for a screen that is off screen waits instead of being dropped`() async throws {
+        let scene = try #require(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let visible = UIViewController()
+        let hidden = UIViewController()
+        let tabs = UITabBarController()
+        tabs.viewControllers = [visible, hidden]
+        window.rootViewController = tabs
+        window.isHidden = false
+        defer { window.isHidden = true }
+        #expect(hidden.viewIfLoaded?.window == nil)
+
+        // An import on a tab that is not selected (e.g. opened from a URL) queues an alert there.
+        let alert = UIAlertController(title: "later", message: nil, preferredStyle: .alert)
+        hidden.presentQueued(alert)
+        try await Task.sleep(nanoseconds: 400_000_000)
+        #expect(AlertQueue.shared.pendingCount == 1)
+
+        tabs.selectedIndex = 1
+        for _ in 0 ..< 100 where alert.presentingViewController == nil {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(alert.presentingViewController != nil)
+        await withCheckedContinuation { continuation in
+            alert.dismiss(animated: false) { continuation.resume() }
         }
     }
 

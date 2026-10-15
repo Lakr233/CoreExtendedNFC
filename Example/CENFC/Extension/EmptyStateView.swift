@@ -2,7 +2,7 @@ import SnapKit
 import UIKit
 
 final class EmptyStateView: UIView {
-    private let label = UILabel()
+    let label = UILabel()
 
     init(message: String) {
         super.init(frame: .zero)
@@ -10,6 +10,8 @@ final class EmptyStateView: UIView {
 
         label.text = message
         label.font = .preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.numberOfLines = 0
         label.textColor = .tertiaryLabel
         label.textAlignment = .center
 

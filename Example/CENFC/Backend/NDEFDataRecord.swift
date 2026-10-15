@@ -2,7 +2,7 @@ import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
-nonisolated struct NDEFDataRecord: Codable, Hashable, Identifiable, Sendable {
+nonisolated struct NDEFDataRecord: StoredRecord, Hashable {
     let id: UUID
     let date: Date
     var name: String
@@ -36,6 +36,10 @@ nonisolated struct NDEFDataRecord: Codable, Hashable, Identifiable, Sendable {
 
     var displayValue: String {
         parsedRecord?.displayValue ?? String(localized: "No data")
+    }
+
+    func withNewID() -> NDEFDataRecord {
+        NDEFDataRecord(id: UUID(), date: date, name: name, messageData: messageData)
     }
 
     func withName(_ newName: String) -> NDEFDataRecord {

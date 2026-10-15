@@ -70,7 +70,7 @@ class ATQASAKLookupViewController: StackScrollController {
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "text.book.closed"),
             menu: UIMenu(title: String(localized: "Presets"), children: actions)
-        )
+        ).accessibilityLabeled(String(localized: "Presets"))
     }
 
     @objc private func inputChanged() {

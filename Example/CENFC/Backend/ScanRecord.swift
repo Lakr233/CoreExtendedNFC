@@ -2,7 +2,7 @@ import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
-nonisolated struct ScanRecord: Codable, Identifiable, Sendable {
+nonisolated struct ScanRecord: StoredRecord {
     let id: UUID
     let date: Date
     let cardInfo: CardInfo
@@ -15,6 +15,10 @@ nonisolated struct ScanRecord: Codable, Identifiable, Sendable {
 
     static func synthesized(from dump: DumpRecord) -> ScanRecord {
         ScanRecord(cardInfo: dump.dump.cardInfo, date: dump.date)
+    }
+
+    func withNewID() -> ScanRecord {
+        replacingID(UUID(), date: date)
     }
 
     func replacingID(_ newID: UUID = UUID(), date newDate: Date = Date()) -> ScanRecord {

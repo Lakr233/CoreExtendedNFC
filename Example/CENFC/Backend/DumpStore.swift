@@ -6,12 +6,11 @@ import UIKit
 
 @MainActor
 class DumpStore: @MainActor ObjectListDataSource {
-    static let shared = DumpStore()
-
-    private let persistence = RecordFilePersistence<DumpRecord>(
+    static let shared = DumpStore(
         fileURL: RecordFilePersistence<DumpRecord>.documentsFile(named: "dump_records.json")
     )
-    private var saveGeneration = 0
+
+    private let file: RecordFileStore<DumpRecord>
 
     private(set) var records: [DumpRecord] = [] {
         didSet { changeSubject.send() }
@@ -19,33 +18,37 @@ class DumpStore: @MainActor ObjectListDataSource {
 
     private let changeSubject = PassthroughSubject<Void, Never>()
 
-
-    private init() {
+    /// Creates a store backed by `fileURL`. The app uses ``shared``; tests pass a temporary file.
+    init(fileURL: URL) {
+        file = RecordFileStore(fileURL: fileURL, source: "DumpStore")
         load()
     }
 
     // MARK: - CRUD
 
     func load() {
-        let result = persistence.load()
-        records = result.records
-        persistence.reportLoadIssues(result, source: "DumpStore")
+        records = file.load()
     }
 
     /// Persists the current records without blocking the main thread.
     func save() {
-        saveGeneration += 1
-        let snapshot = records
-        let generation = saveGeneration
-        let persistence = persistence
-        Task {
-            await persistence.save(snapshot, generation: generation)
-        }
+        file.save(records)
     }
 
-    func add(_ record: DumpRecord) {
-        records.insert(record, at: 0)
+    /// Returns once the latest saved records are on disk.
+    func flush() async {
+        await file.flush()
+    }
+
+    /// Inserts `record` at the top. A record whose ID is already in the store
+    /// (a re-imported file) is stored under a new ID.
+    /// - Returns: The record as stored.
+    @discardableResult
+    func add(_ record: DumpRecord) -> DumpRecord {
+        let stored = RecordIdentity.unique(record, among: records)
+        records.insert(stored, at: 0)
         save()
+        return stored
     }
 
     func move(from source: Int, to destination: Int) {
@@ -65,10 +68,7 @@ class DumpStore: @MainActor ObjectListDataSource {
     }
 
     func reorder(by orderedIDs: [UUID]) {
-        guard orderedIDs.count == records.count else { return }
-        let recordByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        let reordered = orderedIDs.compactMap { recordByID[$0] }
-        guard reordered.count == records.count else { return }
+        guard let reordered = RecordIdentity.reordered(records, by: orderedIDs) else { return }
         records = reordered
         save()
     }

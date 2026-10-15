@@ -76,7 +76,7 @@ class CardDetailViewController: StackScrollController {
                 self?.exportFile()
             },
             menu: shareMenu
-        )
+        ).accessibilityLabeled(String(localized: "Export"))
     }
 
     private func openRawCommunication() {
@@ -86,7 +86,7 @@ class CardDetailViewController: StackScrollController {
 
     private func exportFile() {
         do {
-            let fileURL = try ScanRecordDocument.exportToFile(record)
+            let fileURL = try CardDocument.exportToFile(record)
             let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
             activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
             present(activity, animated: true)

@@ -75,7 +75,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
                 self?.performDump(targets: [.all])
             },
             menu: scanMenu
-        )
+        ).accessibilityLabeled(String(localized: "Dump Card"))
     }()
 
     private lazy var doneBarButton = UIBarButtonItem(
@@ -83,7 +83,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
         style: .plain,
         target: self,
         action: #selector(exitEditingMode)
-    )
+    ).accessibilityLabeled(String(localized: "Done"))
 
     private lazy var deleteBarButton: UIBarButtonItem = {
         let button = UIBarButtonItem(
@@ -91,7 +91,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
             style: .plain,
             target: self,
             action: #selector(deleteSelectedRecords)
-        )
+        ).accessibilityLabeled(String(localized: "Delete"))
         button.tintColor = .systemRed
         return button
     }()
@@ -101,7 +101,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
         style: .plain,
         target: self,
         action: #selector(exportSelected)
-    )
+    ).accessibilityLabeled(String(localized: "Export"))
 
     private let emptyState = EmptyStateView.scan()
     private let nfcTask = SingleTaskRunner()

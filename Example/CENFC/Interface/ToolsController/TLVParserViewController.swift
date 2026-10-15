@@ -39,7 +39,7 @@ class TLVParserViewController: StackScrollController {
                     self?.rebuildResults()
                 },
             ])
-        )
+        ).accessibilityLabeled(String(localized: "Examples"))
     }
 
     override func setupContentViews() {

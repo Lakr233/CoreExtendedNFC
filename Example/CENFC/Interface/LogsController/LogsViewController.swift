@@ -68,6 +68,8 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
         button.showsMenuAsPrimaryAction = true
         button.menu = createMenu()
         button.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        // VoiceOver reads the custom view, so the label goes on the button.
+        button.accessibilityLabel = String(localized: "More")
         navigationItem.rightBarButtonItem = UIBarButtonItem(customView: button)
     }
 

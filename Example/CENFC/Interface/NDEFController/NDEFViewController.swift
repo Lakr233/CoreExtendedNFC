@@ -79,7 +79,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
                 ),
             ]),
         ])
-        return UIBarButtonItem(image: UIImage(systemName: "plus"), menu: addMenu)
+        return UIBarButtonItem(image: UIImage(systemName: "plus"), menu: addMenu).accessibilityLabeled(String(localized: "Add Record"))
     }()
 
     private lazy var editingBarButton = UIBarButtonItem(
@@ -87,14 +87,14 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         style: .plain,
         target: self,
         action: #selector(enterEditingMode)
-    )
+    ).accessibilityLabeled(String(localized: "Select"))
 
     private lazy var doneBarButton = UIBarButtonItem(
         image: UIImage(systemName: "checkmark.circle"),
         style: .plain,
         target: self,
         action: #selector(exitEditingMode)
-    )
+    ).accessibilityLabeled(String(localized: "Done"))
 
     private lazy var deleteBarButton: UIBarButtonItem = {
         let button = UIBarButtonItem(
@@ -102,7 +102,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             style: .plain,
             target: self,
             action: #selector(deleteSelectedRecords)
-        )
+        ).accessibilityLabeled(String(localized: "Delete"))
         button.tintColor = .systemRed
         return button
     }()
@@ -119,7 +119,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
                 image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.exportSelected() },
         ])
-        return UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: menu)
+        return UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: menu).accessibilityLabeled(String(localized: "More"))
     }
 
     private let emptyState = EmptyStateView.scan()
@@ -326,18 +326,33 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         case text, uri, smartPoster, mime, external
     }
 
+    /// Opens an empty editor. The record is added to the store when the editor
+    /// first saves, so backing out of an untouched editor leaves no empty record.
     private func createRecord(type: NDEFCreateType) {
-        let (name, ndefRecord): (String, NDEFRecord) = switch type {
-        case .text: (String(localized: "Text"), .text("", languageCode: "en"))
-        case .uri: (String(localized: "URI"), .uri(""))
-        case .smartPoster: (String(localized: "Smart Poster"), .smartPoster(uri: "", title: nil))
-        case .mime: (String(localized: "MIME"), .mime(type: "", data: Data()))
-        case .external: (String(localized: "External"), .external(type: "", data: Data()))
+        let editor = Self.makeCreateEditor(for: type)
+        editor.onSave = Self.saveEditedRecord
+        navigationController?.pushViewController(editor, animated: true)
+    }
+
+    /// An empty editor for a record of `type` that is not stored yet.
+    static func makeCreateEditor(for type: NDEFCreateType) -> NDEFEditorViewController {
+        switch type {
+        case .text: NDEFTextEditorViewController()
+        case .uri: NDEFURIEditorViewController()
+        case .smartPoster: NDEFSmartPosterEditorViewController()
+        case .mime: NDEFMIMEEditorViewController()
+        case .external: NDEFExternalEditorViewController()
         }
-        let message = NDEFMessage(records: [ndefRecord])
-        let record = NDEFDataRecord(name: name, messageData: message.data)
-        NDEFStore.shared.add(record)
-        pushEditor(for: record)
+    }
+
+    /// Stores a record handed over by an editor: updates it when it is already
+    /// stored, or adds it when this is the first save of a new record.
+    static func saveEditedRecord(_ record: NDEFDataRecord) {
+        if NDEFStore.shared.record(for: record.id) != nil {
+            NDEFStore.shared.update(record)
+        } else {
+            NDEFStore.shared.add(record)
+        }
     }
 
     // MARK: - Scan NDEF from Card
@@ -583,9 +598,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         default: NDEFTextEditorViewController()
         }
         editor.existingRecord = record
-        editor.onSave = { updated in
-            NDEFStore.shared.update(updated)
-        }
+        editor.onSave = Self.saveEditedRecord
         navigationController?.pushViewController(editor, animated: true)
     }
 

@@ -62,7 +62,7 @@ class ToolsViewController: StackScrollController {
             style: .plain,
             target: self,
             action: #selector(openLogs)
-        )
+        ).accessibilityLabeled(String(localized: "Logs"))
         logsButton.menu = UIMenu(children: [
             UIAction(
                 title: String(localized: "What's New"),

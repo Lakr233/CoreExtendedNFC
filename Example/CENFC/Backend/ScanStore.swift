@@ -6,12 +6,11 @@ import UIKit
 
 @MainActor
 class ScanStore: @MainActor ObjectListDataSource {
-    static let shared = ScanStore()
-
-    private let persistence = RecordFilePersistence<ScanRecord>(
+    static let shared = ScanStore(
         fileURL: RecordFilePersistence<ScanRecord>.documentsFile(named: "scan_records.json")
     )
-    private var saveGeneration = 0
+
+    private let file: RecordFileStore<ScanRecord>
 
     private(set) var records: [ScanRecord] = [] {
         didSet { changeSubject.send() }
@@ -19,33 +18,37 @@ class ScanStore: @MainActor ObjectListDataSource {
 
     private let changeSubject = PassthroughSubject<Void, Never>()
 
-
-    private init() {
+    /// Creates a store backed by `fileURL`. The app uses ``shared``; tests pass a temporary file.
+    init(fileURL: URL) {
+        file = RecordFileStore(fileURL: fileURL, source: "ScanStore")
         load()
     }
 
     // MARK: - CRUD
 
     func load() {
-        let result = persistence.load()
-        records = result.records
-        persistence.reportLoadIssues(result, source: "ScanStore")
+        records = file.load()
     }
 
     /// Persists the current records without blocking the main thread.
     func save() {
-        saveGeneration += 1
-        let snapshot = records
-        let generation = saveGeneration
-        let persistence = persistence
-        Task {
-            await persistence.save(snapshot, generation: generation)
-        }
+        file.save(records)
     }
 
-    func add(_ record: ScanRecord) {
-        records.insert(record, at: 0)
+    /// Returns once the latest saved records are on disk.
+    func flush() async {
+        await file.flush()
+    }
+
+    /// Inserts `record` at the top. A record whose ID is already in the store
+    /// (a re-imported file) is stored under a new ID.
+    /// - Returns: The record as stored.
+    @discardableResult
+    func add(_ record: ScanRecord) -> ScanRecord {
+        let stored = RecordIdentity.unique(record, among: records)
+        records.insert(stored, at: 0)
         save()
+        return stored
     }
 
     func replace(_ existingID: UUID, with record: ScanRecord) {
@@ -65,15 +68,19 @@ class ScanStore: @MainActor ObjectListDataSource {
         save()
     }
 
+    /// Inserts `record` at `index`, under a new ID when its ID is already in the store.
     func insert(_ record: ScanRecord, at index: Int) {
         let clamped = max(0, min(index, records.count))
-        records.insert(record, at: clamped)
+        records.insert(RecordIdentity.unique(record, among: records), at: clamped)
         save()
     }
 
-    /// Replaces the record with the same UID, or inserts a new one at `index`.
+    /// Replaces the record with the same ID (the same exported record imported
+    /// again) or the same stable UID, or inserts a new one at `index`.
     func upsert(_ record: ScanRecord, at index: Int = 0) {
-        if let existing = self.record(withUID: record.cardInfo.uid) {
+        if self.record(for: record.id) != nil {
+            replace(record.id, with: record)
+        } else if let existing = self.record(withUID: record.cardInfo.uid) {
             replace(existing.id, with: record)
         } else {
             insert(record, at: index)
@@ -86,10 +93,7 @@ class ScanStore: @MainActor ObjectListDataSource {
     }
 
     func reorder(by orderedIDs: [UUID]) {
-        guard orderedIDs.count == records.count else { return }
-        let recordByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        let reordered = orderedIDs.compactMap { recordByID[$0] }
-        guard reordered.count == records.count else { return }
+        guard let reordered = RecordIdentity.reordered(records, by: orderedIDs) else { return }
         records = reordered
         save()
     }

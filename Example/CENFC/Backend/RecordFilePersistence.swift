@@ -16,6 +16,18 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
         let backupURL: URL?
         /// Number of elements that could not be decoded and were dropped.
         let droppedCount: Int
+        /// Why the file must not be overwritten, or `nil` when saving is safe.
+        ///
+        /// Set when the file exists but could not be read (data protection, I/O
+        /// error), or when it could not be decoded and the backup copy failed.
+        /// Saving would then replace history that is still only on disk.
+        var writeBlockedReason: String? = nil
+
+        /// Whether the file was only partly decoded and should be re-saved, so the
+        /// next launch does not back it up again.
+        var needsResave: Bool {
+            backupURL != nil && writeBlockedReason == nil
+        }
     }
 
     let fileURL: URL
@@ -34,7 +46,18 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
     // MARK: - Load
 
     func load(now: Date = Date()) -> LoadResult {
-        guard let data = try? Data(contentsOf: fileURL) else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            guard Self.isFileMissing(error) else {
+                return LoadResult(
+                    records: [],
+                    backupURL: nil,
+                    droppedCount: 0,
+                    writeBlockedReason: "could not read file: \(error.localizedDescription)"
+                )
+            }
             return LoadResult(records: [], backupURL: nil, droppedCount: 0)
         }
         let decoder = RecordJSON.makeDecoder()
@@ -48,12 +71,34 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
         return LoadResult(
             records: records,
             backupURL: backupURL,
-            droppedCount: max(elements.count - records.count, 0)
+            droppedCount: max(elements.count - records.count, 0),
+            writeBlockedReason: backupURL == nil ? "could not decode file and backup failed" : nil
         )
+    }
+
+    /// Whether `error` from reading the store file means the file does not exist yet.
+    static func isFileMissing(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSCocoaErrorDomain, nsError.code == NSFileReadNoSuchFileError {
+            return true
+        }
+        if nsError.domain == NSPOSIXErrorDomain, nsError.code == Int(ENOENT) {
+            return true
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isFileMissing(underlying)
+        }
+        return false
     }
 
     @MainActor
     func reportLoadIssues(_ result: LoadResult, source: String) {
+        if let reason = result.writeBlockedReason {
+            AppLogStore.shared.error(
+                "\(fileURL.lastPathComponent): \(reason); changes will not be saved this session so the file is not overwritten",
+                source: source
+            )
+        }
         guard result.backupURL != nil || result.droppedCount > 0 else { return }
         let backupName = result.backupURL?.lastPathComponent ?? "none (backup failed)"
         AppLogStore.shared.error(

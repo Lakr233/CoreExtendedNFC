@@ -84,7 +84,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 self?.performScan(targets: [.all])
             },
             menu: scanMenu
-        )
+        ).accessibilityLabeled(String(localized: "Scan Card"))
     }()
 
     private lazy var doneBarButton = UIBarButtonItem(
@@ -92,7 +92,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         style: .plain,
         target: self,
         action: #selector(exitEditingMode)
-    )
+    ).accessibilityLabeled(String(localized: "Done"))
 
     private lazy var deleteBarButton: UIBarButtonItem = {
         let button = UIBarButtonItem(
@@ -100,7 +100,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
             style: .plain,
             target: self,
             action: #selector(deleteSelectedRecords)
-        )
+        ).accessibilityLabeled(String(localized: "Delete"))
         button.tintColor = .systemRed
         return button
     }()
@@ -110,7 +110,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         style: .plain,
         target: self,
         action: #selector(exportSelected)
-    )
+    ).accessibilityLabeled(String(localized: "Export"))
 
     // MARK: - Init
 

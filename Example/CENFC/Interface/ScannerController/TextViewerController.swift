@@ -49,6 +49,6 @@ class TextViewerController: UIViewController {
                     haptic: .success
                 )
             }
-        )
+        ).accessibilityLabeled(String(localized: "Copy"))
     }
 }

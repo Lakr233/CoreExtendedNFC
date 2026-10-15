@@ -62,7 +62,7 @@ class DumpDetailViewController: StackScrollController {
                 style: .plain,
                 target: self,
                 action: #selector(exportTapped)
-            )
+            ).accessibilityLabeled(String(localized: "Export"))
         } else {
             let menu = UIMenu(children: menuItems)
             navigationItem.rightBarButtonItem = UIBarButtonItem(
@@ -71,7 +71,7 @@ class DumpDetailViewController: StackScrollController {
                     self?.exportTapped()
                 },
                 menu: menu
-            )
+            ).accessibilityLabeled(String(localized: "Export"))
         }
     }
 

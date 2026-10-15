@@ -39,7 +39,7 @@ class PassportMRZInputViewController: StackScrollController {
             style: .plain,
             target: self,
             action: #selector(scanTapped)
-        )
+        ).accessibilityLabeled(String(localized: "Read Chip"))
     }
 
     override func viewDidDisappear(_ animated: Bool) {

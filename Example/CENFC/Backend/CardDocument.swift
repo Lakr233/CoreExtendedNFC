@@ -54,10 +54,10 @@ nonisolated enum CardDocument {
         return url
     }
 
-    /// Exports a scan record together with the latest dump of the same card from ``DumpStore``.
+    /// Exports a scan record together with the latest dump of the same card from `dumps`.
     @MainActor
-    static func exportToFile(_ scan: ScanRecord) throws -> URL {
-        try exportToFile(scan, dump: DumpStore.shared.record(withUID: scan.cardInfo.uid))
+    static func exportToFile(_ scan: ScanRecord, dumps: DumpStore = .shared) throws -> URL {
+        try exportToFile(scan, dump: dumps.record(withUID: scan.cardInfo.uid))
     }
 
     // MARK: - Import

@@ -2,42 +2,56 @@ import CoreExtendedNFC
 import Foundation
 
 class PassportStore {
-    static let shared = PassportStore()
-
-    private let persistence = RecordFilePersistence<PassportRecord>(
+    static let shared = PassportStore(
         fileURL: RecordFilePersistence<PassportRecord>.documentsFile(named: "passport_records.json")
     )
-    private var saveGeneration = 0
+
+    private let file: RecordFileStore<PassportRecord>
 
     private(set) var records: [PassportRecord] = []
 
-
-    private init() {
+    /// Creates a store backed by `fileURL`. The app uses ``shared``; tests pass a temporary file.
+    init(fileURL: URL) {
+        file = RecordFileStore(fileURL: fileURL, source: "PassportStore")
         load()
     }
 
     // MARK: - CRUD
 
     func load() {
-        let result = persistence.load()
-        records = result.records
-        persistence.reportLoadIssues(result, source: "PassportStore")
+        records = file.load()
     }
 
     /// Persists the current records without blocking the main thread.
     func save() {
-        saveGeneration += 1
-        let snapshot = records
-        let generation = saveGeneration
-        let persistence = persistence
-        Task {
-            await persistence.save(snapshot, generation: generation)
-        }
+        file.save(records)
     }
 
-    func add(_ record: PassportRecord) {
-        records.insert(record, at: 0)
+    /// Returns once the latest saved records are on disk.
+    func flush() async {
+        await file.flush()
+    }
+
+    /// Inserts `record` at the top. A record whose ID is already in the store
+    /// (a re-imported file) is stored under a new ID.
+    /// - Returns: The record as stored.
+    @discardableResult
+    func add(_ record: PassportRecord) -> PassportRecord {
+        let stored = RecordIdentity.unique(record, among: records)
+        records.insert(stored, at: 0)
         save()
+        return stored
+    }
+
+    /// Stores an imported record: it replaces the record with the same document
+    /// number, or is added (under a new ID when its ID is already taken).
+    func importRecord(_ record: PassportRecord) {
+        let documentNumber = record.passport.mrz?.documentNumber ?? ""
+        if !documentNumber.isEmpty, let existing = self.record(withDocumentNumber: documentNumber) {
+            replace(existing.id, with: record)
+        } else {
+            add(record)
+        }
     }
 
     func remove(id: UUID) {
@@ -57,10 +71,7 @@ class PassportStore {
     }
 
     func reorder(by orderedIDs: [UUID]) {
-        guard orderedIDs.count == records.count else { return }
-        let recordByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        let reordered = orderedIDs.compactMap { recordByID[$0] }
-        guard reordered.count == records.count else { return }
+        guard let reordered = RecordIdentity.reordered(records, by: orderedIDs) else { return }
         records = reordered
         save()
     }

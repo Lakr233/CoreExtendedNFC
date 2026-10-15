@@ -34,6 +34,13 @@ nonisolated enum ExportFileLocation {
         while result.hasPrefix(".") {
             result.removeFirst()
         }
+        // APFS limits a file name to 255 UTF-8 bytes; leave room for the extension.
+        while result.utf8.count > maxNameBytes {
+            result.removeLast()
+        }
         return result
     }
+
+    /// Longest sanitized base name, in UTF-8 bytes.
+    static let maxNameBytes = 200
 }

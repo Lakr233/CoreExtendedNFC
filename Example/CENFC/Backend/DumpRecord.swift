@@ -2,7 +2,7 @@ import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
-nonisolated struct DumpRecord: Codable, Identifiable, Sendable {
+nonisolated struct DumpRecord: StoredRecord {
     let id: UUID
     let date: Date
     let dump: MemoryDump
@@ -11,6 +11,10 @@ nonisolated struct DumpRecord: Codable, Identifiable, Sendable {
         self.id = id
         self.date = date
         self.dump = dump
+    }
+
+    func withNewID() -> DumpRecord {
+        DumpRecord(from: dump, id: UUID(), date: date)
     }
 
     var hasMemoryData: Bool {

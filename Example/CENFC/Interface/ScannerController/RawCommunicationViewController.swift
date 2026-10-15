@@ -100,7 +100,7 @@ class RawCommunicationViewController: StackScrollController {
             style: .plain,
             target: self,
             action: #selector(copyLog)
-        )
+        ).accessibilityLabeled(String(localized: "Copy Log"))
     }
 
     @objc private func copyLog() {

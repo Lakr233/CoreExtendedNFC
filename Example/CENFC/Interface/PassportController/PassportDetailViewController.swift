@@ -120,7 +120,7 @@ class PassportDetailViewController: StackScrollController {
             style: .plain,
             target: self,
             action: #selector(exportTapped)
-        )
+        ).accessibilityLabeled(String(localized: "Export"))
     }
 
     @objc private func exportTapped() {

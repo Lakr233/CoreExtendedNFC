@@ -7,9 +7,18 @@ import UIKit
 // MARK: - Base Editor
 
 class NDEFEditorViewController: StackScrollController {
+    /// The stored record being edited, or `nil` for a record that has not been saved yet.
+    /// Set to the saved record after the first save.
     var existingRecord: NDEFDataRecord?
     var onSave: ((NDEFDataRecord) -> Void)?
     private let nfcTask = SingleTaskRunner()
+
+    /// What the fields built right after they were filled from ``existingRecord``.
+    /// While the fields still build this, the user has not edited anything and the
+    /// stored message is kept byte for byte, including the parts this editor cannot
+    /// show (further records, record IDs, Smart Poster actions and icons, text
+    /// encodings, whitespace).
+    private var untouchedBuild: Data?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -18,6 +27,7 @@ class NDEFEditorViewController: StackScrollController {
         navigationItem.largeTitleDisplayMode = .never
         enableExtendedEdge()
         setupNavButtons()
+        untouchedBuild = buildNDEFRecord().map { NDEFMessage(records: [$0]).data }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -29,12 +39,14 @@ class NDEFEditorViewController: StackScrollController {
     }
 
     private func setupNavButtons() {
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
+        let writeButton = UIBarButtonItem(
             image: UIImage(systemName: "square.and.arrow.down.on.square"),
             style: .plain,
             target: self,
             action: #selector(writeToCard)
         )
+        writeButton.accessibilityLabel = String(localized: "Write to Tag")
+        navigationItem.rightBarButtonItem = writeButton
     }
 
     func buildNDEFRecord() -> NDEFRecord? {
@@ -45,27 +57,51 @@ class NDEFEditorViewController: StackScrollController {
         String(localized: "NDEF")
     }
 
+    /// The message the editor currently describes, or `nil` when the fields cannot
+    /// be turned into a record.
+    ///
+    /// When nothing was edited this is the stored message unchanged. After an
+    /// edit, only the first record is rebuilt: it keeps its record ID, and any
+    /// further records of the stored message are kept as they were.
+    func currentMessage() -> NDEFMessage? {
+        guard let built = buildNDEFRecord() else { return nil }
+        guard let existing = existingRecord, let original = existing.parsedMessage else {
+            return NDEFMessage(records: [built])
+        }
+        if NDEFMessage(records: [built]).data == untouchedBuild {
+            return original
+        }
+        let first = NDEFRecord(
+            typeNameFormat: built.typeNameFormat,
+            type: built.type,
+            identifier: original.records.first?.identifier ?? Data(),
+            payload: built.payload
+        )
+        return NDEFMessage(records: [first] + original.records.dropFirst())
+    }
+
     /// Hands the edited record to ``onSave``.
     ///
     /// Nothing is saved when the fields cannot be turned into a record or when the
-    /// rebuilt message is byte-for-byte the stored one, so opening a record and
-    /// leaving never rewrites it.
+    /// message is byte-for-byte the stored one, so opening a record and leaving
+    /// never rewrites it. A new record is created on its first save only.
     func save() {
-        guard let ndefRecord = buildNDEFRecord() else { return }
-        let message = NDEFMessage(records: [ndefRecord])
+        guard let message = currentMessage() else { return }
         let name = recordName()
+        let saved: NDEFDataRecord
         if let existing = existingRecord {
             guard message.data != existing.messageData else { return }
-            let updated = existing.withName(name).withMessageData(message.data)
-            onSave?(updated)
+            saved = existing.withName(name).withMessageData(message.data)
         } else {
-            let newRecord = NDEFDataRecord(name: name, messageData: message.data)
-            onSave?(newRecord)
+            saved = NDEFDataRecord(name: name, messageData: message.data)
         }
+        onSave?(saved)
+        existingRecord = saved
+        untouchedBuild = buildNDEFRecord().map { NDEFMessage(records: [$0]).data }
     }
 
     @objc private func writeToCard() {
-        guard let ndefRecord = buildNDEFRecord() else {
+        guard let message = currentMessage() else {
             let alert = UIAlertController(
                 title: String(localized: "Cannot Write"),
                 message: String(localized: "Fill in the required fields first."),
@@ -76,7 +112,6 @@ class NDEFEditorViewController: StackScrollController {
             return
         }
 
-        let message = NDEFMessage(records: [ndefRecord])
         nfcTask.run { [weak self] in
             await self?.write(message)
         }
@@ -181,8 +216,8 @@ class NDEFTextEditorViewController: NDEFEditorViewController {
     }
 
     override func buildNDEFRecord() -> NDEFRecord? {
-        let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !text.isEmpty else { return nil }
+        let text = textField.text ?? ""
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let lang = languageField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "en"
         return .text(text, languageCode: lang)
     }

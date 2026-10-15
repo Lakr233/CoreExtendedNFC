@@ -1,7 +1,7 @@
 import CoreExtendedNFC
 import Foundation
 
-nonisolated struct PassportRecord: Codable, Identifiable, Sendable {
+nonisolated struct PassportRecord: StoredRecord {
     let id: UUID
     let date: Date
     let passport: PassportModel
@@ -10,6 +10,10 @@ nonisolated struct PassportRecord: Codable, Identifiable, Sendable {
         self.id = id
         self.date = date
         self.passport = passport
+    }
+
+    func withNewID() -> PassportRecord {
+        replacingID(UUID(), date: date)
     }
 
     func replacingID(_ newID: UUID = UUID(), date newDate: Date = Date()) -> PassportRecord {

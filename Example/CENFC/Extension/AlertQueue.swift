@@ -6,8 +6,10 @@ import UIKit
 /// something, so back-to-back alerts (an info alert followed by a prompt, or one
 /// prompt per imported file) would silently drop everything but the first.
 /// The queue waits until the previous alert is dismissed and the presenter is
-/// free before presenting the next one. Alerts whose presenter has left the
-/// window are discarded.
+/// free before presenting the next one. An alert waits while its presenter is
+/// off screen (another tab, mid-transition) and is discarded only when the
+/// presenter is gone for good: deallocated, or removed from its parent and not
+/// presented by anything. A presentation UIKit refuses is retried.
 @MainActor
 final class AlertQueue {
     static let shared = AlertQueue()
@@ -18,7 +20,10 @@ final class AlertQueue {
     }
 
     private var pending: [Pending] = []
-    private weak var showing: UIAlertController?
+    /// The alert last handed to UIKit.
+    private var showing: Pending?
+    /// Whether UIKit actually started presenting ``showing``.
+    private var showingConfirmed = false
     private var drainTask: Task<Void, Never>?
 
     var pendingCount: Int {
@@ -43,26 +48,41 @@ final class AlertQueue {
     /// Presents the next alert when possible.
     /// - Returns: `true` when the queue is empty, `false` when it must try again later.
     private func presentNext() -> Bool {
-        if let showing, showing.presentingViewController != nil {
-            return false
+        if let current = showing {
+            if current.alert.presentingViewController != nil {
+                showingConfirmed = true
+                return false
+            }
+            if !showingConfirmed {
+                // UIKit refused the presentation (presenter busy or mid-transition): try again.
+                pending.insert(current, at: 0)
+            }
+            showing = nil
         }
-        showing = nil
-        pending.removeAll { $0.presenter == nil }
+        pending.removeAll { $0.presenter.map(Self.isGone) ?? true }
         guard let next = pending.first, let presenter = next.presenter else {
             return pending.isEmpty
         }
-        guard presenter.viewIfLoaded?.window != nil else {
-            // The screen that asked for this alert is gone; nobody is left to answer it.
-            pending.removeFirst()
-            return pending.isEmpty
-        }
-        guard presenter.presentedViewController == nil else {
+        guard presenter.viewIfLoaded?.window != nil,
+              presenter.presentedViewController == nil
+        else {
             return false
         }
         pending.removeFirst()
-        showing = next.alert
+        showing = next
+        showingConfirmed = false
         presenter.present(next.alert, animated: true)
+        if next.alert.presentingViewController != nil {
+            showingConfirmed = true
+        }
         return false
+    }
+
+    /// Whether `presenter` has left the interface for good, so nobody is left to answer its alert.
+    static func isGone(_ presenter: UIViewController) -> Bool {
+        presenter.viewIfLoaded?.window == nil
+            && presenter.parent == nil
+            && presenter.presentingViewController == nil
     }
 }
 

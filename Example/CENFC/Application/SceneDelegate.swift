@@ -23,6 +23,11 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    func sceneDidEnterBackground(_: UIScene) {
+        // Record saves run asynchronously; finish them before the app can be suspended or killed.
+        RecordStores.flushInBackgroundTask()
+    }
+
     func scene(_: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         for context in URLContexts {
             handleOpenURL(context.url)
