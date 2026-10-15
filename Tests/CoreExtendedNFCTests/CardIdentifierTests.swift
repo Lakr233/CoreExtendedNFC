@@ -104,9 +104,65 @@ struct CardIdentifierATQAOrderTests {
     }
 
     @Test
+    func `Generic ISO 14443-4 SAKs map to smartMX for probing`() {
+        // SAK 0x20 without the DESFire ATQA is just "ISO 14443-4 compliant".
+        #expect(CardIdentifier.identify(atqa: Data([0x00, 0x08]), sak: 0x20) == .smartMX)
+        #expect(CardIdentifier.identify(atqa: Data([0x00, 0x48]), sak: 0x20) == .smartMX)
+        // SAK 0x28 / 0x38: ISO 14443-4 with MIFARE Classic emulation.
+        #expect(CardIdentifier.identify(atqa: Data([0x00, 0x04]), sak: 0x28) == .smartMX)
+        #expect(CardIdentifier.identify(atqa: Data([0x00, 0x02]), sak: 0x38) == .smartMX)
+        // Exact AN10833 matches are kept.
+        #expect(CardIdentifier.identify(atqa: Data([0x03, 0x44]), sak: 0x20) == .mifareDesfire)
+        #expect(CardIdentifier.identify(atqaValue: 0x0004, sak: 0x20) == .mifarePlusSL3_2K)
+        #expect(CardIdentifier.identify(atqaValue: 0x0042, sak: 0x20) == .mifarePlusSL3_4K)
+    }
+
+    @Test
     func `Data and value forms agree`() {
         #expect(CardIdentifier.identify(atqa: Data([0x03, 0x44]), sak: 0x20)
             == CardIdentifier.identify(atqaValue: 0x0344, sak: 0x20))
         #expect(CardIdentifier.identify(atqaValue: 0x1234, sak: 0xAB) == .unknown(atqa: Data([0x12, 0x34]), sak: 0xAB))
+    }
+}
+
+/// FeliCa Lite / Lite-S refinement. Both use System Code 0x88B4; only Lite-S
+/// has block 0x90 (WCNT) behind the read-only service 0x000B (FeliCa Lite-S
+/// User's Manual memory map; FeliCa Lite ends at block 0x88).
+struct FeliCaLiteRefinementTests {
+    private static let liteSystemCode = Data([0x88, 0xB4])
+    private static let readOnlyService = Data([0x0B, 0x00])
+
+    @Test
+    func `System code 88B4 with a readable WCNT block refines to Lite-S`() async throws {
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [:],
+            serviceBlocks: [Self.readOnlyService: Array(repeating: Data(count: 16), count: 0x91)],
+            systemCode: Self.liteSystemCode
+        )
+        let info = CardInfo(type: .felicaStandard, uid: transport.identifier, systemCode: Self.liteSystemCode)
+        let refined = try await CoreExtendedNFC.refineCardInfo(info, transport: transport)
+        #expect(refined.type == .felicaLiteS)
+        #expect(transport.readLog == [["0B00:144"]])
+    }
+
+    @Test
+    func `System code 88B4 rejecting block 0x90 refines to Lite`() async throws {
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [:],
+            serviceBlocks: [Self.readOnlyService: Array(repeating: Data(count: 16), count: 0x89)],
+            systemCode: Self.liteSystemCode
+        )
+        let info = CardInfo(type: .felicaStandard, uid: transport.identifier, systemCode: Self.liteSystemCode)
+        let refined = try await CoreExtendedNFC.refineCardInfo(info, transport: transport)
+        #expect(refined.type == .felicaLite)
+    }
+
+    @Test
+    func `Other system codes are not probed`() async throws {
+        let transport = MockFeliCaServiceTransport(serviceVersions: [:], systemCode: Data([0x00, 0x03]))
+        let info = CardInfo(type: .felicaStandard, uid: transport.identifier, systemCode: Data([0x00, 0x03]))
+        let refined = try await CoreExtendedNFC.refineCardInfo(info, transport: transport)
+        #expect(refined.type == .felicaStandard)
+        #expect(transport.readLog.isEmpty)
     }
 }

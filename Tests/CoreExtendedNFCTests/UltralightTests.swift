@@ -285,22 +285,23 @@ struct UltralightTests {
         #expect(mock.sentCommands.count == 1)
     }
 
-    // MARK: - Ultralight C detection (NXP AN10833 §3.2)
+    // MARK: - Ultralight C detection (MF0ICU1 / MF0ICU2 datasheets, READ)
 
     @Test
-    func `Refiner classifies Ultralight C via AUTHENTICATE probe after GET_VERSION NAK`() async throws {
+    func `Refiner classifies Ultralight C via READ of page 0x2B after GET_VERSION NAK`() async throws {
         let mock = MockTransport()
-        mock.responses = [Data([0x00]), Data([0xAF]) + Data(repeating: 0x5A, count: 8)]
+        mock.responses = [Data([0x00]), Data(repeating: 0x00, count: 16)]
         let refined = try await CoreExtendedNFC.refineCardInfo(
             CardInfo(type: .mifareUltralight, uid: mock.identifier),
             transport: mock
         )
         #expect(refined.type == .mifareUltralightC)
-        #expect(mock.sentCommands == [Data([0x60]), Data([0x1A, 0x00])])
+        // No AUTHENTICATE is ever sent during identification.
+        #expect(mock.sentCommands == [Data([0x60]), Data([0x30, 0x2B])])
     }
 
     @Test
-    func `Refiner keeps plain Ultralight when AUTHENTICATE is also NAKed`() async throws {
+    func `Refiner keeps plain Ultralight when READ of page 0x2B is NAKed`() async throws {
         let mock = MockTransport()
         mock.responses = [Data([0x00]), Data([0x00])]
         let refined = try await CoreExtendedNFC.refineCardInfo(
@@ -308,10 +309,11 @@ struct UltralightTests {
             transport: mock
         )
         #expect(refined.type == .mifareUltralight)
+        #expect(mock.sentCommands == [Data([0x60]), Data([0x30, 0x2B])])
     }
 
     @Test
-    func `Refiner does not probe AUTHENTICATE after a transport error`() async throws {
+    func `Refiner does not probe after a transport error`() async throws {
         let mock = MockTransport()
         mock.responses = []
         let refined = try await CoreExtendedNFC.refineCardInfo(
@@ -320,6 +322,23 @@ struct UltralightTests {
         )
         #expect(refined.type == .mifareUltralight)
         #expect(mock.sentCommands == [Data([0x60])])
+    }
+
+    @Test
+    func `Ultralight C is identified and then dumped without a dangling authentication`() async throws {
+        // Stateful MF0ICU2 model: after `1A 00` the tag is mid-authentication
+        // and NAKs everything except the AF step (then stays IDLE).
+        let tag = UltralightCTagModel()
+        let refined = try await CoreExtendedNFC.refineCardInfo(
+            CardInfo(type: .mifareUltralight, uid: tag.identifier),
+            transport: tag
+        )
+        #expect(refined.type == .mifareUltralightC)
+
+        let dump = try await CoreExtendedNFC.dumpCard(info: refined, transport: tag)
+        #expect(dump.pages.count == 44)
+        #expect(dump.pages.first?.data == Data([0x00, 0x01, 0x02, 0x03]))
+        #expect(!tag.sentCommands.contains { $0.first == 0x1A })
     }
 
     private static func rotateLeft(_ data: Data) -> Data {
@@ -331,5 +350,50 @@ struct UltralightTests {
         parts.reduce(into: Data()) { result, part in
             result.append(part)
         }
+    }
+}
+
+/// Minimal MF0ICU2 (Ultralight C) state model for identification tests.
+/// - GET_VERSION is not implemented: NAK. (Recovery from that NAK is left to
+///   the reader, as for every Ultralight path; this model stays ACTIVE.)
+/// - READ of 0x00-0x2B returns 4 pages, rolling over to page 0 after 0x2B.
+/// - AUTHENTICATE `1A 00` answers `AF ‖ ek(RndB)` and leaves the tag
+///   mid-authentication; any next command is NAKed and the tag goes IDLE
+///   (every later command NAKed too).
+private final class UltralightCTagModel: NFCTagTransport, @unchecked Sendable {
+    let identifier = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+    private(set) var sentCommands: [Data] = []
+    private var midAuthentication = false
+    private var idle = false
+
+    func send(_ data: Data) async throws -> Data {
+        sentCommands.append(data)
+        let nak = Data([0x00])
+        if idle {
+            return nak
+        }
+        if midAuthentication {
+            midAuthentication = false
+            idle = true
+            return nak
+        }
+        guard let command = data.first else { return nak }
+        switch command {
+        case 0x1A:
+            midAuthentication = true
+            return Data([0xAF]) + Data(repeating: 0x5A, count: 8)
+        case 0x30 where data.count == 2 && data[data.startIndex + 1] <= 0x2B:
+            let start = Int(data[data.startIndex + 1])
+            return Data((0 ..< 16).map { offset in
+                let page = (start + offset / 4) % 0x2C
+                return UInt8(truncatingIfNeeded: page * 4 + offset % 4)
+            })
+        default:
+            return nak
+        }
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("Type 2 tag model")
     }
 }

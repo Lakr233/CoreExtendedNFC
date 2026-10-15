@@ -12,6 +12,8 @@ enum CardInfoRefiner {
             try await refinePossibleUltralight(info, transport: transport)
         case .smartMX:
             try await refineISO7816(info, transport: transport)
+        case .felicaStandard:
+            try await refineFeliCaLite(info, transport: transport)
         default:
             info
         }
@@ -26,10 +28,14 @@ enum CardInfoRefiner {
             let version = try await commands.getVersion()
             return updated(info, type: version.cardType)
         } catch NFCError.invalidResponse {
-            // The tag answered GET_VERSION with a NAK (short frame). Ultralight C
-            // (MF0ICU2) does not implement GET_VERSION; it is identified by
-            // AUTHENTICATE `1A 00` returning `AF ‖ ek(RndB)` (NXP AN10833 §3.2).
-            if await commands.probeUltralightCAuthentication() {
+            // The tag answered GET_VERSION with a NAK (short frame), so it is
+            // MF0ICU1 (Ultralight) or MF0ICU2 (Ultralight C). Tell them apart by
+            // memory size with a plain READ instead of an AUTHENTICATE probe:
+            // a `1A 00` probe leaves an Ultralight C mid-authentication, and the
+            // MF0ICU2 datasheet ("Authentication" section) aborts that state with
+            // a NAK on any command other than the AF second step, so the dump
+            // that follows would fail.
+            if await commands.probeUltralightCMemory() {
                 return updated(info, type: .mifareUltralightC)
             }
             return info
@@ -71,6 +77,37 @@ enum CardInfoRefiner {
             && bytes[6] == uidBytes[5]
             && bytes[7] == uidBytes[6]
             && bytes[8] == expectedBCC1
+    }
+
+    /// FeliCa Lite and Lite-S both use System Code 0x88B4 (FeliCa Lite /
+    /// Lite-S User's Manuals). The PMm IC-type byte (0xF0 Lite, 0xF1 Lite-S)
+    /// would tell them apart, but CoreNFC does not expose PMm on
+    /// `NFCFeliCaTag` without a separate polling call, so `CardInfo` doesn't
+    /// carry it. Instead use the memory map: only Lite-S has block 0x90
+    /// (WCNT, readable without authentication through service 0x000B); on a
+    /// Lite that block number is rejected with a non-zero status flag.
+    private static func refineFeliCaLite(
+        _ info: CardInfo,
+        transport: any NFCTagTransport
+    ) async throws -> CardInfo {
+        guard info.systemCode == FeliCaLiteConstants.systemCode,
+              let felica = transport as? any FeliCaTagTransporting
+        else {
+            return info
+        }
+        do {
+            let blocks = try await felica.readWithoutEncryption(
+                serviceCode: FeliCaLiteConstants.readOnlyServiceCode,
+                blockList: [FeliCaFrame.blockListElement(blockNumber: FeliCaLiteConstants.writeCounterBlock)]
+            )
+            return updated(info, type: blocks.isEmpty ? .felicaLite : .felicaLiteS)
+        } catch NFCError.felicaBlockReadFailed {
+            return updated(info, type: .felicaLite)
+        } catch where isSessionTerminating(error) {
+            throw error
+        } catch {
+            return info
+        }
     }
 
     private static func refineISO7816(
@@ -155,4 +192,13 @@ enum CardInfoRefiner {
             icManufacturer: info.icManufacturer
         )
     }
+}
+
+private enum FeliCaLiteConstants {
+    /// System Code shared by FeliCa Lite and Lite-S (big-endian, as CoreNFC reports it).
+    static let systemCode = Data([0x88, 0xB4])
+    /// Read-only (no authentication) service 0x000B, little-endian.
+    static let readOnlyServiceCode = Data([0x0B, 0x00])
+    /// WCNT block, present on FeliCa Lite-S only.
+    static let writeCounterBlock: UInt16 = 0x90
 }

@@ -92,6 +92,13 @@ public enum CardIdentifier {
             return .smartMX
         }
 
+        // SAK 0x28 / 0x38: ISO/IEC 14443-4 compliant (SAK bit 6, AN10833 SAK
+        // decoding) with MIFARE Classic 1K / 4K emulation, e.g. JCOP or SmartMX.
+        // Report it as a generic ISO 7816 card so the refiner can probe it.
+        if sak == 0x28 || sak == 0x38 {
+            return .smartMX
+        }
+
         // SAK-only fallback matching
         switch sak {
         case 0x00:
@@ -103,7 +110,11 @@ public enum CardIdentifier {
         case 0x18:
             return .mifareClassic4K
         case 0x20:
-            return .mifareDesfire
+            // SAK 0x20 only says "ISO/IEC 14443-4 compliant" (AN10833 SAK decoding).
+            // DESFire is the exact ATQA 0x0344 match above; any other ATQA is a
+            // generic ISO 7816 card (passport, JCOP, bank card ...), which the
+            // refiner probes for DESFire / Type 4 / eMRTD.
+            return .smartMX
         default:
             return .unknown(atqa: atqa, sak: sak)
         }
