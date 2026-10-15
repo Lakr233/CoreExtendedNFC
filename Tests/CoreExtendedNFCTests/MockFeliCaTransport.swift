@@ -73,7 +73,8 @@ final class MockFeliCaServiceTransport: FeliCaTagTransporting, @unchecked Sendab
         case 2:
             return Int(element[1])
         case 3:
-            return Int(element[1]) << 8 | Int(element[2])
+            // 3-byte block list element: block number is little-endian.
+            return Int(element[1]) | Int(element[2]) << 8
         default:
             throw NFCError.invalidResponse(element)
         }

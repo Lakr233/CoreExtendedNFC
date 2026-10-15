@@ -8,7 +8,7 @@
 // - NFC Forum Type 3: Attribute Information Block (16 bytes with 2-byte checksum)
 // - libnfc nfc-read-forum-tag3.c:
 //   https://github.com/nfc-tools/libnfc/blob/master/utils/nfc-read-forum-tag3.c
-// - Block list element: 2-byte format (0x80|blk) for blocks <256, 3-byte for >=256
+// - Block list element: 2-byte format (0x80|blk) for blocks <256, 3-byte (LE block number) for >=256
 @testable import CoreExtendedNFC
 import Foundation
 import Testing
@@ -26,9 +26,14 @@ struct FeliCaTests {
     func `Block list element 3-byte format for large block numbers`() {
         let element = FeliCaFrame.blockListElement(blockNumber: 0x0100)
         #expect(element.count == 3)
-        #expect(element[0] == 0x00) // service index
-        #expect(element[1] == 0x01) // high byte
-        #expect(element[2] == 0x00) // low byte
+        // Sony FeliCa Card User's Manual: 3-byte element carries the block
+        // number little-endian (D1 = low byte, D2 = high byte).
+        #expect(element == Data([0x00, 0x00, 0x01]))
+    }
+
+    @Test
+    func `3-byte block list element is little-endian with service index`() {
+        #expect(FeliCaFrame.blockListElement(blockNumber: 0x0123, serviceIndex: 2) == Data([0x02, 0x23, 0x01]))
     }
 
     @Test
@@ -194,5 +199,124 @@ struct FeliCaTests {
         ]))
         #expect(transport.readLog.contains(["\(serviceA.hexString):1"]))
         #expect(transport.readLog.contains(["\(serviceB.hexString):1"]))
+    }
+
+    // MARK: - Service attributes (Sony FeliCa Card User's Manual)
+
+    @Test
+    func `Service attribute codes follow the FeliCa attribute table`() {
+        #expect(FeliCaMemory.ServiceType.randomReadWrite.accessBits == 0x09)
+        #expect(FeliCaMemory.ServiceType.randomReadOnly.accessBits == 0x0B)
+        #expect(FeliCaMemory.ServiceType.cyclicReadWrite.accessBits == 0x0D)
+        #expect(FeliCaMemory.ServiceType.cyclicReadOnly.accessBits == 0x0F)
+        #expect(FeliCaMemory.ServiceType.purseDirectAccess.accessBits == 0x11)
+        #expect(FeliCaMemory.ServiceType.purseCashback.accessBits == 0x13)
+    }
+
+    @Test
+    func `Common service codes include cyclic services`() {
+        let codes = FeliCaCommands.commonServiceCodes(maxServiceIndex: 36).map(\.serviceCode)
+        #expect(codes.contains(Data([0x0F, 0x00])))
+        #expect(codes.contains(Data([0x0D, 0x00])))
+        // CJRC history service 0x090F = (36 << 6) | 0x0F, little-endian on the wire.
+        #expect(codes.contains(Data([0x0F, 0x09])))
+    }
+
+    @Test
+    func `Multi-service reads never put more than 16 services in one request`() async throws {
+        var versions: [Data: Data] = [:]
+        var blocks: [Data: [Data]] = [:]
+        for serviceNumber in 0 ..< 20 {
+            let code = UInt16(serviceNumber) << 6 | 0x0B
+            let encoded = Data([UInt8(code & 0xFF), UInt8(code >> 8)])
+            versions[encoded] = Data([0x00, 0x01])
+            blocks[encoded] = [Data(repeating: UInt8(serviceNumber), count: FeliCaMemory.blockSize)]
+        }
+        let transport = MockFeliCaServiceTransport(serviceVersions: versions, serviceBlocks: blocks)
+        let commands = FeliCaCommands(transport: transport)
+        let probes = try await commands.probeCommonServices(maxServiceIndex: 19)
+        #expect(probes.count == 20)
+
+        let snapshots = await commands.readPlainServices(probes, maxBlocksPerService: 1)
+
+        #expect(snapshots.count == 20)
+        #expect(transport.readLog.allSatisfy { $0.count <= 16 })
+        #expect(transport.readLog.count == 2)
+    }
+
+    // MARK: - Type 3 NDEF validation (NFC Forum T3T 1.0 §7.1)
+
+    @Test
+    func `Type 3 readNDEF rejects Nbr of zero`() async {
+        let transport = type3Transport(attribute: Self.attributeBlock(nbr: 0, ndefLength: 13))
+        await #expect(throws: NFCError.self) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 readNDEF rejects interrupted write`() async {
+        let transport = type3Transport(attribute: Self.attributeBlock(writeFlag: 0x0F, ndefLength: 13))
+        await #expect(throws: NFCError.self) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 readNDEF rejects Ln beyond Nmaxb blocks`() async {
+        let transport = type3Transport(attribute: Self.attributeBlock(nmaxb: 1, ndefLength: 17))
+        await #expect(throws: NFCError.self) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 readNDEF rejects unsupported major version`() async {
+        let transport = type3Transport(attribute: Self.attributeBlock(version: 0x20, ndefLength: 13))
+        await #expect(throws: NFCError.self) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 readNDEF reads valid message`() async throws {
+        let message = Data((0 ..< 20).map { UInt8($0) })
+        let transport = type3Transport(
+            attribute: Self.attributeBlock(nmaxb: 4, ndefLength: UInt32(message.count)),
+            body: [Data(message.prefix(16)), Data(message.suffix(4)) + Data(count: 12)]
+        )
+        let ndef = try await FeliCaType3Reader(transport: transport).readNDEF()
+        #expect(ndef == message)
+    }
+
+    private func type3Transport(attribute: Data, body: [Data] = []) -> MockFeliCaServiceTransport {
+        MockFeliCaServiceTransport(
+            serviceVersions: [:],
+            serviceBlocks: [FeliCaType3Reader.readServiceCode: [attribute] + body]
+        )
+    }
+
+    private static func attributeBlock(
+        version: UInt8 = 0x10,
+        nbr: UInt8 = 4,
+        nmaxb: UInt16 = 13,
+        writeFlag: UInt8 = 0x00,
+        ndefLength: UInt32
+    ) -> Data {
+        var block = Data(repeating: 0x00, count: 16)
+        block[0] = version
+        block[1] = nbr
+        block[2] = 1
+        block[3] = UInt8(nmaxb >> 8)
+        block[4] = UInt8(nmaxb & 0xFF)
+        block[9] = writeFlag
+        block[10] = 0x01
+        block[11] = UInt8((ndefLength >> 16) & 0xFF)
+        block[12] = UInt8((ndefLength >> 8) & 0xFF)
+        block[13] = UInt8(ndefLength & 0xFF)
+        let sum = block.prefix(14).reduce(UInt16(0)) { $0 &+ UInt16($1) }
+        block[14] = UInt8(sum >> 8)
+        block[15] = UInt8(sum & 0xFF)
+        return block
     }
 }

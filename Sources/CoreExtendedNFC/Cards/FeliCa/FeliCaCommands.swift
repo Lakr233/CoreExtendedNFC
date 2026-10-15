@@ -74,6 +74,7 @@ public struct FeliCaCommands: Sendable {
         var activeServices = orderedServices
 
         for blockNumber in 0 ..< maxBlocksPerService where !activeServices.isEmpty {
+            if Task.isCancelled { break }
             let readResults = await readSharedBlock(
                 across: activeServices,
                 blockNumber: UInt16(blockNumber)
@@ -102,7 +103,8 @@ public struct FeliCaCommands: Sendable {
     }
 
     public static func commonServiceCodes(maxServiceIndex: Int = 15) -> [(serviceCode: Data, label: String)] {
-        let cappedMaxIndex = max(0, maxServiceIndex)
+        // Service numbers are 10 bits wide (service code = number << 6 | attribute).
+        let cappedMaxIndex = min(max(0, maxServiceIndex), 0x3FF)
         var candidates: [(serviceCode: Data, label: String)] = [
             (FeliCaType3Reader.readServiceCode, "NDEF Read Service"),
             (FeliCaType3Reader.writeServiceCode, "NDEF Write Service"),
@@ -126,11 +128,26 @@ public struct FeliCaCommands: Sendable {
         return candidates
     }
 
+    /// Read Without Encryption accepts at most 16 services per command, and the
+    /// block list element addresses a service with a 4-bit index.
+    static let maxServicesPerRead = 16
+
     private func readSharedBlock(
         across services: [ServiceProbe],
         blockNumber: UInt16
     ) async -> [Data: ServiceReadResult] {
         guard !services.isEmpty else { return [:] }
+
+        // Larger lists would alias service indexes 16+ onto 0-15 via `& 0x0F`.
+        if services.count > Self.maxServicesPerRead {
+            var merged: [Data: ServiceReadResult] = [:]
+            for chunk in services.chunked(into: Self.maxServicesPerRead) {
+                for (serviceCode, result) in await readSharedBlock(across: chunk, blockNumber: blockNumber) {
+                    merged[serviceCode] = result
+                }
+            }
+            return merged
+        }
 
         let serviceCodeList = services.map(\.serviceCode)
         let blockList = services.enumerated().map { serviceIndex, _ in

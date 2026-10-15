@@ -31,6 +31,23 @@ public struct FeliCaType3Reader: Sendable {
     public func readNDEF() async throws -> Data {
         NFCLog.info("FeliCa Type 3 NDEF read", source: "FeliCa")
         let attrInfo = try await readAttributeInfo()
+        // NFC Forum T3T 1.0 §7.1: the NDEF is invalid unless the mapping major
+        // version is 1, Nbr >= 1, WriteF == 00h (no interrupted write) and
+        // Ln <= Nmaxb × 16.
+        guard attrInfo.version >> 4 == 1 else {
+            throw NFCError.unsupportedOperation(
+                "Unsupported Type 3 mapping version \(attrInfo.version >> 4).\(attrInfo.version & 0x0F)"
+            )
+        }
+        guard attrInfo.nbr > 0 else {
+            throw NFCError.invalidResponse(attrInfo.encoded())
+        }
+        guard attrInfo.writeFlag == 0x00 else {
+            throw NFCError.invalidResponse(attrInfo.encoded())
+        }
+        guard attrInfo.ndefLength <= UInt32(attrInfo.nmaxb) * UInt32(FeliCaMemory.blockSize) else {
+            throw NFCError.invalidResponse(attrInfo.encoded())
+        }
         guard attrInfo.ndefLength > 0 else {
             return Data()
         }
@@ -50,6 +67,11 @@ public struct FeliCaType3Reader: Sendable {
     public func writeNDEF(_ message: Data) async throws {
         NFCLog.info("FeliCa Type 3 NDEF write: \(message.count) bytes", source: "FeliCa")
         let attrInfo = try await readAttributeInfo()
+        guard attrInfo.version >> 4 == 1 else {
+            throw NFCError.unsupportedOperation(
+                "Unsupported Type 3 mapping version \(attrInfo.version >> 4).\(attrInfo.version & 0x0F)"
+            )
+        }
         guard attrInfo.rwFlag == 0x01 else {
             throw NFCError.tagLocked
         }
@@ -94,19 +116,33 @@ public struct FeliCaType3Reader: Sendable {
         var remaining = count
         var currentBlock = startBlock
 
+        guard maxPerRead > 0 else {
+            throw NFCError.unsupportedOperation("Type 3 Nbr must be at least 1")
+        }
+
         while remaining > 0 {
+            try Task.checkCancellation()
             let chunkSize = min(remaining, maxPerRead)
             var blockList: [Data] = []
             for i in 0 ..< chunkSize {
-                blockList.append(FeliCaFrame.blockListElement(blockNumber: UInt16(currentBlock + i)))
+                guard let blockNumber = UInt16(exactly: currentBlock + i) else {
+                    throw NFCError.unsupportedOperation("Type 3 block number exceeds 65535")
+                }
+                blockList.append(FeliCaFrame.blockListElement(blockNumber: blockNumber))
             }
 
             let blocks = try await transport.readWithoutEncryption(
                 serviceCode: Self.readServiceCode,
                 blockList: blockList
             )
+            guard blocks.count == chunkSize else {
+                throw NFCError.invalidResponse(Data(blocks.joined()))
+            }
 
             for block in blocks {
+                guard block.count == FeliCaMemory.blockSize else {
+                    throw NFCError.invalidResponse(block)
+                }
                 result.append(block)
             }
 
@@ -121,12 +157,20 @@ public struct FeliCaType3Reader: Sendable {
         var remaining = blocks[...]
         var currentBlock = startBlock
 
+        guard maxPerWrite > 0 else {
+            throw NFCError.unsupportedOperation("Type 3 Nbw must be at least 1")
+        }
+
         while !remaining.isEmpty {
+            try Task.checkCancellation()
             let chunkCount = min(maxPerWrite, remaining.count)
             let chunk = Array(remaining.prefix(chunkCount))
             var blockList: [Data] = []
             for index in 0 ..< chunkCount {
-                blockList.append(FeliCaFrame.blockListElement(blockNumber: UInt16(currentBlock + index)))
+                guard let blockNumber = UInt16(exactly: currentBlock + index) else {
+                    throw NFCError.unsupportedOperation("Type 3 block number exceeds 65535")
+                }
+                blockList.append(FeliCaFrame.blockListElement(blockNumber: blockNumber))
             }
 
             try await transport.writeWithoutEncryption(

@@ -11,7 +11,9 @@ public enum FeliCaFrame {
 
     /// Build a block list element for FeliCa CHECK/UPDATE.
     /// - 2-byte element: `[0x80, blockNumber]` for block numbers below 0x100.
-    /// - 3-byte element: `[serviceIndex, blockNumber high, blockNumber low]`.
+    /// - 3-byte element: `[serviceIndex, blockNumber low, blockNumber high]`.
+    ///   The block number is little-endian, like every multi-byte FeliCa field
+    ///   (Sony FeliCa Card User's Manual, "Block List Element").
     public static func blockListElement(blockNumber: UInt16, serviceIndex: UInt8 = 0) -> Data {
         let encodedServiceIndex = serviceIndex & 0x0F
         if blockNumber <= 0xFF {
@@ -21,8 +23,8 @@ public enum FeliCaFrame {
             // 3-byte format
             return Data([
                 encodedServiceIndex,
-                UInt8((blockNumber >> 8) & 0xFF),
                 UInt8(blockNumber & 0xFF),
+                UInt8((blockNumber >> 8) & 0xFF),
             ])
         }
     }
