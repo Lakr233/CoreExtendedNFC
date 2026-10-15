@@ -4,12 +4,102 @@
     "" : {
       "shouldTranslate" : false
     },
+    "%@ cards cannot be read on iOS." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 无法读取 %@ 卡片。"
+          }
+        }
+      }
+    },
+    "Authentication with the tag failed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与标签的认证失败。"
+          }
+        }
+      }
+    },
+    "Basic Access Control failed: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基本访问控制（BAC）失败：%@"
+          }
+        }
+      }
+    },
+    "Could not parse card data: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法解析卡片数据：%@"
+          }
+        }
+      }
+    },
+    "Cryptographic operation failed: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加密运算失败：%@"
+          }
+        }
+      }
+    },
+    "DESFire error: %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DESFire 错误：%@。"
+          }
+        }
+      }
+    },
+    "Data group not available: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据组不可用：%@"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成"
+          }
+        }
+      }
+    },
+    "FeliCa block read failed (status %@)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FeliCa 块读取失败（状态 %@）。"
+          }
+        }
+      }
+    },
+    "FeliCa block write failed (status %@)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FeliCa 块写入失败（状态 %@）。"
           }
         }
       }
@@ -24,9 +114,7 @@
         }
       }
     },
-    "Hold your iPhone near your My Number card" : {
-
-    },
+    "Hold your iPhone near your My Number card" : {},
     "Hold your iPhone near your passport" : {
       "localizations" : {
         "zh-Hans" : {
@@ -37,12 +125,162 @@
         }
       }
     },
+    "NFC is busy with another session. Try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NFC 正被其他会话占用，请重试。"
+          }
+        }
+      }
+    },
+    "NFC is not available on this device." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备不支持 NFC。"
+          }
+        }
+      }
+    },
     "Reading..." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在读取..."
+          }
+        }
+      }
+    },
+    "Secure messaging failed: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全报文失败：%@"
+          }
+        }
+      }
+    },
+    "The NFC session ended: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NFC 会话已结束：%@"
+          }
+        }
+      }
+    },
+    "The NFC session timed out." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NFC 会话已超时。"
+          }
+        }
+      }
+    },
+    "The NFC session was canceled." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NFC 会话已取消。"
+          }
+        }
+      }
+    },
+    "The card kept sending response frames past the limit of %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片持续发送响应帧，超过了 %lld 帧的上限。"
+          }
+        }
+      }
+    },
+    "The card returned status %@%@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片返回状态 %1$@%2$@。"
+          }
+        }
+      }
+    },
+    "The connection to the tag was lost. Hold the tag still and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与标签的连接已断开。请保持标签不动后重试。"
+          }
+        }
+      }
+    },
+    "The tag is locked." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签已锁定。"
+          }
+        }
+      }
+    },
+    "The tag response failed its CRC check." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签响应未通过 CRC 校验。"
+          }
+        }
+      }
+    },
+    "The tag sent an invalid response (%lld bytes)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签返回了无效响应（%lld 字节）。"
+          }
+        }
+      }
+    },
+    "This tag is not supported." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持此标签。"
+          }
+        }
+      }
+    },
+    "Unsupported operation: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持的操作：%@"
+          }
+        }
+      }
+    },
+    "Writing page %lld failed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入第 %lld 页失败。"
           }
         }
       }

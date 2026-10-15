@@ -19,12 +19,14 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
 
     public func send(_ data: Data) async throws -> Data {
         NFCLog.debug("→ SEND \(data.hexDump)", source: "FeliCa")
-        let response: Data = try await withCheckedThrowingContinuation { continuation in
-            tag.sendFeliCaCommand(commandPacket: data) { response, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume(returning: response)
+        let response: Data = try await withNFCErrorMapping {
+            try await withCheckedThrowingContinuation { continuation in
+                tag.sendFeliCaCommand(commandPacket: data) { response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: response)
+                    }
                 }
             }
         }
@@ -42,10 +44,12 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         blockList: [Data]
     ) async throws -> [Data] {
         NFCLog.debug("→ READ_WO_ENC services=\(serviceCodeList.count) blocks=\(blockList.count)", source: "FeliCa")
-        let (statusFlag1, statusFlag2, blocks) = try await tag.readWithoutEncryption(
-            serviceCodeList: serviceCodeList,
-            blockList: blockList
-        )
+        let (statusFlag1, statusFlag2, blocks) = try await withNFCErrorMapping {
+            try await tag.readWithoutEncryption(
+                serviceCodeList: serviceCodeList,
+                blockList: blockList
+            )
+        }
         guard statusFlag1 == 0, statusFlag2 == 0 else {
             NFCLog.error("← READ_WO_ENC failed SF1=\(statusFlag1) SF2=\(statusFlag2)", source: "FeliCa")
             throw NFCError.felicaBlockReadFailed(statusFlag: Int(statusFlag1))
@@ -72,11 +76,13 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         blockData: [Data]
     ) async throws {
         NFCLog.debug("→ WRITE_WO_ENC services=\(serviceCodeList.count) blocks=\(blockList.count)", source: "FeliCa")
-        let (statusFlag1, statusFlag2) = try await tag.writeWithoutEncryption(
-            serviceCodeList: serviceCodeList,
-            blockList: blockList,
-            blockData: blockData
-        )
+        let (statusFlag1, statusFlag2) = try await withNFCErrorMapping {
+            try await tag.writeWithoutEncryption(
+                serviceCodeList: serviceCodeList,
+                blockList: blockList,
+                blockData: blockData
+            )
+        }
         guard statusFlag1 == 0, statusFlag2 == 0 else {
             NFCLog.error("← WRITE_WO_ENC failed SF1=\(statusFlag1) SF2=\(statusFlag2)", source: "FeliCa")
             throw NFCError.felicaBlockWriteFailed(statusFlag: Int(statusFlag1))
@@ -100,7 +106,9 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     /// Check whether the requested service codes exist.
     public func requestService(nodeCodeList: [Data]) async throws -> [Data] {
         NFCLog.debug("→ REQUEST_SERVICE nodes=\(nodeCodeList.count)", source: "FeliCa")
-        let result = try await tag.requestService(nodeCodeList: nodeCodeList)
+        let result = try await withNFCErrorMapping {
+            try await tag.requestService(nodeCodeList: nodeCodeList)
+        }
         NFCLog.debug("← REQUEST_SERVICE \(result.count) response(s)", source: "FeliCa")
         return result
     }

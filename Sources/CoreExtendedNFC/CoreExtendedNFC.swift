@@ -15,9 +15,15 @@ public enum CoreExtendedNFC {
         let manager = NFCSessionManager()
         let (info, transport) = try await manager.scan(message: message)
 
-        let refinedInfo = try await refineCardInfo(info, transport: transport)
-        manager.setAlertMessage("\(refinedInfo.type.description)")
-        return (refinedInfo, transport, manager)
+        do {
+            let refinedInfo = try await refineCardInfo(info, transport: transport)
+            manager.setAlertMessage("\(refinedInfo.type.description)")
+            return (refinedInfo, transport, manager)
+        } catch {
+            // Never leave the system NFC sheet open when the caller gets no manager back.
+            manager.invalidate(errorMessage: error.localizedDescription)
+            throw error
+        }
     }
 
     /// Scan and automatically dump the card's full memory.
@@ -49,6 +55,7 @@ public enum CoreExtendedNFC {
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
+        try Task.checkCancellation()
         NFCLog.info("Dumping \(info.type.description)", source: "Core")
         switch info.type.family {
         case .mifareUltralight, .ntag:
@@ -246,10 +253,10 @@ public enum CoreExtendedNFC {
         let files: [MemoryDump.FileData] = [
             .init(
                 identifier: Type4Constants.ccFileID,
-                data: encodeType4CC(capabilityContainer),
+                data: capabilityContainer.encoded,
                 name: "Capability Container"
             ),
-            .init(identifier: capabilityContainer.ndefFileID, data: encodeType4NDEFFile(ndef), name: "NDEF File"),
+            .init(identifier: capabilityContainer.ndefFileID, data: capabilityContainer.encodeNDEFFile(ndef), name: "NDEF File"),
         ]
 
         return MemoryDump(
@@ -307,7 +314,14 @@ public enum CoreExtendedNFC {
 
         let reader = FeliCaType3Reader(transport: felicaTransport)
         let commands = FeliCaCommands(transport: felicaTransport)
-        let serviceProbes = await (try? commands.probeCommonServices()) ?? []
+        // Probing is best-effort, but a lost tag or ended session must fail the dump
+        // instead of producing a smaller "successful" one.
+        let serviceProbes: [FeliCaCommands.ServiceProbe]
+        do {
+            serviceProbes = try await commands.probeCommonServices()
+        } catch where !isSessionTerminating(error) {
+            serviceProbes = []
+        }
 
         var blocks: [MemoryDump.Block] = []
         var facts: [MemoryDump.Fact] = [
@@ -343,14 +357,19 @@ public enum CoreExtendedNFC {
 
                 ndefAttributeInfo = attributeInfo
                 ndefMessage = ndef
-            } catch {}
+            } catch where !isSessionTerminating(error) {
+                // Malformed or unreadable Type 3 area: keep the rest of the dump.
+            }
         }
+
+        try Task.checkCancellation()
 
         let extraServiceSnapshots = await commands.readPlainServices(
             serviceProbes,
             maxBlocksPerService: 4,
             excluding: Set([FeliCaType3Reader.readServiceCode, FeliCaType3Reader.writeServiceCode])
         )
+        try Task.checkCancellation()
         let files = extraServiceSnapshots.map { snapshot in
             MemoryDump.FileData(
                 identifier: snapshot.serviceCode,
@@ -396,17 +415,22 @@ public enum CoreExtendedNFC {
         }
 
         let systemInfo = try await iso15693Transport.getSystemInfo()
+        try requireKnownMemorySize(systemInfo)
+        guard systemInfo.blockCount <= NDEFTagMapping.type5SingleByteAddressableBlocks else {
+            throw NFCError.unsupportedOperation("ISO 15693 dump currently supports up to 256 blocks per session")
+        }
         let lockStatuses: [Bool]
         do {
             lockStatuses = try await iso15693Transport.getBlockSecurityStatus(
                 range: NSRange(location: 0, length: systemInfo.blockCount)
             )
-        } catch {
+        } catch where !isSessionTerminating(error) {
             lockStatuses = Array(repeating: false, count: systemInfo.blockCount)
         }
 
         var blocks: [MemoryDump.Block] = []
         for blockNumber in 0 ..< systemInfo.blockCount {
+            try Task.checkCancellation()
             guard let blockIndex = UInt8(exactly: blockNumber) else {
                 throw NFCError.unsupportedOperation("ISO 15693 dump currently supports up to 256 blocks per session")
             }
@@ -430,44 +454,21 @@ public enum CoreExtendedNFC {
             facts: [
                 .init(key: "Block Size", value: "\(systemInfo.blockSize) bytes"),
                 .init(key: "Blocks", value: "\(systemInfo.blockCount)"),
-                .init(key: "DSFID", value: String(format: "0x%02X", systemInfo.dsfid), monospaced: true),
-                .init(key: "AFI", value: String(format: "0x%02X", systemInfo.afi), monospaced: true),
-                .init(key: "IC Reference", value: String(format: "0x%02X", systemInfo.icReference), monospaced: true),
+                systemInfo.dsfid.map { .init(key: "DSFID", value: String(format: "0x%02X", $0), monospaced: true) },
+                systemInfo.afi.map { .init(key: "AFI", value: String(format: "0x%02X", $0), monospaced: true) },
+                systemInfo.icReference.map { .init(key: "IC Reference", value: String(format: "0x%02X", $0), monospaced: true) },
                 ndefMessage.map { .init(key: "NDEF Bytes", value: "\($0.count)") },
             ].compactMap(\.self),
             capabilities: [.readable]
         )
     }
 
-    private static func encodeType4CC(_ cc: Type4CC) -> Data {
-        var data = Data([
-            UInt8((cc.ccLen >> 8) & 0xFF),
-            UInt8(cc.ccLen & 0xFF),
-            cc.mappingVersion,
-            UInt8((cc.mle >> 8) & 0xFF),
-            UInt8(cc.mle & 0xFF),
-            UInt8((cc.mlc >> 8) & 0xFF),
-            UInt8(cc.mlc & 0xFF),
-            0x04,
-            0x06,
-        ])
-        data.append(cc.ndefFileID)
-        data.append(contentsOf: [
-            UInt8((cc.ndefMaxSize >> 8) & 0xFF),
-            UInt8(cc.ndefMaxSize & 0xFF),
-            cc.readAccess,
-            cc.writeAccess,
-        ])
-        return data
-    }
-
-    private static func encodeType4NDEFFile(_ ndef: Data) -> Data {
-        var data = Data([
-            UInt8((ndef.count >> 8) & 0xFF),
-            UInt8(ndef.count & 0xFF),
-        ])
-        data.append(ndef)
-        return data
+    /// ISO/IEC 15693-3 makes the memory-size field of Get System Information optional;
+    /// CoreNFC then reports block size and count as `-1`.
+    private static func requireKnownMemorySize(_ systemInfo: ISO15693SystemInfo) throws {
+        guard systemInfo.blockCount > 0, systemInfo.blockSize > 0 else {
+            throw NFCError.unsupportedOperation("The ISO 15693 tag did not report its memory size")
+        }
     }
 
     private static func summarizeFeliCaServices(_ services: [FeliCaCommands.ServiceProbe]) -> String {
@@ -487,10 +488,18 @@ public enum CoreExtendedNFC {
         let bytes = try NDEFTagMapping.buildType2Area(message: message, capacity: memory.userDataByteCount)
         let commands = UltralightCommands(transport: transport)
 
-        for (index, offset) in stride(from: 0, to: bytes.count, by: 4).enumerated() {
-            let page = memory.userDataStart + UInt8(index)
-            let chunk = Data(bytes[offset ..< min(offset + 4, bytes.count)])
-            try await commands.writePage(page, data: chunk)
+        // Resolve every page address before the first write so an impossible layout
+        // is refused up front instead of leaving the tag half-written.
+        let writes = try stride(from: 0, to: bytes.count, by: 4).enumerated().map { index, offset in
+            guard let page = UInt8(exactly: Int(memory.userDataStart) + index) else {
+                throw NFCError.unsupportedOperation("Type 2 NDEF area extends beyond page 255")
+            }
+            return (page: page, chunk: Data(bytes[offset ..< min(offset + 4, bytes.count)]))
+        }
+
+        for write in writes {
+            try Task.checkCancellation()
+            try await commands.writePage(write.page, data: write.chunk)
         }
     }
 
@@ -515,14 +524,24 @@ public enum CoreExtendedNFC {
         transport: any ISO15693TagTransporting
     ) async throws {
         let systemInfo = try await transport.getSystemInfo()
+        try requireKnownMemorySize(systemInfo)
         let blocks = try NDEFTagMapping.buildType5Blocks(
             message: message,
             blockSize: systemInfo.blockSize,
             blockCount: systemInfo.blockCount
         )
+        // Validate every block address before the first write so a large tag is
+        // refused up front instead of being left half-written.
+        guard blocks.count <= NDEFTagMapping.type5SingleByteAddressableBlocks else {
+            throw NFCError.unsupportedOperation("ISO 15693 writes beyond block 255 need extended commands")
+        }
 
         for (index, block) in blocks.enumerated() {
-            try await transport.writeBlock(UInt8(index), data: block)
+            try Task.checkCancellation()
+            guard let blockNumber = UInt8(exactly: index) else {
+                throw NFCError.unsupportedOperation("ISO 15693 writes beyond block 255 need extended commands")
+            }
+            try await transport.writeBlock(blockNumber, data: block)
         }
     }
 }

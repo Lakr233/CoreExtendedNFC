@@ -31,28 +31,16 @@ public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable
             data: apdu.data ?? Data(),
             expectedResponseLength: apdu.nfcExpectedResponseLength
         )
-        let (data, sw1, sw2) = try await tag.sendCommand(apdu: nfcAPDU)
+        let (data, sw1, sw2) = try await withNFCErrorMapping {
+            try await tag.sendCommand(apdu: nfcAPDU)
+        }
         NFCLog.debug("← SW:\(String(format: "%02X%02X", sw1, sw2)) \(data.hexDump)", source: "ISO7816")
         return ResponseAPDU(data: data, sw1: sw1, sw2: sw2)
     }
 
-    /// Send an APDU and follow `GET RESPONSE` chaining when needed.
+    /// Send an APDU and resolve `61xx` (GET RESPONSE) and `6Cxx` (wrong Le) statuses.
+    /// The number of follow-up frames is bounded by ``APDUExchange``.
     public func sendAPDUWithChaining(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
-        var response = try await sendAPDU(apdu)
-        var fullData = response.data
-        var chainCount = 0
-
-        while response.needsGetResponse {
-            chainCount += 1
-            let getResp = CommandAPDU.getResponse(length: response.sw2)
-            response = try await sendAPDU(getResp)
-            fullData.append(response.data)
-        }
-
-        if chainCount > 0 {
-            NFCLog.debug("Chaining complete: \(chainCount) GET RESPONSE(s), total \(fullData.count) bytes", source: "ISO7816")
-        }
-
-        return ResponseAPDU(data: fullData, sw1: response.sw1, sw2: response.sw2)
+        try await APDUExchange.transmit(apdu) { try await self.sendAPDU($0) }
     }
 }

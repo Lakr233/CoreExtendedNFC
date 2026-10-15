@@ -19,7 +19,9 @@ public final class MiFareTransport: NFCTagTransport, @unchecked Sendable {
 
     public func send(_ data: Data) async throws -> Data {
         NFCLog.debug("→ SEND \(data.hexDump)", source: "MiFare")
-        let response = try await tag.sendMiFareCommand(commandPacket: data)
+        let response = try await withNFCErrorMapping {
+            try await tag.sendMiFareCommand(commandPacket: data)
+        }
         NFCLog.debug("← RECV \(response.hexDump)", source: "MiFare")
         return response
     }
@@ -34,7 +36,9 @@ public final class MiFareTransport: NFCTagTransport, @unchecked Sendable {
             data: apdu.data ?? Data(),
             expectedResponseLength: apdu.nfcExpectedResponseLength
         )
-        let (data, sw1, sw2) = try await tag.sendMiFareISO7816Command(nfcAPDU)
+        let (data, sw1, sw2) = try await withNFCErrorMapping {
+            try await tag.sendMiFareISO7816Command(nfcAPDU)
+        }
         NFCLog.debug("← SW:\(String(format: "%02X%02X", sw1, sw2)) \(data.hexDump)", source: "MiFare")
         return ResponseAPDU(data: data, sw1: sw1, sw2: sw2)
     }

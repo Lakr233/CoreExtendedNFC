@@ -476,7 +476,8 @@ final class MockFeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         case 2:
             return Int(element[1])
         case 3:
-            return Int(element[1]) << 8 | Int(element[2])
+            // 3-byte block list element: block number is little-endian (JIS X 6319-4).
+            return Int(element[1]) | Int(element[2]) << 8
         default:
             throw NFCError.invalidResponse(element)
         }
@@ -510,5 +511,183 @@ final class QueuedISO7816Transport: ISO7816TagTransporting, @unchecked Sendable 
 
     func sendAPDUWithChaining(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
         try await sendAPDU(apdu)
+    }
+}
+
+struct TopLevelRobustnessTests {
+    private static let uid = Data([0xE0, 0x04, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB])
+
+    private static func systemInfo(blockSize: Int, blockCount: Int) -> ISO15693SystemInfo {
+        ISO15693SystemInfo(uid: uid, dsfid: 0, afi: 0, blockSize: blockSize, blockCount: blockCount, icReference: 0)
+    }
+
+    @Test
+    func `ISO 15693 dump with unknown memory size throws`() async {
+        let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: -1, blockCount: -1))
+        let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
+        await #expect(throws: NFCError.self) { // before: traps on 0 ..< -1
+            _ = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        }
+    }
+
+    @Test
+    func `ISO 15693 NDEF write with unknown memory size throws before writing`() async {
+        let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: -1, blockCount: -1))
+        let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writeNDEF(.uri("https://a.b"), info: info, transport: transport)
+        }
+        #expect(transport.writtenBlocks.isEmpty)
+    }
+
+    @Test
+    func `ISO 15693 NDEF write on a tag with more than 256 blocks stays single-byte addressable`() async throws {
+        let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: 4, blockCount: 512))
+        let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
+        // before: traps on UInt8(256) after 256 writes
+        try await CoreExtendedNFC.writeNDEF(.uri("https://a.b"), info: info, transport: transport)
+        #expect(!transport.writtenBlocks.isEmpty)
+        #expect(transport.writtenBlocks.count <= 256)
+    }
+
+    @Test
+    func `ISO 15693 dump omits system info fields the tag did not report`() async throws {
+        let transport = RecordingISO15693Transport(systemInfo: ISO15693SystemInfo(
+            uid: Self.uid, dsfid: nil, afi: 0x07, blockSize: 4, blockCount: 2, icReference: nil
+        ))
+        let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
+        let dump = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        #expect(!dump.facts.contains(where: { $0.key == "DSFID" }))
+        #expect(!dump.facts.contains(where: { $0.key == "IC Reference" }))
+        #expect(dump.facts.contains(where: { $0.key == "AFI" && $0.value == "0x07" }))
+    }
+
+    @Test
+    func `ISO 15693 dump stops when its task is cancelled`() async {
+        let transport = RecordingISO15693Transport(
+            systemInfo: Self.systemInfo(blockSize: 4, blockCount: 16),
+            cancelAfterReadingBlock: 0
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
+        let task = Task {
+            try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        }
+        await #expect(throws: CancellationError.self) {
+            _ = try await task.value
+        }
+        #expect(transport.readBlocks == [0]) // before: all 16 blocks read
+    }
+
+    @Test
+    func `dumpCard refuses to start in a cancelled task`() async {
+        let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: 4, blockCount: 4))
+        let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        }
+        await #expect(throws: CancellationError.self) {
+            _ = try await task.value
+        }
+        #expect(transport.readBlocks.isEmpty)
+    }
+
+    @Test
+    func `FeliCa dump fails when the tag is lost during service probing`() async {
+        let transport = SessionLossFeliCaTransport()
+        let info = CardInfo(type: .felicaStandard, uid: transport.identifier, systemCode: transport.systemCode, idm: transport.identifier)
+        await #expect(throws: NFCError.self) { // before: returns an empty "successful" dump
+            _ = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        }
+    }
+
+    @Test
+    func `FeliCa dump fails when the tag is lost reading the Type 3 attribute block`() async {
+        let transport = SessionLossFeliCaTransport(failRequestService: false)
+        let info = CardInfo(type: .felicaStandard, uid: transport.identifier, systemCode: transport.systemCode, idm: transport.identifier)
+        await #expect(throws: NFCError.self) { // before: error swallowed by catch {}
+            _ = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        }
+    }
+}
+
+private final class RecordingISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
+    let identifier = Data([0xE0, 0x04, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB])
+    let icManufacturerCode = 0x04
+    let systemInfo: ISO15693SystemInfo
+    let cancelAfterReadingBlock: UInt8?
+    var readBlocks: [UInt8] = []
+    var writtenBlocks: [UInt8] = []
+
+    init(systemInfo: ISO15693SystemInfo, cancelAfterReadingBlock: UInt8? = nil) {
+        self.systemInfo = systemInfo
+        self.cancelAfterReadingBlock = cancelAfterReadingBlock
+    }
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func readBlock(_ number: UInt8) async throws -> Data {
+        readBlocks.append(number)
+        if number == cancelAfterReadingBlock {
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+        return Data(repeating: number, count: max(systemInfo.blockSize, 0))
+    }
+
+    func writeBlock(_ number: UInt8, data _: Data) async throws {
+        writtenBlocks.append(number)
+    }
+
+    func readBlocks(range _: NSRange) async throws -> [Data] {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func getSystemInfo() async throws -> ISO15693SystemInfo {
+        systemInfo
+    }
+
+    func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
+        Array(repeating: false, count: range.length)
+    }
+}
+
+/// A FeliCa tag that is removed mid-dump: CoreNFC errors arrive as `tagConnectionLost`.
+private final class SessionLossFeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
+    let identifier = Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08])
+    let systemCode = Data([0x12, 0xFC])
+    let failRequestService: Bool
+
+    init(failRequestService: Bool = true) {
+        self.failRequestService = failRequestService
+    }
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.tagConnectionLost
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func readWithoutEncryption(serviceCode _: Data, blockList _: [Data]) async throws -> [Data] {
+        throw NFCError.tagConnectionLost
+    }
+
+    func writeWithoutEncryption(serviceCode _: Data, blockList _: [Data], blockData _: [Data]) async throws {
+        throw NFCError.tagConnectionLost
+    }
+
+    func requestService(nodeCodeList: [Data]) async throws -> [Data] {
+        if failRequestService {
+            throw NFCError.tagConnectionLost
+        }
+        // Only the NDEF read service exists.
+        return nodeCodeList.map { $0 == FeliCaType3Reader.readServiceCode ? Data([0x00, 0x10]) : Data([0xFF, 0xFF]) }
     }
 }

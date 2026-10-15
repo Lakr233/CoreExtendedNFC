@@ -98,6 +98,13 @@ public protocol ISO15693TagTransporting: NFCTagTransport {
     /// Write a single block.
     func writeBlock(_ number: UInt8, data: Data) async throws
 
+    /// Extended READ SINGLE BLOCK (ISO/IEC 15693-3 command 0x30, 2-byte block number)
+    /// for tags with more than 256 blocks. Not every tag implements it.
+    func extendedReadBlock(_ number: UInt16) async throws -> Data
+
+    /// Extended WRITE SINGLE BLOCK (ISO/IEC 15693-3 command 0x31, 2-byte block number).
+    func extendedWriteBlock(_ number: UInt16, data: Data) async throws
+
     /// Read multiple contiguous blocks.
     func readBlocks(range: NSRange) async throws -> [Data]
 
@@ -133,6 +140,14 @@ public protocol ISO15693TagTransporting: NFCTagTransport {
 }
 
 public extension ISO15693TagTransporting {
+    func extendedReadBlock(_: UInt16) async throws -> Data {
+        throw NFCError.unsupportedOperation("ISO 15693 extended block reads are not supported by this transport")
+    }
+
+    func extendedWriteBlock(_: UInt16, data _: Data) async throws {
+        throw NFCError.unsupportedOperation("ISO 15693 extended block writes are not supported by this transport")
+    }
+
     func writeAFI(_: UInt8) async throws {
         throw NFCError.unsupportedOperation("ISO 15693 AFI updates are not supported by this transport")
     }
