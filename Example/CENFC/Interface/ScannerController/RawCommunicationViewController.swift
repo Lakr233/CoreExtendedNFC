@@ -59,7 +59,13 @@ class RawCommunicationViewController: StackScrollController {
     // MARK: - State
 
     private var logEntries: [String] = []
-    private var isSending = false
+    private let sendTask = SingleTaskRunner()
+
+    /// Whether the card can be recognised again by its UID. Passports and many
+    /// ISO 7816 / DESFire EV cards present a fresh random UID on every activation.
+    private var canVerifyUID: Bool {
+        cardInfo.type.family != .passport && cardInfo.uid.isStableCardUID
+    }
 
     // MARK: - Lifecycle
 
@@ -70,6 +76,13 @@ class RawCommunicationViewController: StackScrollController {
         navigationItem.largeTitleDisplayMode = .never
         enableExtendedEdge()
         setupCopyButton()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isMovingFromParent {
+            sendTask.cancel()
+        }
     }
 
     override func setupContentViews() {
@@ -124,7 +137,11 @@ class RawCommunicationViewController: StackScrollController {
             value: mode.title
         )
 
-        addSectionFooter(String(localized: "Commands will only be sent after verifying the card UID matches."))
+        if canVerifyUID {
+            addSectionFooter(String(localized: "Commands will only be sent after verifying the card UID matches."))
+        } else {
+            addSectionFooter(String(localized: "This card uses a random UID, so the card presented cannot be verified. Make sure you present the same card."))
+        }
     }
 
     private func buildInputSection() {
@@ -198,40 +215,47 @@ class RawCommunicationViewController: StackScrollController {
     // MARK: - Send
 
     @objc private func sendTapped() {
-        guard !isSending else { return }
+        guard !sendTask.isRunning else { return }
         guard let commandData = parseHexInput() else {
-            SPIndicator.present(
+            presentInfoAlert(
                 title: String(localized: "Invalid Hex"),
-                preset: .error,
-                haptic: .error
+                message: String(localized: "Enter whole bytes as hex digits, for example 30 04.")
             )
             return
         }
 
-        if communicationMode == .apdu, commandData.count < 4 {
-            SPIndicator.present(
-                title: String(localized: "APDU Too Short"),
-                message: String(localized: "Need at least CLA INS P1 P2"),
-                preset: .error,
-                haptic: .error
-            )
-            return
+        var apdu: CommandAPDU?
+        if communicationMode == .apdu {
+            guard commandData.count >= 4 else {
+                presentInfoAlert(
+                    title: String(localized: "APDU Too Short"),
+                    message: String(localized: "Need at least CLA INS P1 P2")
+                )
+                return
+            }
+            guard let parsed = Self.parseAPDU(commandData) else {
+                presentInfoAlert(
+                    title: String(localized: "Invalid APDU"),
+                    message: String(localized: "The length byte Lc does not match the number of data bytes. Use CLA INS P1 P2, then optionally Lc and exactly Lc data bytes, then optionally Le. Extended-length APDUs are not supported here.")
+                )
+                return
+            }
+            apdu = parsed
         }
 
         hexInputField.resignFirstResponder()
-        isSending = true
         sendButton.isEnabled = false
         sendButton.configuration?.showsActivityIndicator = true
 
-        Task {
-            await performSend(commandData)
-            isSending = false
+        sendTask.run { [weak self] in
+            guard let self else { return }
+            await performSend(commandData, apdu: apdu)
             sendButton.isEnabled = true
             sendButton.configuration?.showsActivityIndicator = false
         }
     }
 
-    private func performSend(_ commandData: Data) async {
+    private func performSend(_ commandData: Data, apdu: CommandAPDU?) async {
         let manager = NFCSessionManager()
         do {
             let (_, transport) = try await manager.scan(
@@ -239,8 +263,10 @@ class RawCommunicationViewController: StackScrollController {
                 message: String(localized: "Hold your iPhone near the NFC tag")
             )
 
-            // Verify UID
-            guard transport.identifier == cardInfo.uid else {
+            try Task.checkCancellation()
+
+            // Verify UID when the card has a stable one.
+            guard !canVerifyUID || transport.identifier == cardInfo.uid else {
                 let expected = cardInfo.uid.hexDump
                 let got = transport.identifier.hexDump
                 manager.invalidate(errorMessage: String(localized: "Wrong card detected"))
@@ -251,17 +277,15 @@ class RawCommunicationViewController: StackScrollController {
             manager.setAlertMessage(String(localized: "Sending..."))
 
             let response: Data
-            switch communicationMode {
-            case .rawBytes:
-                response = try await transport.send(commandData)
-            case .apdu:
-                let apdu = parseAPDU(commandData)
+            if let apdu {
                 let apduResponse = try await transport.sendAPDU(apdu)
                 // Combine data + SW1 + SW2
                 var fullResponse = apduResponse.data
                 fullResponse.append(apduResponse.sw1)
                 fullResponse.append(apduResponse.sw2)
                 response = fullResponse
+            } else {
+                response = try await transport.send(commandData)
             }
 
             manager.setAlertMessage(String(localized: "Done"))
@@ -269,38 +293,49 @@ class RawCommunicationViewController: StackScrollController {
 
             appendLog("TX: \(commandData.hexDump)\nRX: \(response.hexDump)")
 
-        } catch is CancellationError {
-            return
         } catch {
-            manager.invalidate()
+            manager.invalidate(after: error)
             if !presentNFCErrorAlertIfNeeded(for: error) {
-                appendLog("TX: \(commandData.hexDump)\nERROR: \(String(describing: error))")
+                appendLog("TX: \(commandData.hexDump)\nERROR: \(NFCErrorMessage.message(for: error))")
             }
         }
     }
 
     // MARK: - APDU Parsing
 
-    private func parseAPDU(_ data: Data) -> CommandAPDU {
+    /// Parses a short command APDU (ISO/IEC 7816-4 §5.1).
+    ///
+    /// Accepted layouts are case 1 `CLA INS P1 P2`, case 2 `… Le`,
+    /// case 3 `… Lc Data(Lc)` and case 4 `… Lc Data(Lc) Le`. Anything else —
+    /// an Lc that disagrees with the data length, trailing bytes, or an
+    /// extended-length APDU (Lc = 00 followed by more bytes) — returns `nil`
+    /// instead of silently sending a different command.
+    nonisolated static func parseAPDU(_ bytes: Data) -> CommandAPDU? {
+        let data = Data(bytes)
+        guard data.count >= 4 else { return nil }
         let cla = data[0]
         let ins = data[1]
         let p1 = data[2]
         let p2 = data[3]
 
-        guard data.count > 4 else {
+        if data.count == 4 {
             return CommandAPDU(cla: cla, ins: ins, p1: p1, p2: p2)
+        }
+        if data.count == 5 {
+            return CommandAPDU(cla: cla, ins: ins, p1: p1, p2: p2, le: data[4])
         }
 
         let lc = Int(data[4])
-
-        if lc > 0, data.count >= 5 + lc {
-            let apduData = Data(data[5 ..< 5 + lc])
-            let le: UInt8? = data.count > 5 + lc ? data[5 + lc] : nil
-            return CommandAPDU(cla: cla, ins: ins, p1: p1, p2: p2, data: apduData, le: le)
+        guard lc > 0 else { return nil }
+        let body = Data(data[5 ..< min(data.count, 5 + lc)])
+        switch data.count {
+        case 5 + lc:
+            return CommandAPDU(cla: cla, ins: ins, p1: p1, p2: p2, data: body)
+        case 6 + lc:
+            return CommandAPDU(cla: cla, ins: ins, p1: p1, p2: p2, data: body, le: data[5 + lc])
+        default:
+            return nil
         }
-
-        // If only 5 bytes total (CLA INS P1 P2 Le)
-        return CommandAPDU(cla: cla, ins: ins, p1: p1, p2: p2, le: data[4])
     }
 
     // MARK: - Hex Parsing

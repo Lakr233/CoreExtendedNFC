@@ -1,25 +1,16 @@
 import CoreExtendedNFC
 import Foundation
-import Then
 
 class PassportStore {
     static let shared = PassportStore()
 
-    private let fileURL: URL = {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("passport_records.json")
-    }()
+    private let persistence = RecordFilePersistence<PassportRecord>(
+        fileURL: RecordFilePersistence<PassportRecord>.documentsFile(named: "passport_records.json")
+    )
+    private var saveGeneration = 0
 
     private(set) var records: [PassportRecord] = []
 
-    private let encoder = JSONEncoder().then {
-        $0.dateEncodingStrategy = .iso8601
-        $0.outputFormatting = [.prettyPrinted, .sortedKeys]
-    }
-
-    private let decoder = JSONDecoder().then {
-        $0.dateDecodingStrategy = .iso8601
-    }
 
     private init() {
         load()
@@ -28,13 +19,20 @@ class PassportStore {
     // MARK: - CRUD
 
     func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        records = (try? decoder.decode([PassportRecord].self, from: data)) ?? []
+        let result = persistence.load()
+        records = result.records
+        persistence.reportLoadIssues(result, source: "PassportStore")
     }
 
+    /// Persists the current records without blocking the main thread.
     func save() {
-        guard let data = try? encoder.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        saveGeneration += 1
+        let snapshot = records
+        let generation = saveGeneration
+        let persistence = persistence
+        Task {
+            await persistence.save(snapshot, generation: generation)
+        }
     }
 
     func add(_ record: PassportRecord) {

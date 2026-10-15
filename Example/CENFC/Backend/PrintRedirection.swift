@@ -4,18 +4,20 @@ import Foundation
 ///
 /// Uses `Pipe` + `dup2` to intercept file descriptor writes,
 /// similar to Flowdown's approach. Call ``start()`` once at app launch.
-enum PrintRedirection {
-    private static var originalStdout: Int32 = -1
-    private static var pipe: Pipe?
+nonisolated enum PrintRedirection {
+    @MainActor private static var pipe: Pipe?
 
+    @MainActor
     static func start() {
         guard pipe == nil else { return }
 
         let newPipe = Pipe()
         pipe = newPipe
 
-        // Save original stdout so we can still write to Xcode console
-        originalStdout = dup(STDOUT_FILENO)
+        // Save original stdout so we can still write to Xcode console.
+        // The handler below runs on a background queue, so it captures only this
+        // immutable descriptor and never touches main-actor state directly.
+        let originalStdout = dup(STDOUT_FILENO)
 
         // Redirect stdout to pipe
         dup2(newPipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
@@ -26,8 +28,9 @@ enum PrintRedirection {
 
             // Forward to original stdout (Xcode console) so debug output isn't lost
             if originalStdout >= 0 {
-                _ = data.withUnsafeBytes { bytes in
-                    write(originalStdout, bytes.baseAddress!, data.count)
+                data.withUnsafeBytes { bytes in
+                    guard let baseAddress = bytes.baseAddress else { return }
+                    _ = write(originalStdout, baseAddress, bytes.count)
                 }
             }
 

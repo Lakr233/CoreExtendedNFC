@@ -15,11 +15,7 @@ class PassportMRZInputViewController: StackScrollController {
     private lazy var dobPicker: UIDatePicker = makeDatePicker()
     private lazy var expiryPicker: UIDatePicker = makeDatePicker()
 
-    private let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyMMdd"
-        return f
-    }()
+    private let readTask = SingleTaskRunner()
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -46,6 +42,37 @@ class PassportMRZInputViewController: StackScrollController {
         )
     }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isMovingFromParent {
+            readTask.cancel()
+        }
+    }
+
+    // MARK: - MRZ Fields
+
+    /// Formats a picker date as the MRZ `YYMMDD` field.
+    ///
+    /// The MRZ always uses Gregorian years, whatever calendar the device is set to
+    /// (a Buddhist or Japanese calendar would otherwise produce the wrong year and
+    /// a wrong BAC key). The time zone matches the picker, which reports local midnight.
+    nonisolated static func mrzDate(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyMMdd"
+        return formatter.string(from: date)
+    }
+
+    /// Normalises a typed document number for the MRZ key: uppercase, no spaces.
+    ///
+    /// ICAO 9303 check digits only assign values to `0-9`, `A-Z` and `<`, so a
+    /// lowercase letter would produce a wrong check digit and BAC would fail.
+    nonisolated static func mrzDocumentNumber(_ text: String) -> String {
+        text.filter { !$0.isWhitespace }.uppercased()
+    }
+
     override func setupContentViews() {
         super.setupContentViews()
 
@@ -67,11 +94,11 @@ class PassportMRZInputViewController: StackScrollController {
     // MARK: - Scan
 
     @objc private func scanTapped() {
-        guard validateInput() else { return }
+        guard !readTask.isRunning, validateInput() else { return }
 
-        let docNumber = documentNumberField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let dobString = dateFormatter.string(from: dobPicker.date)
-        let doeString = dateFormatter.string(from: expiryPicker.date)
+        let docNumber = Self.mrzDocumentNumber(documentNumberField.text ?? "")
+        let dobString = Self.mrzDate(dobPicker.date)
+        let doeString = Self.mrzDate(expiryPicker.date)
 
         let mrzKey = MRZKeyGenerator.computeMRZKey(
             documentNumber: docNumber,
@@ -82,30 +109,33 @@ class PassportMRZInputViewController: StackScrollController {
         view.endEditing(true)
         navigationItem.rightBarButtonItem?.isEnabled = false
 
-        Task {
-            do {
-                let passport = try await CoreExtendedNFC.readPassport(
-                    mrzKey: mrzKey,
-                    dataGroups: [.com, .dg1, .dg2, .dg7, .dg11, .dg12, .dg14, .dg15, .sod],
-                    performActiveAuth: true,
-                    message: String(localized: "Hold your iPhone near your passport")
-                )
-                let record = PassportRecord(from: passport)
-                onPassportRead?(record)
-            } catch is CancellationError {
-                navigationItem.rightBarButtonItem?.isEnabled = true
-                return
-            } catch {
-                navigationItem.rightBarButtonItem?.isEnabled = true
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentReadFailedAlert(for: error)
-                }
+        readTask.run { [weak self] in
+            await self?.readPassport(mrzKey: mrzKey)
+        }
+    }
+
+    private func readPassport(mrzKey: String) async {
+        do {
+            let passport = try await CoreExtendedNFC.readPassport(
+                mrzKey: mrzKey,
+                dataGroups: [.com, .dg1, .dg2, .dg7, .dg11, .dg12, .dg14, .dg15, .sod],
+                performActiveAuth: true,
+                message: String(localized: "Hold your iPhone near your passport")
+            )
+            try Task.checkCancellation()
+            navigationItem.rightBarButtonItem?.isEnabled = true
+            let record = PassportRecord(from: passport)
+            onPassportRead?(record)
+        } catch {
+            navigationItem.rightBarButtonItem?.isEnabled = true
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error, title: String(localized: "Passport Read Failed"))
             }
         }
     }
 
     private func validateInput() -> Bool {
-        let docNumber = documentNumberField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let docNumber = Self.mrzDocumentNumber(documentNumberField.text ?? "")
         if docNumber.isEmpty {
             presentValidationAlert(String(localized: "Please enter the document number."))
             return false
@@ -120,17 +150,7 @@ class PassportMRZInputViewController: StackScrollController {
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
-    }
-
-    private func presentReadFailedAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Passport Read Failed"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
+        presentQueued(alert)
     }
 
     // MARK: - UI Helpers

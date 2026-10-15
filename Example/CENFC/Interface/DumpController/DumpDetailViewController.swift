@@ -87,13 +87,7 @@ class DumpDetailViewController: StackScrollController {
             activity.popoverPresentationController?.sourceView = view
             present(activity, animated: true)
         } catch {
-            let alert = UIAlertController(
-                title: String(localized: "Export Error"),
-                message: String(describing: error),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-            present(alert, animated: true)
+            presentErrorAlert(for: error, title: String(localized: "Export Error"))
         }
     }
 

@@ -1,7 +1,7 @@
 import CoreExtendedNFC
 import Foundation
 
-struct PassportRecord: Codable, Identifiable {
+nonisolated struct PassportRecord: Codable, Identifiable, Sendable {
     let id: UUID
     let date: Date
     let passport: PassportModel
@@ -49,7 +49,7 @@ struct PassportRecord: Codable, Identifiable {
     }
 }
 
-extension PassportRecord: Hashable {
+nonisolated extension PassportRecord: Hashable {
     static func == (lhs: PassportRecord, rhs: PassportRecord) -> Bool {
         lhs.id == rhs.id
     }

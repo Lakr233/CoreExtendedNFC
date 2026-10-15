@@ -12,28 +12,16 @@ extension UIViewController {
     /// - Returns: `true` if the error was handled (alert shown or silently
     ///   ignored), `false` if the caller should handle it.
     func presentNFCErrorAlertIfNeeded(for error: Error) -> Bool {
-        if let nfcError = error as? NFCError, case .nfcNotAvailable = nfcError {
+        if case .nfcNotAvailable? = error as? NFCError {
             presentNFCNotAvailableAlert()
             return true
         }
-
-        let description = String(describing: error)
-        if description.contains("invalidat") || description.contains("cancel") {
-            return true
-        }
-
-        return false
+        return NFCErrorMessage.isCancellation(error)
     }
 
-    /// Shows a generic "Error" alert describing `error`.
-    func presentErrorAlert(for error: Error) {
-        let alert = UIAlertController(
-            title: String(localized: "Error"),
-            message: String(describing: error),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
+    /// Shows an "Error" alert describing `error` in the user's language.
+    func presentErrorAlert(for error: Error, title: String = String(localized: "Error")) {
+        presentInfoAlert(title: title, message: NFCErrorMessage.message(for: error))
     }
 
     /// Shows an alert explaining NFC is not available, with a button to open Settings.
@@ -55,6 +43,20 @@ extension UIViewController {
             title: String(localized: "Cancel"),
             style: .cancel
         ))
-        present(alert, animated: true)
+        presentQueued(alert)
+    }
+}
+
+extension NFCSessionManager {
+    /// Ends the session after a failed operation.
+    ///
+    /// The system sheet shows the failure instead of the success checkmark that a
+    /// plain ``invalidate()`` displays. A cancelled session is closed quietly.
+    func invalidate(after error: Error) {
+        if NFCErrorMessage.isCancellation(error) {
+            invalidate()
+        } else {
+            invalidate(errorMessage: NFCErrorMessage.message(for: error))
+        }
     }
 }

@@ -2,7 +2,7 @@ import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
-struct DumpRecord: Codable, Identifiable {
+nonisolated struct DumpRecord: Codable, Identifiable, Sendable {
     let id: UUID
     let date: Date
     let dump: MemoryDump
@@ -18,7 +18,7 @@ struct DumpRecord: Codable, Identifiable {
     }
 }
 
-extension DumpRecord: Hashable {
+nonisolated extension DumpRecord: Hashable {
     static func == (lhs: DumpRecord, rhs: DumpRecord) -> Bool {
         lhs.id == rhs.id
     }
@@ -28,7 +28,7 @@ extension DumpRecord: Hashable {
     }
 }
 
-extension DumpRecord: ObjectListItem {
+nonisolated extension DumpRecord: ObjectListItem {
     func matches(query: String) -> Bool {
         dump.cardInfo.type.description.localizedCaseInsensitiveContains(query)
             || dump.cardInfo.uid.hexDump.localizedCaseInsensitiveContains(query)

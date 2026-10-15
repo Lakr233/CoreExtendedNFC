@@ -17,6 +17,14 @@ class PassportViewController: UIViewController {
         navigationItem.searchController?.searchBar.text ?? ""
     }
 
+    /// The query the visible snapshot was built with. Reordering is only allowed
+    /// while the table shows every record, because the store reorders the full list.
+    private var appliedSearchText = ""
+
+    private var isShowingAllRecords: Bool {
+        appliedSearchText.isEmpty && currentSearchText.isEmpty
+    }
+
     private lazy var scanBarButton: UIBarButtonItem = {
         let importAction = UIMenu(options: .displayInline, children: [
             UIAction(
@@ -163,14 +171,18 @@ class PassportViewController: UIViewController {
             return cell
         }
         dataSource.canReorderItem = { [weak self] _ in
-            self?.currentSearchText.isEmpty == true
+            self?.isShowingAllRecords == true
         }
-        dataSource.onReorderedItems = { orderedIDs in
+        dataSource.onReorderedItems = { [weak self] orderedIDs in
             AppLogStore.shared.info(
                 "moveRow reconciled orderedIDs=\(orderedIDs.count)",
                 source: "PassportReorder"
             )
             PassportStore.shared.reorder(by: orderedIDs)
+            // If the store rejected the order, put the table back in sync with it.
+            if PassportStore.shared.records.map(\.id) != orderedIDs {
+                self?.reloadSnapshot()
+            }
         }
         dataSource.defaultRowAnimation = .fade
     }
@@ -245,7 +257,7 @@ class PassportViewController: UIViewController {
             self?.setEditing(false, animated: true)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
-        alert.popoverPresentationController?.sourceView = view
+        alert.popoverPresentationController?.barButtonItem = deleteBarButton
         present(alert, animated: true)
     }
 
@@ -286,6 +298,9 @@ class PassportViewController: UIViewController {
         var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
         snapshot.appendSections([.main])
         snapshot.appendItems(filtered.map(\.id))
+        // Records keep their ID when overwritten by an import, so refresh the cells too.
+        snapshot.reconfigureItems(filtered.map(\.id))
+        appliedSearchText = query
         dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
         emptyState.isHidden = !PassportStore.shared.records.isEmpty
     }
@@ -294,14 +309,20 @@ class PassportViewController: UIViewController {
 
     private func pushMRZInput() {
         let inputVC = PassportMRZInputViewController()
-        inputVC.onPassportRead = { [weak self] record in
+        inputVC.onPassportRead = { [weak self, weak inputVC] record in
+            guard let self else { return }
             PassportStore.shared.add(record)
-            self?.reloadSnapshot()
-            self?.navigationController?.popViewController(animated: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                let detail = PassportDetailViewController(record: record)
-                self?.navigationController?.pushViewController(detail, animated: true)
-            }
+            reloadSnapshot()
+            // Only replace the MRZ screen when it is still on top; the user may have
+            // navigated elsewhere while the chip was being read.
+            guard let navigationController,
+                  let inputVC,
+                  navigationController.topViewController === inputVC
+            else { return }
+            var stack = navigationController.viewControllers
+            stack.removeLast()
+            stack.append(PassportDetailViewController(record: record))
+            navigationController.setViewControllers(stack, animated: true)
         }
         navigationController?.pushViewController(inputVC, animated: true)
     }
@@ -318,7 +339,10 @@ class PassportViewController: UIViewController {
     func importFile(at url: URL) {
         do {
             let record = try PassportDocument.importRecord(from: url)
-            if let existing = PassportStore.shared.record(withDocumentNumber: record.passport.mrz?.documentNumber ?? "") {
+            let documentNumber = record.passport.mrz?.documentNumber ?? ""
+            if !documentNumber.isEmpty,
+               let existing = PassportStore.shared.record(withDocumentNumber: documentNumber)
+            {
                 PassportStore.shared.replace(existing.id, with: record)
             } else {
                 PassportStore.shared.add(record)
@@ -452,6 +476,18 @@ extension PassportViewController: UISearchControllerDelegate, UISearchBarDelegat
     @objc private func commitSearch() {
         reloadSnapshot()
     }
+
+    // Tapping Cancel clears the text programmatically without calling
+    // `searchBar(_:textDidChange:)`, so refresh the list here as well.
+    func searchBarCancelButtonClicked(_: UISearchBar) {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(commitSearch), object: nil)
+        reloadSnapshot()
+    }
+
+    func didDismissSearchController(_: UISearchController) {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(commitSearch), object: nil)
+        reloadSnapshot()
+    }
 }
 
 // MARK: - UIDocumentPickerDelegate
@@ -476,7 +512,7 @@ extension PassportViewController: UITableViewDragDelegate {
             AppLogStore.shared.warning("drag begin blocked because table/view is not in a window", source: "PassportReorder")
             return []
         }
-        guard currentSearchText.isEmpty else {
+        guard isShowingAllRecords else {
             AppLogStore.shared.warning(
                 "drag begin blocked by active search query='\(currentSearchText)'",
                 source: "PassportReorder"
@@ -517,7 +553,7 @@ extension PassportViewController: UITableViewDropDelegate {
         guard session.localDragSession != nil else {
             return UITableViewDropProposal(operation: .cancel)
         }
-        guard currentSearchText.isEmpty else {
+        guard isShowingAllRecords else {
             AppLogStore.shared.warning(
                 "drop update forbidden due to active search query='\(currentSearchText)'",
                 source: "PassportReorder"

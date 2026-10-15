@@ -8,7 +8,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 class PassportDetailViewController: StackScrollController {
-    private struct PreviewPayload {
+    nonisolated struct PreviewPayload: Sendable {
         let fileData: Data
         let fileExtension: String
         let sourceFormatName: String
@@ -16,12 +16,27 @@ class PassportDetailViewController: StackScrollController {
         let hasRenderedPreview: Bool
     }
 
+    /// Everything derived from the portrait and signature images, decoded once off the main thread.
+    nonisolated struct DecodedPreviews: Sendable {
+        var payloads: [DataGroupId: PreviewPayload] = [:]
+        var faceImage: UIImage?
+    }
+
     private let record: PassportRecord
     private var previewURL: URL?
+    private var previews: DecodedPreviews?
+    private var decodeTask: Task<Void, Never>?
+    /// Marks where the photo section goes once the image has been decoded.
+    private let facePlaceholder = UIView()
+
     private var previewDirectoryURL: URL {
+        Self.previewDirectory(for: record.id)
+    }
+
+    nonisolated static func previewDirectory(for id: UUID) -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("cenfc-passport-preview", isDirectory: true)
-            .appendingPathComponent(record.id.uuidString, isDirectory: true)
+            .appendingPathComponent(id.uuidString, isDirectory: true)
     }
 
     private let dateFormatter = DateFormatter().then {
@@ -41,7 +56,9 @@ class PassportDetailViewController: StackScrollController {
     }
 
     deinit {
-        cleanupPreviewArtifacts()
+        decodeTask?.cancel()
+        // deinit is nonisolated; only touch Sendable state here.
+        try? FileManager.default.removeItem(at: Self.previewDirectory(for: record.id))
     }
 
     override func viewDidLoad() {
@@ -52,7 +69,37 @@ class PassportDetailViewController: StackScrollController {
         navigationItem.largeTitleDisplayMode = .never
         enableExtendedEdge()
         setupExportButton()
-        logPreviewDiagnostics()
+        startDecodingPreviews()
+    }
+
+    /// Decodes DG2/DG7 (often JPEG 2000) once, off the main thread, then fills in the photo.
+    private func startDecodingPreviews() {
+        let passport = record.passport
+        decodeTask = Task { [weak self] in
+            let previews = await Task.detached(priority: .userInitiated) {
+                Self.decodePreviews(for: passport)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.previews = previews
+            showFaceImage(previews)
+            logPreviewDiagnostics(previews)
+        }
+    }
+
+    nonisolated static func decodePreviews(for passport: PassportModel) -> DecodedPreviews {
+        var result = DecodedPreviews()
+        for (dgId, data) in [
+            (DataGroupId.dg2, passport.resolvedFaceImageData),
+            (DataGroupId.dg7, passport.resolvedSignatureImageData),
+        ] {
+            guard let data else { continue }
+            let image = decodeImage(from: data)
+            if dgId == .dg2 {
+                result.faceImage = image
+            }
+            result.payloads[dgId] = previewPayload(for: data, decodedImage: image)
+        }
+        return result
     }
 
     override func setupContentViews() {
@@ -80,27 +127,41 @@ class PassportDetailViewController: StackScrollController {
         do {
             let fileURL = try PassportDocument.exportToFile(record)
             let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = view
+            activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
             present(activity, animated: true)
         } catch {
-            let alert = UIAlertController(
-                title: String(localized: "Export Error"),
-                message: String(describing: error),
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-            present(alert, animated: true)
+            presentErrorAlert(for: error, title: String(localized: "Export Error"))
         }
     }
 
     // MARK: - Face Photo
 
     private func buildFaceSection() {
-        guard let previewPayload = previewPayload(for: .dg2) else { return }
+        guard record.passport.resolvedFaceImageData != nil else { return }
+        stackView.addArrangedSubview(facePlaceholder)
+        if let previews {
+            showFaceImage(previews)
+        }
+    }
+
+    /// Builds the photo section at the placeholder once the portrait has been decoded.
+    private func showFaceImage(_ previews: DecodedPreviews) {
+        guard let placeholderIndex = stackView.arrangedSubviews.firstIndex(of: facePlaceholder) else { return }
+        let firstNewIndex = stackView.arrangedSubviews.count
+        buildFaceRows(previews)
+        let added = Array(stackView.arrangedSubviews[firstNewIndex...])
+        for (offset, view) in added.enumerated() {
+            stackView.insertArrangedSubview(view, at: placeholderIndex + offset)
+        }
+        facePlaceholder.removeFromSuperview()
+    }
+
+    private func buildFaceRows(_ previews: DecodedPreviews) {
+        guard let previewPayload = previews.payloads[.dg2] else { return }
 
         addSectionHeader(String(localized: "Photo"))
 
-        if let image = decodedImage(for: .dg2) {
+        if let image = previews.faceImage {
             let imageView = UIImageView(image: image).then {
                 $0.contentMode = .scaleAspectFit
                 $0.clipsToBounds = true
@@ -239,7 +300,7 @@ class PassportDetailViewController: StackScrollController {
             icon: "internaldrive",
             title: String(localized: "Total Raw Size"),
             description: String(localized: "Combined size of all raw data group bytes read from the chip."),
-            value: "\(record.totalRawSize) bytes"
+            value: String(localized: "\(String(record.totalRawSize)) bytes")
         )
 
         let mrzString = record.passport.mrz?.mrzString ?? ""
@@ -264,8 +325,9 @@ class PassportDetailViewController: StackScrollController {
         for (dgId, data) in record.passport.rawDataGroups.sorted(by: {
             (dgOrder.firstIndex(of: $0.key) ?? 0) < (dgOrder.firstIndex(of: $1.key) ?? 0)
         }) {
-            let previewPayload = previewPayload(for: dgId)
-            let icon = previewPayload != nil ? "photo.fill" : "doc.zipper"
+            let isImage = (dgId == .dg2 && record.passport.resolvedFaceImageData != nil)
+                || (dgId == .dg7 && record.passport.resolvedSignatureImageData != nil)
+            let icon = isImage ? "photo.fill" : "doc.zipper"
 
             var actions: [UIMenuElement] = []
 
@@ -280,12 +342,14 @@ class PassportDetailViewController: StackScrollController {
                 self?.navigationController?.pushViewController(viewer, animated: true)
             })
 
-            if let payload = previewPayload {
+            if isImage {
                 actions.append(UIAction(
                     title: String(localized: "Open Preview"),
                     image: UIImage(systemName: "eye")
                 ) { [weak self] _ in
-                    self?.previewImage(payload, name: dgId.name)
+                    // Decoding finishes long before a user can open this menu; until then there is nothing to show.
+                    guard let self, let payload = previews?.payloads[dgId] else { return }
+                    previewImage(payload, name: dgId.name)
                 })
             }
 
@@ -293,7 +357,7 @@ class PassportDetailViewController: StackScrollController {
                 icon: icon,
                 title: dgId.name,
                 description: String(localized: "Raw binary data for this data group."),
-                value: "\(data.count) bytes",
+                value: String(localized: "\(String(data.count)) bytes"),
                 extraMenuActions: actions
             )
         }
@@ -301,21 +365,9 @@ class PassportDetailViewController: StackScrollController {
         addSectionFooter(String(localized: "Tap the share button to export the full passport record."))
     }
 
-    private func previewPayload(for dgId: DataGroupId) -> PreviewPayload? {
-        let data: Data?
-        switch dgId {
-        case .dg2:
-            data = record.passport.resolvedFaceImageData
-        case .dg7:
-            data = record.passport.resolvedSignatureImageData
-        default:
-            return nil
-        }
-
-        guard let data else { return nil }
-
+    nonisolated private static func previewPayload(for data: Data, decodedImage: UIImage?) -> PreviewPayload? {
         let formatName = inferPreviewFormat(for: data)
-        if let image = decodeImage(from: data),
+        if let image = decodedImage,
            let jpegData = image.jpegData(compressionQuality: 0.95)
         {
             return PreviewPayload(
@@ -382,15 +434,15 @@ class PassportDetailViewController: StackScrollController {
         }
     }
 
-    private func logPreviewDiagnostics() {
-        logPreviewDiagnostics(for: .dg2)
-        logPreviewDiagnostics(for: .dg7)
+    private func logPreviewDiagnostics(_ previews: DecodedPreviews) {
+        logPreviewDiagnostics(for: .dg2, payload: previews.payloads[.dg2])
+        logPreviewDiagnostics(for: .dg7, payload: previews.payloads[.dg7])
     }
 
-    private func logPreviewDiagnostics(for dgId: DataGroupId) {
+    private func logPreviewDiagnostics(for dgId: DataGroupId, payload: PreviewPayload?) {
         let rawBytes = record.passport.rawDataGroups[dgId]?.count ?? 0
 
-        guard let payload = previewPayload(for: dgId) else {
+        guard let payload else {
             if rawBytes > 0 {
                 AppLogStore.shared.warning(
                     "\(dgId.name) raw data exists (\(rawBytes) bytes) but no extracted preview payload is available",
@@ -406,21 +458,7 @@ class PassportDetailViewController: StackScrollController {
         )
     }
 
-    private func decodedImage(for dgId: DataGroupId) -> UIImage? {
-        let data: Data? = switch dgId {
-        case .dg2:
-            record.passport.resolvedFaceImageData
-        case .dg7:
-            record.passport.resolvedSignatureImageData
-        default:
-            nil
-        }
-
-        guard let data else { return nil }
-        return decodeImage(from: data)
-    }
-
-    private func decodeImage(from data: Data) -> UIImage? {
+    nonisolated private static func decodeImage(from data: Data) -> UIImage? {
         if let image = UIImage(data: data) {
             return image
         }
@@ -457,7 +495,7 @@ class PassportDetailViewController: StackScrollController {
         return nil
     }
 
-    private func inferPreviewFormat(for data: Data) -> String {
+    nonisolated private static func inferPreviewFormat(for data: Data) -> String {
         if data.starts(with: [0xFF, 0xD8, 0xFF]) {
             return "JPEG"
         }
@@ -477,7 +515,7 @@ class PassportDetailViewController: StackScrollController {
         return "Unknown"
     }
 
-    private func nativePreviewExtension(for data: Data) -> String? {
+    nonisolated private static func nativePreviewExtension(for data: Data) -> String? {
         if data.starts(with: [0xFF, 0xD8, 0xFF]) {
             return "jpg"
         }
@@ -520,8 +558,8 @@ class PassportDetailViewController: StackScrollController {
         title: String,
         stage: PassportSecurityStageResult
     ) {
-        let (icon, isDestructive) = securityIcon(for: stage.status.rawValue)
-        let displayValue = stage.detail.isEmpty ? stage.status.rawValue : stage.detail
+        let (icon, isDestructive) = securityIcon(for: stage.status)
+        let displayValue = stage.detail.isEmpty ? Self.statusTitle(stage.status) : stage.detail
         addInfoRow(
             icon: icon,
             title: title,
@@ -531,13 +569,25 @@ class PassportDetailViewController: StackScrollController {
         )
     }
 
-    private func securityIcon(for status: String) -> (String, Bool) {
+    private func securityIcon(for status: PassportSecurityStageStatus) -> (String, Bool) {
         switch status {
-        case "succeeded": ("checkmark.circle.fill", false)
-        case "failed": ("xmark.circle.fill", true)
-        case "fallback": ("exclamationmark.triangle.fill", false)
-        case "skipped", "notAdvertised", "notSupported": ("minus.circle", false)
-        default: ("circle.dotted", false)
+        case .succeeded: ("checkmark.circle.fill", false)
+        case .failed: ("xmark.circle.fill", true)
+        case .fallback: ("exclamationmark.triangle.fill", false)
+        case .skipped, .notAdvertised, .notSupported: ("minus.circle", false)
+        case .pending: ("circle.dotted", false)
+        }
+    }
+
+    static func statusTitle(_ status: PassportSecurityStageStatus) -> String {
+        switch status {
+        case .pending: String(localized: "Pending")
+        case .succeeded: String(localized: "Succeeded")
+        case .failed: String(localized: "Failed")
+        case .fallback: String(localized: "Fallback")
+        case .skipped: String(localized: "Skipped")
+        case .notAdvertised: String(localized: "Not Advertised")
+        case .notSupported: String(localized: "Not Supported")
         }
     }
 }

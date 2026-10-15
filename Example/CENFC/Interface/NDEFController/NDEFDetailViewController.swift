@@ -9,6 +9,7 @@ import UIKit
 class NDEFEditorViewController: StackScrollController {
     var existingRecord: NDEFDataRecord?
     var onSave: ((NDEFDataRecord) -> Void)?
+    private let nfcTask = SingleTaskRunner()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -22,6 +23,7 @@ class NDEFEditorViewController: StackScrollController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         if isMovingFromParent {
+            nfcTask.cancel()
             save()
         }
     }
@@ -40,14 +42,20 @@ class NDEFEditorViewController: StackScrollController {
     }
 
     func recordName() -> String {
-        "NDEF"
+        String(localized: "NDEF")
     }
 
-    private func save() {
+    /// Hands the edited record to ``onSave``.
+    ///
+    /// Nothing is saved when the fields cannot be turned into a record or when the
+    /// rebuilt message is byte-for-byte the stored one, so opening a record and
+    /// leaving never rewrites it.
+    func save() {
         guard let ndefRecord = buildNDEFRecord() else { return }
         let message = NDEFMessage(records: [ndefRecord])
         let name = recordName()
         if let existing = existingRecord {
+            guard message.data != existing.messageData else { return }
             let updated = existing.withName(name).withMessageData(message.data)
             onSave?(updated)
         } else {
@@ -64,27 +72,31 @@ class NDEFEditorViewController: StackScrollController {
                 preferredStyle: .alert
             )
             alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-            present(alert, animated: true)
+            presentQueued(alert)
             return
         }
 
         let message = NDEFMessage(records: [ndefRecord])
-        Task {
-            let manager = NFCSessionManager()
-            do {
-                let (coarseInfo, transport) = try await manager.scan(for: [.all])
-                let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-                manager.setAlertMessage("Writing NDEF…")
-                try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
-                manager.setAlertMessage("Write complete")
-                manager.invalidate()
-            } catch is CancellationError {
-                return
-            } catch {
-                manager.invalidate()
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
-                }
+        nfcTask.run { [weak self] in
+            await self?.write(message)
+        }
+    }
+
+    private func write(_ message: NDEFMessage) async {
+        let manager = NFCSessionManager()
+        do {
+            let (coarseInfo, transport) = try await manager.scan(for: [.all])
+            // The screen may have been closed while the system sheet was up.
+            try Task.checkCancellation()
+            let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+            manager.setAlertMessage(String(localized: "Writing NDEF…"))
+            try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
+            manager.setAlertMessage(String(localized: "Write complete"))
+            manager.invalidate()
+        } catch {
+            manager.invalidate(after: error)
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error)
             }
         }
     }
@@ -177,15 +189,15 @@ class NDEFTextEditorViewController: NDEFEditorViewController {
 
     override func recordName() -> String {
         let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return String(text.prefix(40)).isEmpty ? "Text" : String(text.prefix(40))
+        return String(text.prefix(40)).isEmpty ? String(localized: "Text") : String(text.prefix(40))
     }
 }
 
 // MARK: - URI Editor
 
 class NDEFURIEditorViewController: NDEFEditorViewController {
-    private static let uriPrefixes: [(code: UInt8, prefix: String)] = [
-        (0x00, "(No prefix)"),
+    static let uriPrefixes: [(code: UInt8, prefix: String)] = [
+        (0x00, ""),
         (0x04, "https://"),
         (0x03, "http://"),
         (0x02, "https://www."),
@@ -227,14 +239,7 @@ class NDEFURIEditorViewController: NDEFEditorViewController {
         if let record = existingRecord?.parsedRecord,
            case let .uri(fullURI) = record.parsedPayload
         {
-            // Match the longest known prefix
-            var matchedIndex = 0
-            for (index, entry) in Self.uriPrefixes.enumerated() where entry.code != 0x00 {
-                if fullURI.hasPrefix(entry.prefix) {
-                    matchedIndex = index
-                    break
-                }
-            }
+            let matchedIndex = Self.longestPrefixIndex(for: fullURI)
             selectedPrefixIndex = matchedIndex
             let prefix = Self.uriPrefixes[matchedIndex]
             if prefix.code == 0x00 {
@@ -259,21 +264,34 @@ class NDEFURIEditorViewController: NDEFEditorViewController {
         addSectionFooter(String(localized: "NFC Forum URI Record (Well-Known Type \"U\"). The prefix is compressed into a single byte to save space on the tag."))
     }
 
+    /// Index into ``uriPrefixes`` of the longest prefix that `uri` starts with
+    /// (NFC Forum URI RTD), or 0 ("no prefix") when none matches.
+    static func longestPrefixIndex(for uri: String) -> Int {
+        uriPrefixes.indices
+            .filter { uriPrefixes[$0].code != 0x00 && uri.hasPrefix(uriPrefixes[$0].prefix) }
+            .max { uriPrefixes[$0].prefix.count < uriPrefixes[$1].prefix.count } ?? 0
+    }
+
+    private static func menuTitle(for entry: (code: UInt8, prefix: String)) -> String {
+        entry.code == 0x00 ? String(localized: "(No prefix)") : entry.prefix
+    }
+
     private func updatePrefixButton(_ button: UIButton) {
         let actions = Self.uriPrefixes.enumerated().map { index, entry in
             UIAction(
-                title: entry.prefix,
+                title: Self.menuTitle(for: entry),
                 state: index == selectedPrefixIndex ? .on : .off
             ) { [weak self] _ in
-                self?.selectedPrefixIndex = index
-                self?.updatePrefixButton(self!.prefixButton)
+                guard let self else { return }
+                selectedPrefixIndex = index
+                updatePrefixButton(prefixButton)
             }
         }
         button.menu = UIMenu(children: actions)
 
         let selected = Self.uriPrefixes[selectedPrefixIndex]
         var config = button.configuration ?? .gray()
-        config.title = selected.code == 0x00 ? "(none)" : selected.prefix
+        config.title = selected.code == 0x00 ? String(localized: "(none)") : selected.prefix
         button.configuration = config
     }
 
@@ -289,7 +307,7 @@ class NDEFURIEditorViewController: NDEFEditorViewController {
         let suffix = uriField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let prefix = Self.uriPrefixes[selectedPrefixIndex]
         let fullURI = prefix.code == 0x00 ? suffix : prefix.prefix + suffix
-        return String(fullURI.prefix(60)).isEmpty ? "URI" : String(fullURI.prefix(60))
+        return String(fullURI.prefix(60)).isEmpty ? String(localized: "URI") : String(fullURI.prefix(60))
     }
 }
 
@@ -341,7 +359,7 @@ class NDEFSmartPosterEditorViewController: NDEFEditorViewController {
         let spTitle = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !spTitle.isEmpty { return spTitle }
         let uri = uriField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return String(uri.prefix(60)).isEmpty ? "Smart Poster" : String(uri.prefix(60))
+        return String(uri.prefix(60)).isEmpty ? String(localized: "Smart Poster") : String(uri.prefix(60))
     }
 }
 
@@ -352,6 +370,7 @@ class NDEFMIMEEditorViewController: NDEFEditorViewController {
         placeholder: "text/plain"
     )
     private lazy var dataView = makeTextView()
+    private var payloadText = NDEFPayloadText(data: Data())
 
     override func viewDidLoad() {
         title = String(localized: "MIME")
@@ -365,8 +384,8 @@ class NDEFMIMEEditorViewController: NDEFEditorViewController {
            case let .mime(type, data) = record.parsedPayload
         {
             typeField.text = type
-            dataView.text = String(data: data, encoding: .utf8)
-                ?? data.map { String(format: "%02X", $0) }.joined(separator: " ")
+            payloadText = NDEFPayloadText(data: data)
+            dataView.text = payloadText.displayedText
         }
 
         addSectionHeader(String(localized: "MIME Type"))
@@ -378,17 +397,23 @@ class NDEFMIMEEditorViewController: NDEFEditorViewController {
         stackView.addArrangedSubview(SeparatorView())
 
         addSectionFooter(String(localized: "NFC Forum MIME Media Record. Carries a MIME content type and raw payload data."))
+        if payloadText.isHex {
+            addSectionFooter(String(localized: "The payload is binary and is shown as hex bytes. Edit it as hex."))
+        }
     }
 
     override func buildNDEFRecord() -> NDEFRecord? {
         let type = typeField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let dataText = dataView.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !type.isEmpty, !dataText.isEmpty else { return nil }
-        return .mime(type: type, data: Data(dataText.utf8))
+        guard !type.isEmpty,
+              let data = payloadText.data(from: dataView.text ?? ""),
+              !data.isEmpty
+        else { return nil }
+        return .mime(type: type, data: data)
     }
 
     override func recordName() -> String {
-        typeField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "MIME"
+        let type = typeField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return type.isEmpty ? String(localized: "MIME") : type
     }
 }
 
@@ -399,6 +424,7 @@ class NDEFExternalEditorViewController: NDEFEditorViewController {
         placeholder: "example.com:mytype"
     )
     private lazy var dataView = makeTextView()
+    private var payloadText = NDEFPayloadText(data: Data())
 
     override func viewDidLoad() {
         title = String(localized: "External")
@@ -412,8 +438,8 @@ class NDEFExternalEditorViewController: NDEFEditorViewController {
            case let .external(type, data) = record.parsedPayload
         {
             typeField.text = type
-            dataView.text = String(data: data, encoding: .utf8)
-                ?? data.map { String(format: "%02X", $0) }.joined(separator: " ")
+            payloadText = NDEFPayloadText(data: data)
+            dataView.text = payloadText.displayedText
         }
 
         addSectionHeader(String(localized: "Type"))
@@ -425,16 +451,67 @@ class NDEFExternalEditorViewController: NDEFEditorViewController {
         stackView.addArrangedSubview(SeparatorView())
 
         addSectionFooter(String(localized: "NFC Forum External Type Record. Uses a reverse-domain type identifier."))
+        if payloadText.isHex {
+            addSectionFooter(String(localized: "The payload is binary and is shown as hex bytes. Edit it as hex."))
+        }
     }
 
     override func buildNDEFRecord() -> NDEFRecord? {
         let type = typeField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let dataText = dataView.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !type.isEmpty else { return nil }
-        return .external(type: type, data: Data(dataText.utf8))
+        guard !type.isEmpty, let data = payloadText.data(from: dataView.text ?? "") else { return nil }
+        return .external(type: type, data: data)
     }
 
     override func recordName() -> String {
-        typeField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "External"
+        let type = typeField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return type.isEmpty ? String(localized: "External") : type
+    }
+}
+
+// MARK: - Payload Text
+
+/// How a MIME / External payload is shown in a text view and turned back into bytes.
+///
+/// Payloads that are not plain UTF-8 text (images, Wi-Fi credentials, CRLF text)
+/// are shown as hex and parsed back from hex. Text the user did not change maps
+/// back to the original bytes exactly, so viewing a record never alters it.
+nonisolated struct NDEFPayloadText: Equatable {
+    let originalData: Data
+    let displayedText: String
+    let isHex: Bool
+
+    init(data: Data) {
+        originalData = data
+        if let text = String(data: data, encoding: .utf8),
+           Data(text.utf8) == data,
+           !text.unicodeScalars.contains(where: { $0.value < 0x20 && $0 != "\n" && $0 != "\t" })
+        {
+            displayedText = text
+            isHex = false
+        } else {
+            displayedText = data.map { String(format: "%02X", $0) }.joined(separator: " ")
+            isHex = true
+        }
+    }
+
+    /// The payload bytes for `text`, or `nil` when hex input is malformed.
+    func data(from text: String) -> Data? {
+        if text == displayedText {
+            return originalData
+        }
+        guard isHex else {
+            return Data(text.utf8)
+        }
+        let digits = text.filter { !$0.isWhitespace }
+        guard digits.count.isMultiple(of: 2) else { return nil }
+        var bytes = Data()
+        var index = digits.startIndex
+        while index < digits.endIndex {
+            let next = digits.index(index, offsetBy: 2)
+            guard let byte = UInt8(digits[index ..< next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return bytes
     }
 }

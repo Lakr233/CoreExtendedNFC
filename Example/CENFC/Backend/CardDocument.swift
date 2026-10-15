@@ -2,12 +2,12 @@ import CoreExtendedNFC
 import Foundation
 import UniformTypeIdentifiers
 
-struct CardDocumentEnvelope: Codable {
+nonisolated struct CardDocumentEnvelope: Codable, Sendable {
     let scanRecord: ScanRecord
     let dumpRecord: DumpRecord?
 }
 
-enum CardDocument {
+nonisolated enum CardDocument {
     // MARK: - Export (scan only)
 
     static func exportScanOnly(_ record: ScanRecord) throws -> Data {
@@ -28,26 +28,36 @@ enum CardDocument {
     }
 
     static func exportToFile(_ dump: DumpRecord) throws -> URL {
-        let name = sanitizedFileName(cardType: dump.dump.cardInfo.type.description, uid: dump.dump.cardInfo.uid)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(name)
-            .appendingPathExtension("cenfc")
+        let url = try ExportFileLocation.url(
+            for: dump.id,
+            baseName: fileName(cardType: dump.dump.cardInfo.type.description, uid: dump.dump.cardInfo.uid),
+            fallbackName: "Card",
+            pathExtension: "cenfc"
+        )
         try exportDump(dump).write(to: url, options: .atomic)
         return url
     }
 
-    static func exportToFile(_ scan: ScanRecord) throws -> URL {
-        let name = sanitizedFileName(cardType: scan.cardInfo.type.description, uid: scan.cardInfo.uid)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(name)
-            .appendingPathExtension("cenfc")
-        let dumpRecord = DumpStore.shared.record(withUID: scan.cardInfo.uid)
-        if let dumpRecord {
-            try exportWithDump(scan: scan, dump: dumpRecord).write(to: url, options: .atomic)
+    /// Exports a scan record, bundling the given dump when one is available.
+    static func exportToFile(_ scan: ScanRecord, dump: DumpRecord?) throws -> URL {
+        let url = try ExportFileLocation.url(
+            for: scan.id,
+            baseName: fileName(cardType: scan.cardInfo.type.description, uid: scan.cardInfo.uid),
+            fallbackName: "Card",
+            pathExtension: "cenfc"
+        )
+        if let dump {
+            try exportWithDump(scan: scan, dump: dump).write(to: url, options: .atomic)
         } else {
             try exportScanOnly(scan).write(to: url, options: .atomic)
         }
         return url
+    }
+
+    /// Exports a scan record together with the latest dump of the same card from ``DumpStore``.
+    @MainActor
+    static func exportToFile(_ scan: ScanRecord) throws -> URL {
+        try exportToFile(scan, dump: DumpStore.shared.record(withUID: scan.cardInfo.uid))
     }
 
     // MARK: - Import
@@ -70,11 +80,7 @@ enum CardDocument {
 
     // MARK: - Helpers
 
-    private static func sanitizedFileName(cardType: String, uid: Data) -> String {
-        let uidHex = uid.hexString
-        let type = cardType
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-        return "\(type)_\(uidHex)"
+    private static func fileName(cardType: String, uid: Data) -> String {
+        uid.isEmpty ? cardType : "\(cardType)_\(uid.hexString)"
     }
 }

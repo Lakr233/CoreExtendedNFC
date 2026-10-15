@@ -91,9 +91,7 @@ class CardDetailViewController: StackScrollController {
             activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
             present(activity, animated: true)
         } catch {
-            let alert = UIAlertController(title: String(localized: "Export Failed"), message: String(describing: error), preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-            present(alert, animated: true)
+            presentErrorAlert(for: error, title: String(localized: "Export Failed"))
         }
     }
 
@@ -107,7 +105,7 @@ class CardDetailViewController: StackScrollController {
         if let atqa = record.cardInfo.atqa { lines.append("\(String(localized: "ATQA")): \(atqa.hexDump)") }
         if let sak = record.cardInfo.sak { lines.append("\(String(localized: "SAK")): \(String(format: "0x%02X", sak))") }
         if let ats = record.cardInfo.ats {
-            lines.append("\(String(localized: "ATS FSCI")): \(ats.fsci) (max \(ats.maxFrameSize) bytes)")
+            lines.append("\(String(localized: "ATS FSCI")): \(String(localized: "\(String(ats.fsci)) (max \(String(ats.maxFrameSize)) bytes)"))")
             if let ta = ats.ta { lines.append("\(String(localized: "ATS TA")): \(String(format: "0x%02X", ta))") }
             if let tb = ats.tb { lines.append("\(String(localized: "ATS TB")): \(String(format: "0x%02X", tb))") }
             if let tc = ats.tc { lines.append("\(String(localized: "ATS TC")): \(String(format: "0x%02X", tc))") }
@@ -210,7 +208,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "doc.plaintext", title: String(localized: "ATS FSCI"),
                 description: String(localized: "Frame Size for proximity Coupling device Integer, max frame the card accepts."),
-                value: "\(ats.fsci) (max \(ats.maxFrameSize) bytes)"
+                value: "\(String(localized: "\(String(ats.fsci)) (max \(String(ats.maxFrameSize)) bytes)"))"
             )
             if let ta = ats.ta {
                 addInfoRow(

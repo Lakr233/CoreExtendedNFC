@@ -64,7 +64,7 @@ struct TransitBalanceViewTests {
             )
         )
         let japanHistory = infoRows(in: controller.view).filter { $0.titleLabel.text?.hasPrefix("#") == true }
-        #expect(japanHistory.map { $0.valueLabel.attributedTitle(for: .normal)?.string } == ["— → 1234"])
+        #expect(japanHistory.map { $0.valueLabel.attributedTitle(for: .normal)?.string } == ["— → ¥1234"])
         controller.addInfoRow(icon: "info.circle", title: "Empty", value: "")
         controller.view.layoutIfNeeded()
         #expect(infoRows(in: controller.view).last?.valueLabel.attributedTitle(for: .normal)?.string == "")
@@ -85,6 +85,57 @@ struct TransitBalanceViewTests {
         #expect(abs(reconfigured.bounds.height - fresh.bounds.height) < 1)
         #expect(abs(reconfigured.valueLabel.bounds.width - fresh.valueLabel.bounds.width) < 1)
         #expect(abs(reconfigured.verticalStack.bounds.width - fresh.verticalStack.bounds.width) < 1)
+    }
+
+    @Test
+    func `History dates are shown in the card's time zone`() throws {
+        let previousDefault = NSTimeZone.default
+        NSTimeZone.default = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        defer { NSTimeZone.default = previousDefault }
+
+        // Japan IC history dates are built at 00:00 Asia/Tokyo.
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 3
+        components.day = 5
+        components.timeZone = TimeZone(identifier: "Asia/Tokyo")
+        let date = try #require(Calendar(identifier: .gregorian).date(from: components))
+
+        let controller = TransitBalanceViewController()
+        controller.loadViewIfNeeded()
+        controller.displayResults(
+            TransitBalance(
+                serialNumber: "",
+                balanceRaw: 1000,
+                currencyCode: "JPY",
+                cardName: "Suica",
+                transactions: [TransitTransaction(type: .trip, balanceAfter: 1000, date: date)]
+            )
+        )
+
+        let expected = DateFormatter()
+        expected.dateStyle = .medium
+        expected.timeStyle = .none
+        expected.timeZone = TimeZone(identifier: "Asia/Tokyo")
+        let losAngeles = DateFormatter()
+        losAngeles.dateStyle = .medium
+        losAngeles.timeStyle = .none
+        losAngeles.timeZone = TimeZone(identifier: "America/Los_Angeles")
+
+        let row = try #require(infoRows(in: controller.view).first { $0.titleLabel.text == "#1" })
+        let description = try #require(row.descriptionLabel.text)
+        #expect(description.contains(expected.string(from: date)))
+        #expect(!description.contains(losAngeles.string(from: date)))
+    }
+
+    @Test
+    func `Minor-unit transaction amounts are formatted in the card currency`() {
+        // T-Union stores signed fen; a ¥2.50 fare used to show as "-250".
+        #expect(TransitBalanceViewController.formatAmount(minorUnits: -250, currencyCode: "CNY") == "−¥2.50")
+        #expect(TransitBalanceViewController.formatAmount(minorUnits: 1234, currencyCode: "CNY") == "¥12.34")
+        #expect(TransitBalanceViewController.formatAmount(minorUnits: 1050, currencyCode: "HKD") == "HK$10.50")
+        #expect(TransitBalanceViewController.formatAmount(minorUnits: 1250, currencyCode: "KRW") == "₩1250")
+        #expect(TransitBalanceViewController.cardTimeZone(forCurrency: "KRW").identifier == "Asia/Seoul")
     }
 
     private func infoRows(in view: UIView) -> [ConfigurableInfoView] {

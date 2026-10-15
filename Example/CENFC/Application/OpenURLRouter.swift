@@ -1,13 +1,13 @@
 import Foundation
 import UniformTypeIdentifiers
 
-enum OpenURLDestination: Equatable {
+nonisolated enum OpenURLDestination: Equatable {
     case scanner
     case ndef
     case passport
 }
 
-enum OpenURLRouter {
+nonisolated enum OpenURLRouter {
     static func destination(for url: URL) -> OpenURLDestination? {
         if let destination = destinationForDeclaredType(of: url) {
             return destination

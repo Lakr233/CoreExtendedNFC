@@ -1,11 +1,11 @@
 import Foundation
 import UniformTypeIdentifiers
 
-extension UTType {
+nonisolated extension UTType {
     static let cndef = UTType(exportedAs: "wiki.qaq.cenfc.ndef-record", conformingTo: .data)
 }
 
-enum NDEFDocument {
+nonisolated enum NDEFDocument {
     // MARK: - Export
 
     static func export(_ record: NDEFDataRecord) throws -> Data {
@@ -13,10 +13,12 @@ enum NDEFDocument {
     }
 
     static func exportToFile(_ record: NDEFDataRecord) throws -> URL {
-        let name = sanitizedFileName(for: record)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(name)
-            .appendingPathExtension("cndef")
+        let url = try ExportFileLocation.url(
+            for: record.id,
+            baseName: record.name,
+            fallbackName: "NDEF",
+            pathExtension: "cndef"
+        )
         try export(record).write(to: url, options: .atomic)
         return url
     }
@@ -32,13 +34,5 @@ enum NDEFDocument {
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url)
         return try importRecord(from: data)
-    }
-
-    // MARK: - Helpers
-
-    private static func sanitizedFileName(for record: NDEFDataRecord) -> String {
-        record.name
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
     }
 }

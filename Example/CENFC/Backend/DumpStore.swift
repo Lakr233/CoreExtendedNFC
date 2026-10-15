@@ -2,17 +2,16 @@ import Combine
 import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
-import Then
 import UIKit
 
 @MainActor
 class DumpStore: @MainActor ObjectListDataSource {
     static let shared = DumpStore()
 
-    private let fileURL: URL = {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("dump_records.json")
-    }()
+    private let persistence = RecordFilePersistence<DumpRecord>(
+        fileURL: RecordFilePersistence<DumpRecord>.documentsFile(named: "dump_records.json")
+    )
+    private var saveGeneration = 0
 
     private(set) var records: [DumpRecord] = [] {
         didSet { changeSubject.send() }
@@ -20,14 +19,6 @@ class DumpStore: @MainActor ObjectListDataSource {
 
     private let changeSubject = PassthroughSubject<Void, Never>()
 
-    private let encoder = JSONEncoder().then {
-        $0.dateEncodingStrategy = .iso8601
-        $0.outputFormatting = [.prettyPrinted, .sortedKeys]
-    }
-
-    private let decoder = JSONDecoder().then {
-        $0.dateDecodingStrategy = .iso8601
-    }
 
     private init() {
         load()
@@ -36,13 +27,20 @@ class DumpStore: @MainActor ObjectListDataSource {
     // MARK: - CRUD
 
     func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        records = (try? decoder.decode([DumpRecord].self, from: data)) ?? []
+        let result = persistence.load()
+        records = result.records
+        persistence.reportLoadIssues(result, source: "DumpStore")
     }
 
+    /// Persists the current records without blocking the main thread.
     func save() {
-        guard let data = try? encoder.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        saveGeneration += 1
+        let snapshot = records
+        let generation = saveGeneration
+        let persistence = persistence
+        Task {
+            await persistence.save(snapshot, generation: generation)
+        }
     }
 
     func add(_ record: DumpRecord) {
@@ -82,7 +80,8 @@ class DumpStore: @MainActor ObjectListDataSource {
     }
 
     func record(withUID uid: Data) -> DumpRecord? {
-        records.first { $0.dump.cardInfo.uid == uid }
+        guard uid.isStableCardUID else { return nil }
+        return records.first { $0.dump.cardInfo.uid == uid }
     }
 
     // MARK: - ObjectListDataSource

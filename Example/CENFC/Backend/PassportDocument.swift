@@ -2,11 +2,11 @@ import CoreExtendedNFC
 import Foundation
 import UniformTypeIdentifiers
 
-extension UTType {
+nonisolated extension UTType {
     static let cenfcPassport = UTType(exportedAs: "wiki.qaq.cenfc.passport-record", conformingTo: .data)
 }
 
-enum PassportDocument {
+nonisolated enum PassportDocument {
     // MARK: - Export
 
     static func export(_ record: PassportRecord) throws -> Data {
@@ -14,10 +14,13 @@ enum PassportDocument {
     }
 
     static func exportToFile(_ record: PassportRecord) throws -> URL {
-        let name = sanitizedFileName(for: record)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(name)
-            .appendingPathExtension("cenfcpass")
+        let docNum = record.passport.mrz?.documentNumber ?? ""
+        let url = try ExportFileLocation.url(
+            for: record.id,
+            baseName: docNum.isEmpty ? record.displayName : "\(record.displayName)_\(docNum)",
+            fallbackName: "Passport",
+            pathExtension: "cenfcpass"
+        )
         try export(record).write(to: url, options: .atomic)
         return url
     }
@@ -33,17 +36,5 @@ enum PassportDocument {
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url)
         return try importRecord(from: data)
-    }
-
-    // MARK: - Helpers
-
-    private static func sanitizedFileName(for record: PassportRecord) -> String {
-        let docNum = (record.passport.mrz?.documentNumber ?? "")
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-        let name = record.displayName
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-        return "\(name)_\(docNum)"
     }
 }

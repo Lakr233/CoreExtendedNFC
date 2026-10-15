@@ -2,17 +2,16 @@ import Combine
 import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
-import Then
 import UIKit
 
 @MainActor
 class NDEFStore: @MainActor ObjectListDataSource {
     static let shared = NDEFStore()
 
-    private let fileURL: URL = {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("ndef_records.json")
-    }()
+    private let persistence = RecordFilePersistence<NDEFDataRecord>(
+        fileURL: RecordFilePersistence<NDEFDataRecord>.documentsFile(named: "ndef_records.json")
+    )
+    private var saveGeneration = 0
 
     private(set) var records: [NDEFDataRecord] = [] {
         didSet { changeSubject.send() }
@@ -20,14 +19,6 @@ class NDEFStore: @MainActor ObjectListDataSource {
 
     private let changeSubject = PassthroughSubject<Void, Never>()
 
-    private let encoder = JSONEncoder().then {
-        $0.dateEncodingStrategy = .iso8601
-        $0.outputFormatting = [.prettyPrinted, .sortedKeys]
-    }
-
-    private let decoder = JSONDecoder().then {
-        $0.dateDecodingStrategy = .iso8601
-    }
 
     private init() {
         load()
@@ -36,13 +27,20 @@ class NDEFStore: @MainActor ObjectListDataSource {
     // MARK: - CRUD
 
     func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        records = (try? decoder.decode([NDEFDataRecord].self, from: data)) ?? []
+        let result = persistence.load()
+        records = result.records
+        persistence.reportLoadIssues(result, source: "NDEFStore")
     }
 
+    /// Persists the current records without blocking the main thread.
     func save() {
-        guard let data = try? encoder.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        saveGeneration += 1
+        let snapshot = records
+        let generation = saveGeneration
+        let persistence = persistence
+        Task {
+            await persistence.save(snapshot, generation: generation)
+        }
     }
 
     func add(_ record: NDEFDataRecord) {

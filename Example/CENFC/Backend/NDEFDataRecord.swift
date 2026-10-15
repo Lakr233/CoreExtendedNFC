@@ -2,7 +2,7 @@ import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
-struct NDEFDataRecord: Codable, Hashable, Identifiable {
+nonisolated struct NDEFDataRecord: Codable, Hashable, Identifiable, Sendable {
     let id: UUID
     let date: Date
     var name: String
@@ -47,7 +47,7 @@ struct NDEFDataRecord: Codable, Hashable, Identifiable {
     }
 }
 
-extension NDEFDataRecord: ObjectListItem {
+nonisolated extension NDEFDataRecord: ObjectListItem {
     func matches(query: String) -> Bool {
         name.localizedCaseInsensitiveContains(query)
             || displayType.localizedCaseInsensitiveContains(query)

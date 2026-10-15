@@ -2,7 +2,7 @@ import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
 
-struct ScanRecord: Codable, Identifiable {
+nonisolated struct ScanRecord: Codable, Identifiable, Sendable {
     let id: UUID
     let date: Date
     let cardInfo: CardInfo
@@ -22,7 +22,7 @@ struct ScanRecord: Codable, Identifiable {
     }
 }
 
-extension ScanRecord: Hashable {
+nonisolated extension ScanRecord: Hashable {
     static func == (lhs: ScanRecord, rhs: ScanRecord) -> Bool {
         lhs.id == rhs.id
     }
@@ -32,7 +32,19 @@ extension ScanRecord: Hashable {
     }
 }
 
-extension ScanRecord: ObjectListItem {
+nonisolated extension Data {
+    /// Whether this UID names the same physical card on every read.
+    ///
+    /// Empty UIDs and ISO/IEC 14443-3 random UIDs (single-size, first byte `0x08`,
+    /// used by eMRTDs and many ISO 7816 / DESFire EV cards) change per activation,
+    /// so they must not be used to match records or verify a card.
+    var isStableCardUID: Bool {
+        guard !isEmpty else { return false }
+        return !(count == 4 && first == 0x08)
+    }
+}
+
+nonisolated extension ScanRecord: ObjectListItem {
     func matches(query: String) -> Bool {
         cardInfo.type.description.localizedCaseInsensitiveContains(query)
             || cardInfo.uid.hexDump.localizedCaseInsensitiveContains(query)

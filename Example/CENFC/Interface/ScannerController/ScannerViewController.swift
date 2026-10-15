@@ -122,6 +122,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     // MARK: - Lifecycle
 
     private let emptyState = EmptyStateView.scan()
+    private let nfcTask = SingleTaskRunner()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -339,8 +340,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
             return // local reorder handled by diffable data source
         }
 
-        let destinationIndexPath = coordinator.destinationIndexPath
-            ?? IndexPath(row: ScanStore.shared.records.count, section: 0)
+        let insertionIndex = storeIndex(forDropAt: coordinator.destinationIndexPath)
 
         for item in coordinator.items {
             item.dragItem.itemProvider.loadDataRepresentation(
@@ -349,13 +349,31 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 guard let data else { return }
                 DispatchQueue.main.async {
                     guard let envelope = try? CardDocument.importEnvelope(from: data) else { return }
-                    ScanStore.shared.upsert(envelope.scanRecord, at: destinationIndexPath.row)
+                    ScanStore.shared.upsert(envelope.scanRecord, at: insertionIndex)
                     if let dump = envelope.dumpRecord, dump.hasMemoryData {
                         DumpStore.shared.add(dump)
                     }
                 }
             }
         }
+    }
+
+    /// Maps a drop position in the (possibly filtered) table to an index in the full store.
+    private func storeIndex(forDropAt indexPath: IndexPath?) -> Int {
+        let records = ScanStore.shared.records
+        guard let indexPath else { return records.count }
+        if let id = diffableItemIdentifier(for: indexPath),
+           let index = records.firstIndex(where: { $0.id == id })
+        {
+            return index
+        }
+        if indexPath.row > 0,
+           let id = diffableItemIdentifier(for: IndexPath(row: indexPath.row - 1, section: indexPath.section)),
+           let index = records.firstIndex(where: { $0.id == id })
+        {
+            return index + 1
+        }
+        return records.count
     }
 
     // MARK: - ObjectListViewControllerDelegate
@@ -437,21 +455,23 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     // MARK: - Scan
 
     private func performScan(targets: [NFCSessionManager.PollingTarget]) {
-        Task {
-            let manager = NFCSessionManager()
-            do {
-                let (coarseInfo, transport) = try await manager.scan(for: targets)
-                let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-                manager.setAlertMessage(refinedInfo.type.description)
-                manager.invalidate()
-                handleNewScan(ScanRecord(cardInfo: refinedInfo))
-            } catch is CancellationError {
-                return
-            } catch {
-                manager.invalidate()
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
-                }
+        nfcTask.run { [weak self] in
+            await self?.scan(targets: targets)
+        }
+    }
+
+    private func scan(targets: [NFCSessionManager.PollingTarget]) async {
+        let manager = NFCSessionManager()
+        do {
+            let (coarseInfo, transport) = try await manager.scan(for: targets)
+            let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+            manager.setAlertMessage(refinedInfo.type.description)
+            manager.invalidate()
+            handleNewScan(ScanRecord(cardInfo: refinedInfo))
+        } catch {
+            manager.invalidate(after: error)
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error)
             }
         }
     }
@@ -486,7 +506,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
             )
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
-        present(alert, animated: true)
+        presentQueued(alert)
     }
 
     // MARK: - Import
@@ -521,7 +541,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
             DumpStore.shared.add(dumpRecord)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Skip"), style: .cancel))
-        present(alert, animated: true)
+        presentQueued(alert)
     }
 
     // MARK: - Export

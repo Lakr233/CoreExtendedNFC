@@ -104,6 +104,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     )
 
     private let emptyState = EmptyStateView.scan()
+    private let nfcTask = SingleTaskRunner()
 
     // MARK: - Init
 
@@ -331,44 +332,42 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     // MARK: - Dump
 
     private func performDump(targets: [NFCSessionManager.PollingTarget]) {
-        Task {
-            let manager = NFCSessionManager()
-            do {
-                let (coarseInfo, transport) = try await manager.scan(for: targets)
-                let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+        nfcTask.run { [weak self] in
+            await self?.dump(targets: targets)
+        }
+    }
 
-                guard refinedInfo.type.isOperableOnIOS else {
-                    manager.setAlertMessage("\(refinedInfo.type.description) — \(String(localized: "not dumpable on iOS"))")
-                    manager.invalidate()
-                    presentInfoAlert(
-                        title: refinedInfo.type.description,
-                        message: String(localized: "This card type cannot be dumped on iOS. Only identification is possible.")
-                    )
-                    return
-                }
+    private func dump(targets: [NFCSessionManager.PollingTarget]) async {
+        let manager = NFCSessionManager()
+        do {
+            let (coarseInfo, transport) = try await manager.scan(for: targets)
+            let refinedInfo = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
 
-                manager.setAlertMessage(String(localized: "Reading..."))
-                let dump = try await CoreExtendedNFC.dumpCard(info: refinedInfo, transport: transport)
-                manager.setAlertMessage(String(localized: "Done"))
-                manager.invalidate()
-
-                let record = DumpRecord(from: dump)
-                guard record.hasMemoryData else {
-                    presentInfoAlert(
-                        title: refinedInfo.type.description,
-                        message: String(localized: "No memory data could be read from this card.")
-                    )
-                    return
-                }
-
-                handleNewDump(record)
-            } catch is CancellationError {
+            guard refinedInfo.type.isOperableOnIOS else {
+                let message = String(localized: "This card type cannot be dumped on iOS. Only identification is possible.")
+                manager.invalidate(errorMessage: "\(refinedInfo.type.description) — \(String(localized: "not dumpable on iOS"))")
+                presentInfoAlert(title: refinedInfo.type.description, message: message)
                 return
-            } catch {
-                manager.invalidate()
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
-                }
+            }
+
+            manager.setAlertMessage(String(localized: "Reading..."))
+            let dump = try await CoreExtendedNFC.dumpCard(info: refinedInfo, transport: transport)
+
+            let record = DumpRecord(from: dump)
+            guard record.hasMemoryData else {
+                let message = String(localized: "No memory data could be read from this card.")
+                manager.invalidate(errorMessage: message)
+                presentInfoAlert(title: refinedInfo.type.description, message: message)
+                return
+            }
+
+            manager.setAlertMessage(String(localized: "Done"))
+            manager.invalidate()
+            handleNewDump(record)
+        } catch {
+            manager.invalidate(after: error)
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error)
             }
         }
     }
@@ -408,14 +407,14 @@ class DumpViewController: ObjectListViewController<DumpStore>,
 
             if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
                 DumpStore.shared.add(dumpRecord)
-                promptSaveScan(envelope.scanRecord)
             } else {
+                // Queued: the save prompt below appears after this alert is dismissed.
                 presentInfoAlert(
                     title: String(localized: "No Dump Data"),
                     message: String(localized: "This file does not contain memory dump data. It only has card identification info.")
                 )
-                promptSaveScan(envelope.scanRecord)
             }
+            promptSaveScan(envelope.scanRecord)
         } catch {
             presentErrorAlert(for: error)
         }
@@ -431,7 +430,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
             ScanStore.shared.upsert(scanRecord)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Skip"), style: .cancel))
-        present(alert, animated: true)
+        presentQueued(alert)
     }
 
     // MARK: - UIDocumentPickerDelegate
@@ -440,13 +439,5 @@ class DumpViewController: ObjectListViewController<DumpStore>,
         for url in urls {
             importFile(at: url)
         }
-    }
-
-    // MARK: - Alerts
-
-    private func presentInfoAlert(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: String(localized: "OK"), style: .default))
-        present(alert, animated: true)
     }
 }

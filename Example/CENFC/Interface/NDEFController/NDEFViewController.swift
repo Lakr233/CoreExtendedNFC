@@ -123,6 +123,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     }
 
     private let emptyState = EmptyStateView.scan()
+    private let nfcTask = SingleTaskRunner()
 
     // MARK: - Init
 
@@ -327,11 +328,11 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
 
     private func createRecord(type: NDEFCreateType) {
         let (name, ndefRecord): (String, NDEFRecord) = switch type {
-        case .text: ("Text", .text("", languageCode: "en"))
-        case .uri: ("URI", .uri(""))
-        case .smartPoster: ("Smart Poster", .smartPoster(uri: "", title: nil))
-        case .mime: ("MIME", .mime(type: "", data: Data()))
-        case .external: ("External", .external(type: "", data: Data()))
+        case .text: (String(localized: "Text"), .text("", languageCode: "en"))
+        case .uri: (String(localized: "URI"), .uri(""))
+        case .smartPoster: (String(localized: "Smart Poster"), .smartPoster(uri: "", title: nil))
+        case .mime: (String(localized: "MIME"), .mime(type: "", data: Data()))
+        case .external: (String(localized: "External"), .external(type: "", data: Data()))
         }
         let message = NDEFMessage(records: [ndefRecord])
         let record = NDEFDataRecord(name: name, messageData: message.data)
@@ -342,37 +343,39 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     // MARK: - Scan NDEF from Card
 
     private func scanNDEFFromCard() {
-        Task {
-            let manager = NFCSessionManager()
-            do {
-                let (coarseInfo, transport) = try await manager.scan(for: [.all])
-                let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-                manager.setAlertMessage(String(localized: "Reading NDEF…"))
+        nfcTask.run { [weak self] in
+            await self?.readNDEFFromCard()
+        }
+    }
 
-                let message = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
-                manager.setAlertMessage(String(localized: "\(message.records.count) record(s)"))
-                manager.invalidate()
+    private func readNDEFFromCard() async {
+        let manager = NFCSessionManager()
+        do {
+            let (coarseInfo, transport) = try await manager.scan(for: [.all])
+            let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+            manager.setAlertMessage(String(localized: "Reading NDEF…"))
 
-                var imported = 0
-                var duplicated = 0
-                for ndefRecord in message.records {
-                    let singleMessage = NDEFMessage(records: [ndefRecord])
-                    let name = autoName(for: ndefRecord)
-                    let record = NDEFDataRecord(name: name, messageData: singleMessage.data)
-                    if NDEFStore.shared.addIfNew(record) {
-                        imported += 1
-                    } else {
-                        duplicated += 1
-                    }
+            let message = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+            manager.setAlertMessage(String(localized: "\(message.records.count) record(s)"))
+            manager.invalidate()
+
+            var imported = 0
+            var duplicated = 0
+            for ndefRecord in message.records {
+                let singleMessage = NDEFMessage(records: [ndefRecord])
+                let name = autoName(for: ndefRecord)
+                let record = NDEFDataRecord(name: name, messageData: singleMessage.data)
+                if NDEFStore.shared.addIfNew(record) {
+                    imported += 1
+                } else {
+                    duplicated += 1
                 }
-                showImportSummary(imported: imported, duplicated: duplicated)
-            } catch is CancellationError {
-                return
-            } catch {
-                manager.invalidate()
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
-                }
+            }
+            showImportSummary(imported: imported, duplicated: duplicated)
+        } catch {
+            manager.invalidate(after: error)
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error)
             }
         }
     }
@@ -380,23 +383,25 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     // MARK: - Format Tag
 
     private func formatTag() {
-        Task {
-            let manager = NFCSessionManager()
-            do {
-                let (coarseInfo, transport) = try await manager.scan(for: [.all])
-                let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-                manager.setAlertMessage(String(localized: "Formatting…"))
+        nfcTask.run { [weak self] in
+            await self?.formatTagOnCard()
+        }
+    }
 
-                try await CoreExtendedNFC.formatNDEF(info: info, transport: transport)
-                manager.setAlertMessage(String(localized: "Format complete"))
-                manager.invalidate()
-            } catch is CancellationError {
-                return
-            } catch {
-                manager.invalidate()
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
-                }
+    private func formatTagOnCard() async {
+        let manager = NFCSessionManager()
+        do {
+            let (coarseInfo, transport) = try await manager.scan(for: [.all])
+            let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+            manager.setAlertMessage(String(localized: "Formatting…"))
+
+            try await CoreExtendedNFC.formatNDEF(info: info, transport: transport)
+            manager.setAlertMessage(String(localized: "Format complete"))
+            manager.invalidate()
+        } catch {
+            manager.invalidate(after: error)
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error)
             }
         }
     }
@@ -433,23 +438,25 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     }
 
     private func writeMessage(_ message: NDEFMessage, summary: String) {
-        Task {
-            let manager = NFCSessionManager()
-            do {
-                let (coarseInfo, transport) = try await manager.scan(for: [.all])
-                let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-                manager.setAlertMessage(String(localized: "Writing NDEF…"))
+        nfcTask.run { [weak self] in
+            await self?.write(message, summary: summary)
+        }
+    }
 
-                try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
-                manager.setAlertMessage(String(localized: "Write complete (\(summary))"))
-                manager.invalidate()
-            } catch is CancellationError {
-                return
-            } catch {
-                manager.invalidate()
-                if !presentNFCErrorAlertIfNeeded(for: error) {
-                    presentErrorAlert(for: error)
-                }
+    private func write(_ message: NDEFMessage, summary: String) async {
+        let manager = NFCSessionManager()
+        do {
+            let (coarseInfo, transport) = try await manager.scan(for: [.all])
+            let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+            manager.setAlertMessage(String(localized: "Writing NDEF…"))
+
+            try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
+            manager.setAlertMessage(String(localized: "Write complete (\(summary))"))
+            manager.invalidate()
+        } catch {
+            manager.invalidate(after: error)
+            if !presentNFCErrorAlertIfNeeded(for: error) {
+                presentErrorAlert(for: error)
             }
         }
     }
@@ -517,6 +524,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     func importFiles(at urls: [URL]) {
         var imported = 0
         var duplicated = 0
+        var failures: [String] = []
         for url in urls {
             do {
                 let record = try NDEFDocument.importRecord(from: url)
@@ -526,10 +534,17 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
                     duplicated += 1
                 }
             } catch {
-                presentErrorAlert(for: error)
+                failures.append("\(url.lastPathComponent): \(NFCErrorMessage.message(for: error))")
             }
         }
         showImportSummary(imported: imported, duplicated: duplicated)
+        if !failures.isEmpty {
+            // One alert for all failed files; presenting one per file would drop all but the first.
+            presentInfoAlert(
+                title: String(localized: "Import Failed"),
+                message: failures.joined(separator: "\n")
+            )
+        }
     }
 
     private func showImportSummary(imported: Int, duplicated: Int) {

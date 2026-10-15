@@ -3,6 +3,7 @@
 //  CENFC
 //
 
+import SnapKit
 import UIKit
 
 class FeatureRowView: UIView {
@@ -30,22 +31,16 @@ class FeatureRowView: UIView {
         hStack.axis = .horizontal
         hStack.spacing = 14
         hStack.alignment = .center
-        hStack.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(hStack)
-        NSLayoutConstraint.activate([
-            hStack.topAnchor.constraint(equalTo: topAnchor),
-            hStack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            hStack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hStack.trailingAnchor.constraint(equalTo: trailingAnchor),
-        ])
+        hStack.snp.makeConstraints { make in
+            make.edges.equalToSuperview()
+        }
 
         iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            iconView.widthAnchor.constraint(equalToConstant: 28),
-            iconView.heightAnchor.constraint(equalToConstant: 28),
-        ])
+        iconView.snp.makeConstraints { make in
+            make.size.equalTo(28)
+        }
 
         titleLabel.font = .preferredFont(forTextStyle: .subheadline).withTraits(.traitBold)
         titleLabel.textColor = .label

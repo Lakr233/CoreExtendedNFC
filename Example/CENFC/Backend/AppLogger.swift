@@ -5,14 +5,14 @@ extension Notification.Name {
     static let appLogsDidChange = Notification.Name("CENFC.AppLogsDidChange")
 }
 
-enum AppLogLevel: String, CaseIterable, Codable {
+nonisolated enum AppLogLevel: String, CaseIterable, Codable {
     case debug = "DEBUG"
     case info = "INFO"
     case warning = "WARN"
     case error = "ERROR"
 }
 
-struct AppLogEntry: Identifiable, Hashable, Codable {
+nonisolated struct AppLogEntry: Identifiable, Hashable, Codable {
     let id: UUID
     let timestamp: Date
     let level: AppLogLevel
@@ -34,12 +34,12 @@ struct AppLogEntry: Identifiable, Hashable, Codable {
     }
 }
 
-struct AppLogExportArtifact {
+nonisolated struct AppLogExportArtifact {
     let suggestedFilename: String
     let data: Data
 }
 
-private struct AppLogExportEnvelope: Codable {
+private nonisolated struct AppLogExportEnvelope: Codable {
     let exportedAt: Date
     let entryCount: Int
     let entries: [AppLogEntry]
@@ -122,7 +122,7 @@ class AppLogStore {
 }
 
 /// Bridges ``NFCLogger`` output from the library into ``AppLogStore``.
-struct AppNFCLogBridge: NFCLogger {
+nonisolated struct AppNFCLogBridge: NFCLogger {
     func log(_ level: LogLevel, _ message: String, source: String) {
         Task { @MainActor in
             switch level {

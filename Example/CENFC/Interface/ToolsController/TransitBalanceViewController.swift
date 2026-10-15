@@ -14,10 +14,48 @@ class TransitBalanceViewController: StackScrollController {
     private let singaporeDateFormatter = DateFormatter().then {
         $0.dateStyle = .medium
         $0.timeStyle = .medium
-        $0.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)
+        $0.timeZone = TimeZone(identifier: "Asia/Singapore")
     }
 
     private var resultSentinel = UIView()
+    private let scanTask = SingleTaskRunner()
+
+    /// The time zone the card's readers record dates in.
+    ///
+    /// The library builds dates at local midnight in the issuing region, so they
+    /// must be shown in that zone or users west of it see the previous day.
+    nonisolated static func cardTimeZone(forCurrency currencyCode: String) -> TimeZone {
+        let identifier: String? = switch currencyCode {
+        case "JPY": "Asia/Tokyo"
+        case "KRW": "Asia/Seoul"
+        case "CNY": "Asia/Shanghai"
+        case "HKD": "Asia/Hong_Kong"
+        case "SGD": "Asia/Singapore"
+        case "TWD": "Asia/Taipei"
+        case "NZD": "Pacific/Auckland"
+        default: nil
+        }
+        return identifier.flatMap(TimeZone.init(identifier:)) ?? .current
+    }
+
+    /// Formats a signed amount stored in the currency's minor unit
+    /// (yen, won, fen, cents), matching ``TransitBalance/formattedBalance``.
+    nonisolated static func formatAmount(minorUnits: Int, currencyCode: String) -> String {
+        let sign = minorUnits < 0 ? "−" : ""
+        let magnitude = minorUnits.magnitude
+        let major = Double(magnitude) / 100
+        let body = switch currencyCode {
+        case "JPY": "¥\(magnitude)"
+        case "KRW": "₩\(magnitude)"
+        case "TWD": "NT$\(magnitude)"
+        case "CNY": String(format: "¥%.2f", major)
+        case "HKD": String(format: "HK$%.2f", major)
+        case "SGD": String(format: "S$%.2f", major)
+        case "NZD": String(format: "NZ$%.2f", major)
+        default: "\(magnitude) \(currencyCode)"
+        }
+        return sign + body
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -60,9 +98,15 @@ class TransitBalanceViewController: StackScrollController {
     // MARK: - NFC Scan
 
     private func performScan() {
-        Task {
-            let manager = NFCSessionManager()
-            AppLogStore.shared.info("Starting transit card scan", source: "Transit")
+        scanTask.run { [weak self] in
+            await self?.scanCard()
+        }
+    }
+
+    private func scanCard() async {
+        let manager = NFCSessionManager()
+        AppLogStore.shared.info("Starting transit card scan", source: "Transit")
+        do {
             do {
                 let (info, transport) = try await manager.scan(for: [.all])
                 AppLogStore.shared.info("Detected tag; initial AID=\(info.initialSelectedAID ?? "none")", source: "Transit")
@@ -77,12 +121,12 @@ class TransitBalanceViewController: StackScrollController {
                 manager.invalidate()
 
                 displayResults(balance)
-            } catch is CancellationError {
-                manager.invalidate()
-                AppLogStore.shared.info("Transit card scan cancelled", source: "Transit")
-                return
             } catch {
-                manager.invalidate()
+                manager.invalidate(after: error)
+                guard !NFCErrorMessage.isCancellation(error) else {
+                    AppLogStore.shared.info("Transit card scan cancelled", source: "Transit")
+                    return
+                }
                 AppLogStore.shared.error("Transit card scan failed: \(error)", source: "Transit")
                 if !presentNFCErrorAlertIfNeeded(for: error) {
                     presentErrorAlert(for: error)
@@ -94,7 +138,7 @@ class TransitBalanceViewController: StackScrollController {
     // MARK: - Display Results
 
     func displayResults(_ balance: TransitBalance) {
-        dateFormatter.timeZone = balance.currencyCode == "SGD" ? TimeZone(secondsFromGMT: 8 * 60 * 60) : .current
+        dateFormatter.timeZone = Self.cardTimeZone(forCurrency: balance.currencyCode)
         clearResults()
 
         // Card Info
@@ -188,10 +232,15 @@ class TransitBalanceViewController: StackScrollController {
                         let sign = change.map { $0 < 0 ? "−" : $0 > 0 ? "+" : "" } ?? ""
                         value = sign + String(format: "S$%.2f", Double(amount) / 100)
                     } else {
-                        value = tx.balanceAfter.map { "\(amount) → \($0)" } ?? "\(amount)"
+                        let formattedAmount = Self.formatAmount(minorUnits: amount, currencyCode: balance.currencyCode)
+                        value = tx.balanceAfter.map {
+                            "\(formattedAmount) → \(Self.formatAmount(minorUnits: $0, currencyCode: balance.currencyCode))"
+                        } ?? formattedAmount
                     }
                 } else {
-                    value = tx.balanceAfter.map { "— → \($0)" } ?? "—"
+                    value = tx.balanceAfter.map {
+                        "— → \(Self.formatAmount(minorUnits: $0, currencyCode: balance.currencyCode))"
+                    } ?? "—"
                 }
                 addInfoRow(
                     icon: tx.type == .topup ? "plus.circle" : "arrow.right.circle",

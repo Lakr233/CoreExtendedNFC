@@ -2,17 +2,16 @@ import Combine
 import ConfigurableKit
 import CoreExtendedNFC
 import Foundation
-import Then
 import UIKit
 
 @MainActor
 class ScanStore: @MainActor ObjectListDataSource {
     static let shared = ScanStore()
 
-    private let fileURL: URL = {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("scan_records.json")
-    }()
+    private let persistence = RecordFilePersistence<ScanRecord>(
+        fileURL: RecordFilePersistence<ScanRecord>.documentsFile(named: "scan_records.json")
+    )
+    private var saveGeneration = 0
 
     private(set) var records: [ScanRecord] = [] {
         didSet { changeSubject.send() }
@@ -20,14 +19,6 @@ class ScanStore: @MainActor ObjectListDataSource {
 
     private let changeSubject = PassthroughSubject<Void, Never>()
 
-    private let encoder = JSONEncoder().then {
-        $0.dateEncodingStrategy = .iso8601
-        $0.outputFormatting = [.prettyPrinted, .sortedKeys]
-    }
-
-    private let decoder = JSONDecoder().then {
-        $0.dateDecodingStrategy = .iso8601
-    }
 
     private init() {
         load()
@@ -36,13 +27,20 @@ class ScanStore: @MainActor ObjectListDataSource {
     // MARK: - CRUD
 
     func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        records = (try? decoder.decode([ScanRecord].self, from: data)) ?? []
+        let result = persistence.load()
+        records = result.records
+        persistence.reportLoadIssues(result, source: "ScanStore")
     }
 
+    /// Persists the current records without blocking the main thread.
     func save() {
-        guard let data = try? encoder.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        saveGeneration += 1
+        let snapshot = records
+        let generation = saveGeneration
+        let persistence = persistence
+        Task {
+            await persistence.save(snapshot, generation: generation)
+        }
     }
 
     func add(_ record: ScanRecord) {
@@ -103,7 +101,8 @@ class ScanStore: @MainActor ObjectListDataSource {
     }
 
     func record(withUID uid: Data) -> ScanRecord? {
-        records.first { $0.cardInfo.uid == uid }
+        guard uid.isStableCardUID else { return nil }
+        return records.first { $0.cardInfo.uid == uid }
     }
 
     // MARK: - ObjectListDataSource
