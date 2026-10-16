@@ -348,6 +348,49 @@ struct DumpInteropTests {
     }
 
     @Test
+    func `Page exports reject pages that are not 4 bytes long`() throws {
+        for size in [0, 3, 5, 8] {
+            let dump = MemoryDump(
+                cardInfo: CardInfo(type: .ntag213, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
+                pages: [
+                    .init(number: 0, data: Data(repeating: 0xAB, count: size)),
+                    .init(number: 1, data: Data([0x01, 0x02, 0x03, 0x04])),
+                ]
+            )
+            // before: a short page shrank the buffer and the next page trapped
+            if let binary = try? dump.exportProxmark3MFU() {
+                #expect(binary.count == 56 + 45 * 4)
+            }
+            #expect(throws: NFCError.self) { _ = try dump.exportProxmark3MFU() }
+            #expect(throws: NFCError.self) { _ = try dump.exportFlipperNFC() }
+            #expect(throws: NFCError.self) { _ = try dump.exportLibNFCMFD() }
+        }
+    }
+
+    @Test
+    func `Proxmark import prefers a plain dump when a header reading is implausible`() throws {
+        // 64 bytes = 16 Ultralight pages; [11] = 01 also reads as "header + 2 pages".
+        var plain = Data(count: 64)
+        plain[0] = 0x04
+        plain[11] = 0x01
+        let dump = try MemoryDump.importProxmark3MFU(plain)
+        #expect(dump.pages.count == 16) // before: 2
+        #expect(dump.pages[0].data == Data([0x04, 0x00, 0x00, 0x00]))
+    }
+
+    @Test
+    func `Proxmark import keeps a plausible header on an ambiguous length`() throws {
+        // 56-byte header + 2 pages = 64 bytes, with a GET_VERSION header and a valid BCC0.
+        var header = Data(count: 56)
+        header.replaceSubrange(0 ..< 8, with: Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]))
+        header[11] = 1
+        let pages = Data([0x04, 0x57, 0x01, 0x88 ^ 0x04 ^ 0x57 ^ 0x01, 0xCA, 0x53, 0x28, 0x80])
+        let dump = try MemoryDump.importProxmark3MFU(header + pages)
+        #expect(dump.pages.count == 2)
+        #expect(dump.cardInfo.type == .ntag213)
+    }
+
+    @Test
     func `Proxmark import rejects a header whose page count disagrees with the file`() {
         var header = Data(count: 56)
         header.replaceSubrange(0 ..< 8, with: Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]))

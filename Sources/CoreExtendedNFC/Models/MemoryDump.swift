@@ -255,13 +255,10 @@ public struct MemoryDump: Sendable, Codable, Equatable {
 
     /// Export a libnfc-style `.mfd` payload for page-based Type 2 dumps.
     public func exportLibNFCMFD() throws -> Data {
-        guard !pages.isEmpty else {
-            throw NFCError.unsupportedOperation(
-                "libnfc MFD export is currently available only for page-based Type 2 style dumps."
-            )
-        }
-        return pages.sorted(by: { $0.number < $1.number })
-            .reduce(into: Data()) { $0.append($1.data) }
+        let orderedPages = try requirePageBasedDump(
+            message: "libnfc MFD export is currently available only for page-based Type 2 style dumps."
+        )
+        return orderedPages.reduce(into: Data()) { $0.append($1.data) }
     }
 
     /// Export a Flipper Zero `.nfc` snapshot for page-based Type 2 dumps.
@@ -587,9 +584,18 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         return "\(sanitizedPrefix)-\(cardInfo.uid.hexString.lowercased())"
     }
 
+    /// Pages sorted by number, for the page-based export formats.
+    ///
+    /// `Page` is `Codable`, so a decoded or hand-built dump can carry pages of any length.
+    /// The libnfc, Flipper and Proxmark3 formats all store exactly 4 bytes per Type 2 page;
+    /// a page of another length would shift every later page or drop bytes, so it is
+    /// rejected instead of silently padded or truncated.
     private func requirePageBasedDump(message: String) throws -> [Page] {
         guard !pages.isEmpty else {
             throw NFCError.unsupportedOperation(message)
+        }
+        if let malformed = pages.first(where: { $0.data.count != 4 }) {
+            throw NFCError.invalidResponse(malformed.data)
         }
         return pages.sorted(by: { $0.number < $1.number })
     }
@@ -763,14 +769,39 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         /// Offset of `pages` in the header: the index of the last page in the dump.
         static let lastPageIndexOffset = 11
 
+        /// Page totals of the known Type 2 memory maps (Ultralight, MF0UL11, MF0UL21,
+        /// NTAG213, Ultralight C, NTAG215, NTAG216).
+        static let knownPageTotals: Set<Int> = [16, 20, 41, 45, 48, 135, 231]
+
         /// Whether `data` is a headered Proxmark3 dump: the header's last-page index must
         /// agree with the number of 4-byte pages that follow it.
+        ///
+        /// When the file length is also exactly a known plain page dump (for example 64
+        /// bytes = 16 Ultralight pages, which could also read as a header plus 2 pages),
+        /// the plain reading wins unless the header is plausible on its own: the version
+        /// field is a GET_VERSION response or all zero, and the first page after the header
+        /// carries a consistent BCC0 (ISO/IEC 14443-3: `0x88 ^ UID0 ^ UID1 ^ UID2`).
         static func hasHeader(_ data: Data) -> Bool {
             guard data.count >= headerLength + 4,
                   (data.count - headerLength).isMultiple(of: 4)
             else { return false }
             let lastPageIndex = Int(data[data.startIndex + lastPageIndexOffset])
-            return lastPageIndex + 1 == (data.count - headerLength) / 4
+            guard lastPageIndex + 1 == (data.count - headerLength) / 4 else { return false }
+
+            let isAmbiguousWithPlainDump = data.count.isMultiple(of: 4)
+                && knownPageTotals.contains(data.count / 4)
+            guard isAmbiguousWithPlainDump else { return true }
+            return hasPlausibleVersion(data) && hasConsistentBCC0(afterHeaderIn: data)
+        }
+
+        private static func hasPlausibleVersion(_ data: Data) -> Bool {
+            let version = data.prefix(8)
+            return version.allSatisfy { $0 == 0x00 } || looksLikeHeader(data)
+        }
+
+        private static func hasConsistentBCC0(afterHeaderIn data: Data) -> Bool {
+            let page0 = data.startIndex + headerLength
+            return data[page0 + 3] == 0x88 ^ data[page0] ^ data[page0 + 1] ^ data[page0 + 2]
         }
 
         /// Whether `data` starts like a Proxmark3 header: a GET_VERSION response
