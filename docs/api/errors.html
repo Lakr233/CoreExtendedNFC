@@ -33,10 +33,10 @@
 <tr><td><code>pinVerificationFailed(remainingAttempts:)</code></td><td>VERIFY was refused or the PIN is blocked; <code>0</code> when blocked, <code>nil</code> when the card did not say.</td></tr>
 <tr><td><code>pinRequired(MyNumberPINType)</code></td><td>The operation needs this PIN but none was supplied.</td></tr>
 <tr><td><code>writeFailed(page:)</code></td><td>The tag did not acknowledge a page write.</td></tr>
-<tr><td><code>tagLocked</code></td><td>The tag or block denies writing: Type 2/4/5 CC write access, ISO 15693 codes <code>0x12</code> / <code>0x14</code>, Type 4 UPDATE BINARY <code>6982</code> / <code>6985</code>.</td></tr>
+<tr><td><code>tagLocked</code></td><td>The tag or block denies writing: Type 2/4/5 CC write access, a Type 3 Attribute Information Block whose RWFlag is not <code>01h</code>, ISO 15693 codes <code>0x12</code> / <code>0x14</code>, Type 4 UPDATE BINARY <code>6982</code> / <code>6985</code>.</td></tr>
 <tr><td><code>irreversibleWriteRefused(page:)</code></td><td>A write to a lock, OTP, configuration, password or key page was refused before anything was sent, because the caller did not pass <code>allowIrreversible: true</code>.</td></tr>
 <tr><td><code>tagNotNDEFFormatted</code></td><td>No NDEF Capability Container or NDEF Tag Application; format the tag first.</td></tr>
-<tr><td><code>ndefMessageNotFound</code></td><td>The tag is NDEF formatted but holds no readable NDEF message TLV.</td></tr>
+<tr><td><code>ndefMessageNotFound</code></td><td>The tag is NDEF formatted but holds no NDEF message, or only an empty one (for example after erasing it with <code>writeNDEF</code> and no records). Raised on every NDEF family.</td></tr>
 <tr><td><code>ndefCapacityExceeded(required:capacity:)</code></td><td>The encoded message does not fit the tag's NDEF area.</td></tr>
 <tr><td><code>desfireError(DESFireStatus)</code></td><td>A DESFire native status other than success.</td></tr>
 <tr><td><code>felicaBlockReadFailed(statusFlag:)</code> / <code>felicaBlockWriteFailed(statusFlag:)</code></td><td>A FeliCa block command returned a non-zero status flag.</td></tr>

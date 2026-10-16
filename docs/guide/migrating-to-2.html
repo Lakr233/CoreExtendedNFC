@@ -27,9 +27,12 @@
 <a href="#errors">Errors</a>
 <a href="#cancellation">Cancellation</a>
 <a href="#ultralight">Ultralight writes</a>
+<a href="#identification">Card identification</a>
 <a href="#iso15693">ISO 15693</a>
-<a href="#transit">Transit amounts</a>
+<a href="#ndef">NDEF</a>
+<a href="#transit">Transit</a>
 <a href="#felica">FeliCa</a>
+<a href="#desfire">DESFire</a>
 <a href="#passport">Passport</a>
 <a href="#renames">Renamed functions</a>
 <a href="#logging">Logging</a>
@@ -38,15 +41,19 @@
 </nav>
 
 <h2 id="checklist">What You Must Change</h2>
-<p>Items 1-8 can stop your code from compiling or change what it does at run time. Item 9 only produces deprecation warnings.</p>
+<p>Items 1-12 can stop your code from compiling or change what it does at run time. Item 13 only produces deprecation warnings.</p>
 <ol>
 <li><a href="#errors">Exhaustive <code>switch</code> over <code>NFCError</code></a>: add the new cases or a <code>default</code>. The same applies to <code>ActiveAuthenticationStatus</code> (<code>.verifiedUnauthenticatedKey</code>) and <code>DESFireFileType</code> (<code>.transactionMAC</code>).</li>
 <li><a href="#cancellation">Cancel detection</a>: replace checks for <code>sessionInvalidated</code> or message text with <code>error.isNFCCancellation</code>.</li>
-<li><a href="#ultralight">Ultralight / NTAG page writes</a>: lock, OTP and configuration pages need <code>allowIrreversible: true</code>; pages above 15 need a <code>memoryMap</code>.</li>
+<li><a href="#ultralight">Ultralight / NTAG page writes</a>: lock, OTP and configuration pages need <code>allowIrreversible: true</code>; pages above 15 need a <code>memoryMap</code>. Ultralight C <code>requiresAuthenticationForReads</code> was inverted and is now correct.</li>
+<li><a href="#identification">Card identification</a>: SAK <code>20h</code> with a MIFARE Plus ATQA is <code>.smartMX</code>; NTAG I2C, Ultralight Nano and NTAG 223 DNA are <code>.mifareUltralight</code>.</li>
 <li><a href="#iso15693">ISO 15693</a>: <code>lock:</code> becomes <code>permanentlyLock:</code>; <code>dsfid</code>, <code>afi</code> and <code>icReference</code> are optional.</li>
-<li><a href="#transit">Transit</a>: <code>TransitTransaction.amount</code> and <code>balanceAfter</code> are <code>Int?</code>.</li>
-<li><a href="#felica">FeliCa</a>: <code>FeliCaCommands.readPlainServices</code> now throws.</li>
-<li><a href="#passport">Passport</a>: pass <code>trustAnchorsDER</code>, or expect <code>fallback</code> where you used to see <code>succeeded</code>.</li>
+<li><a href="#ndef">NDEF</a>: parsing is strict, absolute-URI records take the URI from TYPE, and an erased tag throws <code>ndefMessageNotFound</code> on every family.</li>
+<li><a href="#transit">Transit</a>: <code>TransitTransaction.amount</code> and <code>balanceAfter</code> are <code>Int?</code>; Japan IC and CEPAS records are classified differently.</li>
+<li><a href="#felica">FeliCa</a>: <code>FeliCaCommands.readPlainServices</code> now throws; <code>writeFeliCaBlocks</code> writes one block per command unless you pass <code>maxBlocksPerWrite:</code>.</li>
+<li><a href="#desfire">DESFire</a>: <code>pcdCapabilities</code> defaults to empty and takes 0-6 bytes; AuthenticateISO reads return 8 bytes less.</li>
+<li><a href="#passport">Passport</a>: pass <code>trustAnchorsDER</code>, or expect <code>fallback</code> where you used to see <code>succeeded</code>; EF.SOD and AA signatures are checked more strictly; long TD1 / TD2 document numbers are reassembled.</li>
+<li><a href="#pace">PACE</a>: Brainpool chips now run PACE instead of falling back to BAC; PACEDomainParameterInfo entries moved out of <code>paceInfos</code>.</li>
 <li><a href="#logging">Logging</a>: <code>Logger.app</code> and the other app-template statics are gone; <code>debugFile</code> / <code>infoFile</code> / <code>errorFile</code> are <code>nfcDebugFile</code> / <code>nfcInfoFile</code> / <code>nfcErrorFile</code>.</li>
 <li><a href="#renames">Renamed facade functions and types</a>: follow the fix-its; the old names forward to the new ones.</li>
 </ol>
@@ -110,6 +117,32 @@ try await CoreExtendedNFC.writeUltralightPage(
 )</code></pre>
 <p><code>UltralightCommands.writePage(_:data:memoryMap:allowIrreversible:)</code> and <code>compatibilityWrite</code> take the same parameters. <code>UltralightDump.restore(dump:map:target:)</code> validates every page, and the card type when <code>target</code> is given, before it writes anything. See <a href="../api/card-commands.html#ultralight-writes">Card commands</a>.</p>
 
+<h3>Ultralight C access configuration</h3>
+<p><code>UltralightCAccessConfiguration.requiresAuthenticationForReads</code> was inverted in 1.1.2. It is now <code>true</code> when AUTH1 bit 0 is <code>0</code> (reads and writes protected) and <code>false</code> when it is <code>1</code> (writes only), per MF0ICU2 §7.5.8. An AUTH0 of <code>30h</code> or higher means no protection, so <code>firstProtectedPage</code> is <code>nil</code>. Remove any negation you added to work around the old value.</p>
+<pre><code class="language-swift">let access = try await CoreExtendedNFC.readUltralightCAccessConfiguration(transport: transport)
+// Before: let readsProtected = !access.requiresAuthenticationForReads   // worked around the inversion
+// After:
+let readsProtected = access.requiresAuthenticationForReads
+let protected = access.firstProtectedPage != nil   // nil for any AUTH0 &gt;= 30h</code></pre>
+
+<h2 id="identification">Card Identification</h2>
+<p><code>CardIdentifier.identify</code> / <code>CoreExtendedNFC.identifyCard(atqa:sak:)</code> no longer return <code>.mifarePlusSL3_2K</code> / <code>.mifarePlusSL3_4K</code> for SAK <code>20h</code>. AN10833 §2.1 says MIFARE Plus SL3 is told apart by its ATS, so SAK <code>20h</code> with a MIFARE Plus ATQA (<code>0002</code> / <code>0004</code> / <code>0042</code> / <code>0044</code>) is <code>.smartMX</code>, like SAK <code>28h</code> / <code>38h</code>. ATQA <code>0304</code> + SAK <code>20h</code> is still DESFire. A tag that CoreNFC itself reports as the MIFARE Plus family is still <code>.mifarePlusSL3_2K</code>.</p>
+<p>GET_VERSION identification also checks the major version: NTAG I2C (product subtype <code>05h</code>), Ultralight Nano and NTAG 223 DNA are <code>.mifareUltralight</code> instead of <code>.ntag216</code>, MF0UL11 or <code>.ntag213</code>, so they no longer get a memory map that does not match the chip.</p>
+<p>Before:</p>
+<pre><code class="language-swift">switch CoreExtendedNFC.identifyCard(atqa: atqa, sak: 0x20) {
+case .mifarePlusSL3_2K, .mifarePlusSL3_4K: showMIFAREPlus()
+default: break
+}</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">switch CoreExtendedNFC.identifyCard(atqa: atqa, sak: 0x20) {
+case .mifarePlusSL3_2K, .mifarePlusSL3_4K: showMIFAREPlus()   // no longer returned for SAK 20h
+case .smartMX: probeWithISO7816(transport)                      // check the ATS or SELECT an application
+default: break
+}
+
+// A generic .mifareUltralight (NTAG I2C, Nano, 223 DNA) has only the generic map.
+let map = CoreExtendedNFC.ultralightMemoryMap(for: info.type)</code></pre>
+
 <h2 id="iso15693">ISO 15693</h2>
 <p>Locking AFI or DSFID is irreversible, so it now needs <code>permanentlyLock: true</code>. The <code>lock:</code> overloads are deprecated, and their <code>lock:</code> argument has no default, so <code>configureAFI(x)</code> always calls the variant that does not lock. Facade block ranges take <code>ClosedRange&lt;Int&gt;</code> and are checked against <code>0...255</code>.</p>
 <p>Before:</p>
@@ -131,6 +164,48 @@ if let afi = system.afi {        // dsfid, afi and icReference are UInt8?
 let dump = try await ISO15693Reader(transport: iso15693Transport).readAllBlocks(info: info)</code></pre>
 <p>Tags that do not report their memory size are rejected by dump and NDEF write. Tags with more than 256 blocks are handled with the extended commands, and a dump stops at block 255 (marked <code>partiallyReadable</code>) when the tag rejects them.</p>
 
+<h2 id="ndef">NDEF</h2>
+<p>NDEF parsing follows NDEF 1.0 §3.2.6 and Android's <code>NdefMessage</code>. These used to be accepted and now throw <code>invalidResponse</code>: bytes after the record that carries ME, a TNF Empty record with a type, ID or payload, and a TNF Unknown or Unchanged record with a type. The reserved TNF <code>07h</code> is read like Unknown. <code>validatedData()</code>, and so <code>writeNDEF</code>, refuses the same records and any <code>.unchanged</code> / <code>.reserved</code> record with <code>invalidParameter</code>.</p>
+<p>Absolute-URI records (TNF <code>03h</code>) decode the URI from the TYPE field, not the payload. Build them with the URI in <code>type</code>. A Smart Poster without a <code>U</code> record takes its URI from an absolute-URI child.</p>
+<p>Before:</p>
+<pre><code class="language-swift">let record = NDEFRecord(
+    typeNameFormat: .absoluteURI,
+    type: Data(),
+    payload: Data("https://example.com".utf8)
+)</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">let record = NDEFRecord(
+    typeNameFormat: .absoluteURI,
+    type: Data("https://example.com".utf8),   // parsedPayload is .uri("https://example.com")
+    payload: Data()
+)</code></pre>
+<p>Reading an erased tag (empty NDEF message) throws <code>NFCError.ndefMessageNotFound</code> on Type 3, Type 4 and Type 5 too, as Type 2 already did. In 1.1.2 those families threw a parse error.</p>
+<pre><code class="language-swift">do {
+    let message = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+    show(message)
+} catch NFCError.ndefMessageNotFound {
+    showEmptyTag()   // erased or never written, on every family
+}</code></pre>
+<p>Type 2 tags:</p>
+<ul>
+<li>Reads skip the lock and reserved bytes declared by Lock Control / Memory Control TLVs (T2T 1.0 §2.3.4 / §2.3.5).</li>
+<li>Writes keep NULL and control TLVs at the start of the data area, stop before declared reserved bytes and may read pages 7-10 first. A preserved control TLV costs its bytes of capacity, so <code>ndefCapacityExceeded</code> can be reported for a message that fitted before. A tag whose reserved bytes share a page with the control TLVs is refused with <code>unsupportedOperation</code>.</li>
+<li>A message that fills the data area exactly is written without a Terminator TLV, and <code>ndefCapacityExceeded(required:capacity:)</code> no longer counts the terminator.</li>
+</ul>
+<p>Type 5 tags whose CC requires the special frame format (CC byte 3 b4) are refused with <code>unsupportedOperation</code>; <code>NDEFTagMapping.type5CCLength(firstBlock:)</code> throws for them too.</p>
+<p>If you call the <code>NDEFTagMapping</code> helpers directly: <code>buildType2Area(message:capacity:)</code> gains <code>preservedPrefix:</code> and <code>endsDataArea:</code> (with defaults, so call sites compile; get both from <code>type2WriteLayout(leadingBytes:dataAreaOffset:capacity:)</code> to keep control TLVs), and <code>extractType2TLVNDEF(from:dataAreaOffset:)</code> honours control TLVs. The plans from <code>buildType2Area</code> and <code>type5NDEFWrites</code> are in block order; write them in <code>lengthLastWriteOrder(_:blockSize:tlvOffset:)</code> so an interrupted write leaves an empty message, not a truncated one.</p>
+<pre><code class="language-swift">let layout = try NDEFTagMapping.type2WriteLayout(
+    leadingBytes: dataAreaBytes,   // bytes read from page 4 on
+    dataAreaOffset: 16,
+    capacity: capacity
+)
+let area = try NDEFTagMapping.buildType2Area(
+    message: message,
+    capacity: layout?.capacity ?? capacity,
+    preservedPrefix: layout?.preservedPrefix ?? Data(),
+    endsDataArea: layout?.endsDataArea ?? true
+)</code></pre>
+
 <h2 id="transit">Transit Amounts</h2>
 <p><code>TransitTransaction.amount</code> and <code>balanceAfter</code> are <code>Int?</code>. <code>amount</code> is an unsigned magnitude, so take the direction from <code>type</code>. Do not show <code>nil</code> as zero.</p>
 <p>Before:</p>
@@ -144,6 +219,22 @@ let dump = try await ISO15693Reader(transport: iso15693Transport).readAllBlocks(
     }
 }</code></pre>
 <p>Tag loss and cancellation during a transit read now throw instead of returning a zero balance or truncated history.</p>
+<p>Record classification changed in a few places (Metrodroid <code>SuicaTrip</code> / <code>CEPASTransaction</code>):</p>
+<ul>
+<li>Japan IC ticket-machine and fare-adjustment records (console types <code>03</code>, <code>07</code>, <code>08</code>, <code>12</code>-<code>15</code>) have an <code>entryStation</code> only; <code>exitStation</code> is <code>nil</code>.</li>
+<li>Japan IC bus records (console type <code>05</code>) have no stations. The line and stop codes are in <code>metadata["busLineCode"]</code> and <code>metadata["busStopCode"]</code>.</li>
+<li>Japan IC history slots whose date field is zero (unused slots such as <code>00 00 00 80 ...</code>) are dropped, so <code>transactions</code> can be shorter than 20; records with an out-of-range date are kept with <code>date == nil</code>. Process <code>07h</code> (new issue, initial deposit) is a <code>.topup</code>.</li>
+<li>CEPAS type <code>76</code> (bus refund) is a <code>.topup</code> and <code>04</code> (service charge) a <code>.purchase</code>, both with an <code>amount</code>. They were <code>.unknown</code> without one.</li>
+</ul>
+<pre><code class="language-swift">for transaction in balance.transactions {
+    if let line = transaction.metadata["busLineCode"], let stop = transaction.metadata["busStopCode"] {
+        showBus(line: line, stop: stop)        // Japan IC bus record: no stations
+    } else if let exit = transaction.exitStation {
+        showTrip(from: transaction.entryStation, to: exit)
+    } else {
+        showStation(transaction.entryStation)  // ticket machine, fare adjustment, purchase
+    }
+}</code></pre>
 
 <h2 id="felica">FeliCa</h2>
 <p><code>FeliCaCommands.readPlainServices</code> is <code>async throws</code> (was <code>async</code>), so a lost tag is reported instead of returning an empty result.</p>
@@ -151,6 +242,39 @@ let dump = try await ISO15693Reader(transport: iso15693Transport).readAllBlocks(
 let snapshots = await commands.readPlainServices(probes)
 // After
 let snapshots = try await commands.readPlainServices(probes)</code></pre>
+<p><code>writeFeliCaBlocks</code> sends one block per Write Without Encryption by default (was 4), because FeliCa Lite and Lite-S accept only one. Pass <code>maxBlocksPerWrite:</code> for a card known to accept more, such as one whose Type 3 attribute block announces a larger Nbw.</p>
+<pre><code class="language-swift">// Before: four blocks per command, rejected by FeliCa Lite / Lite-S
+try await CoreExtendedNFC.writeFeliCaBlocks(startingAt: 1, blocks: blocks, transport: transport)
+// After: one block per command by default
+try await CoreExtendedNFC.writeFeliCaBlocks(startingAt: 1, blocks: blocks, transport: transport)
+// Keep the 1.1.2 batching for a card that accepts it
+try await CoreExtendedNFC.writeFeliCaBlocks(
+    startingAt: 1,
+    blocks: blocks,
+    maxBlocksPerWrite: 4,
+    transport: transport
+)</code></pre>
+
+<h2 id="desfire">DESFire</h2>
+<p><code>pcdCapabilities</code> on <code>authenticateEV2First</code>, the EV2 read helpers and their facades (<code>authenticateDESFireEV2</code>, <code>readDESFireDataAuthenticatedEV2</code>, <code>readDESFireRecordsAuthenticatedEV2</code>, <code>getDESFireValueAuthenticatedEV2</code>) defaults to empty instead of six zero bytes. 1.1.2 required exactly six bytes but never sent them: Part 1 was always <code>KeyNo &#8214; 00</code>. The empty default sends the same <code>KeyNo &#8214; 00</code> (<code>LenCap = 0</code>), so callers that kept the default see no wire change. The parameter now takes 0 to 6 bytes (more throws <code>invalidParameter</code>), and a non-empty value is actually sent as <code>LenCap &#8214; PCDcap2</code> (AN12343 §10.1). Drop an explicit six-zero-byte argument: it used to be ignored, and in 2.0 it sends <code>LenCap = 06</code> and six bytes. The EV2First Part 2 answer must be exactly 32 bytes.</p>
+<p>The AuthenticateISO read helpers (<code>readDataAuthenticatedISO</code>, <code>readRecordsAuthenticatedISO</code>, <code>getValueAuthenticatedISO</code> and the <code>readDESFire...AuthenticatedISO</code> / <code>getDESFireValueAuthenticatedISO</code> facades) strip the 8-byte CMAC the card appends, so they return 8 bytes less than in 1.1.2. The MAC is not verified.</p>
+<p>Before:</p>
+<pre><code class="language-swift">let session = try await CoreExtendedNFC.authenticateDESFireEV2(keyNo: 0, key: key, transport: transport)
+// Part 1 on the wire: KeyNo ‖ 00 (the six default capability bytes were never sent)
+
+let (_, raw) = try await CoreExtendedNFC.readDESFireDataAuthenticatedISO(
+    fileID: 1, keyNo: 0, key: key, transport: transport
+)
+let content = raw.dropLast(8)   // removed the CMAC by hand</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">// Unchanged call, unchanged wire format: Part 1 is still KeyNo ‖ 00 (LenCap = 0).
+let session = try await CoreExtendedNFC.authenticateDESFireEV2(keyNo: 0, key: key, transport: transport)
+// Pass pcdCapabilities only to send real PCDcap2 bytes (sent as LenCap ‖ PCDcap2).
+
+let (_, content) = try await CoreExtendedNFC.readDESFireDataAuthenticatedISO(
+    fileID: 1, keyNo: 0, key: key, transport: transport
+)   // CMAC already removed</code></pre>
+<p>Hardware versions <code>0x12</code> / <code>0x22</code> / <code>0x42</code> are EV2 and <code>0x33</code> / <code>0x43</code> are EV3.</p>
 
 <h2 id="passport">Passport / eMRTD</h2>
 <p>Trust is judged strictly. The Passive Authentication stage is <code>succeeded</code> only when the Document Signer certificate (DSC) has a validated certification path to a CSCA in <code>trustAnchorsDER</code> (<code>PassiveAuthenticationStatus.fullyVerified</code>). Active Authentication is <code>succeeded</code> only when, in addition, DG15 matches its hash in EF.SOD. Without trust anchors both stages are <code>fallback</code> at best, and a valid AA signature over an unauthenticated key has status <code>.verifiedUnauthenticatedKey</code>.</p>
@@ -180,6 +304,49 @@ let status: ActiveAuthenticationStatus? = passport.activeAuthResult?.status</cod
     trustAnchorsDER: cscaCertificates
 )
 print(model.mrz?.documentNumber ?? "-", model.securityReport.passiveAuthentication.status)</code></pre>
+
+<h3>Stricter Passive and Active Authentication</h3>
+<p>Some chips that reached <code>succeeded</code> or <code>fallback</code> in 1.1.2 now fail. The Passive Authentication stage is <code>failed</code> when:</p>
+<ul>
+<li>EF.SOD's eContentType is not <code>2.23.136.1.1.1</code> (<code>SODParser.ldsSecurityObjectOID</code>), the signed contentType attribute does not match it, the LDSSecurityObject version is not 0 or 1, or there is not exactly one SignerInfo.</li>
+<li>The DSC has a keyUsage extension without digitalSignature (<code>trustChainInvalid</code>).</li>
+<li>The LDSSecurityObject names a hash algorithm the library does not know (<code>unsupportedHashAlgorithm</code>; 1.1.2 used the SignedData digest algorithm and reported a hash mismatch).</li>
+<li>A data group that was read is missing from EF.SOD. An empty result (no data group compared) is not reported as <code>succeeded</code>.</li>
+</ul>
+<p>A valid signature without a validated certification path is <code>fallback</code>. Active Authentication is <code>failed</code> for RSA moduli under 1024 bits (<code>ActiveAuthenticationVerifier.minimumRSAModulusBits</code>), RSA signatures that are not exactly the modulus length, ECDSA signatures whose <code>r</code> / <code>s</code> are not exactly the curve order length, and a DG15 hash mismatch. Revocation (CRLs) is not checked, and CSCA link certificates must be supplied in <code>trustAnchorsDER</code> with their CSCA.</p>
+<pre><code class="language-swift">let report = passport.securityReport
+switch report.passiveAuthentication.status {
+case .succeeded: showVerified()
+case .fallback: showUnverified(report.passiveAuthentication)   // e.g. no trust anchors
+case .failed: showRejected(passport.passiveAuthResult?.status) // e.g. .trustChainInvalid
+default: showNotChecked()
+}</code></pre>
+
+<h3>Long document numbers</h3>
+<p><code>MRZData</code> reassembles TD1 / TD2 document numbers longer than nine characters (ICAO 9303-5 / -6 §4.2.2, Note j). <code>documentNumber</code> includes the overflow from the optional data field, and <code>optionalData1</code> no longer starts with the overflow and its check digit. Drop any code that rebuilt the number from <code>optionalData1</code>.</p>
+<pre><code class="language-swift">// TD1 line 1: I&lt;UTOD23145890&lt;7349&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;
+// Before: documentNumber "D23145890", optionalData1 "7349"
+// After:  documentNumber "D23145890734", optionalData1 ""
+let number = mrz.documentNumber</code></pre>
+
+<h3 id="pace">PACE</h3>
+<p>PACE runs on the Brainpool curves brainpoolP224r1 to brainpoolP512r1 (parameter IDs 11, 13, 14, 16, 17) as well as NIST P-256 / P-384 / P-521. Chips that only offer Brainpool parameters used to fall back to BAC and now authenticate with PACE; the secure-messaging session and progress messages change accordingly. The first supported PACEInfo in EF.CardAccess is used instead of always the first. Chips that offer only the 192-bit curves, secp224r1, Integrated Mapping or DH still fall back to BAC before any PACE APDU.</p>
+<ul>
+<li><code>PACEHandler.performPACE</code> throws <code>unsupportedOperation</code> for an unknown protocol OID (was <code>secureMessagingError</code>) and checks every parameter before sending anything. Use <code>PACEHandler.selectPACEInfo(from:)</code> or <code>isSupported(_:)</code> to choose.</li>
+<li><code>SecurityInfos.paceInfos</code> no longer contains PACEDomainParameterInfo entries; they are in <code>paceDomainParameterInfos</code>.</li>
+<li><code>SecureMessagingTransport</code> takes an AES SSC of 16 bytes or 8 bytes (zero-extended); any other length makes every exchange throw <code>invalidParameter</code>.</li>
+</ul>
+<pre><code class="language-swift">// Before
+guard let paceInfo = securityInfos.paceInfos.first else { return try await performBAC() }
+// After
+guard let paceInfo = PACEHandler.selectPACEInfo(from: securityInfos) else {
+    return try await performBAC()   // no PACEInfo the handler supports
+}
+let smTransport = try await PACEHandler.performPACE(
+    paceInfo: paceInfo,
+    mrzKey: mrzKey,
+    transport: transport
+)</code></pre>
 
 <h2 id="renames">Renamed Facade Functions</h2>
 <p>Top-level functions follow verb + family + noun. The old names still compile with a deprecation warning and a fix-it.</p>
@@ -255,7 +422,7 @@ Logger.app.nfcErrorFile("Upload failed", category: "Network")</code></pre>
 <pre><code class="language-swift">import CoreNFC
 import CoreExtendedNFC
 
-final class AppSessionManager: NFCSessionManager {
+final class AppSessionManager: NFCSessionManager, @unchecked Sendable {
     private let events = LockedValue&lt;[String]&gt;([])   // added state is lock-protected
 
     override func sessionDidBecomeActive(_ session: NFCTagReaderSession) {
@@ -277,7 +444,7 @@ final class AppSessionManager: NFCSessionManager {
     }
 }
 
-final class TracingISO7816Transport: ISO7816Transport {
+final class TracingISO7816Transport: ISO7816Transport, @unchecked Sendable {
     override func sendAPDU(_ apdu: CommandAPDU) async throws -&gt; ResponseAPDU {
         let response = try await super.sendAPDU(apdu)
         NFCLog.debug("INS \(apdu.ins) -&gt; SW \(response.statusWord)", source: "Trace")
@@ -292,7 +459,7 @@ final class TracingISO7816Transport: ISO7816Transport {
 )
 defer { manager.invalidate() }</code></pre>
 <p>The facade functions construct the stock readers. To use a reader subclass, create it yourself over a transport from <code>scan</code>:</p>
-<pre><code class="language-swift">final class AuditedPassportReader: PassportReader {
+<pre><code class="language-swift">final class AuditedPassportReader: PassportReader, @unchecked Sendable {
     override func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -&gt; Data {
         let data = try await super.readDataGroup(dgId, transport: transport)
         NFCLog.info("\(dgId.name): \(data.count) bytes", source: "App")

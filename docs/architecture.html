@@ -9,7 +9,7 @@
 │   ├── MiFareUltralight/, NTAG/, DESFire/, FeliCa/, ISO15693/, Type4/
 │   ├── IndividualNumber/   Japanese My Number card
 │   ├── Transit/            Japan IC, Octopus, Singapore CEPAS, KS X 6924, T-Union
-│   └── Passport/           PACE, BAC, Secure Messaging, CA, AA, data-group parsers
+│   └── Passport/           PACE, BAC, Secure Messaging, AA, PA, data-group parsers (CA detection only)
 ├── Crypto/             AES-CMAC, ISO 9797 MAC, key derivation, padding, hashing, secret redaction
 ├── Concurrency/        Lock-protected shared state
 ├── Logger/             NFCLogger, log store, payload redaction
@@ -17,5 +17,5 @@
 ├── Resources/          Localized strings
 └── Utilities/          Hex, bytes, parity, and small data helpers</code></pre>
 <table><thead><tr><th>Layer</th><th>CoreNFC import</th></tr></thead><tbody><tr><td><code>Transport/</code></td><td>yes</td></tr><tr><td><code>Protocol/</code></td><td>no</td></tr><tr><td><code>Cards/</code></td><td>no</td></tr><tr><td><code>Models/</code></td><td>no</td></tr><tr><td><code>Crypto/</code></td><td>no</td></tr><tr><td><code>Logger/</code></td><td>no</td></tr><tr><td><code>Concurrency/</code></td><td>no</td></tr><tr><td><code>Utilities/</code></td><td>no</td></tr></tbody></table>
-<p>The package depends on <a href="https://github.com/Lakr233/openssl-spm">openssl-spm</a>. OpenSSL is imported only by the passport code (<code>PACEHandler</code>, <code>ActiveAuthenticationVerifier</code>, <code>SODParser</code>) for elliptic-curve PACE, Active Authentication signatures, and CMS / certification path validation.</p>
+<p>The package depends on <a href="https://github.com/Lakr233/openssl-spm">openssl-spm</a>. OpenSSL is imported only by the passport code (<code>PACEHandler</code> and <code>OpenSSLPACECurve</code>, <code>ActiveAuthenticationVerifier</code>, <code>SODParser</code> and its Passive Authentication extension) for elliptic-curve PACE, Active Authentication signatures, and CMS / certification path validation.</p>
 <footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

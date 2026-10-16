@@ -21,12 +21,12 @@ This library does.
 - **Card identification** — Decode ATQA + SAK bytes into 25+ card types, then refine with safe probes (Ultralight C, NTAG210/212, DESFire EV1–EV3, FeliCa Lite / Lite-S)
 - **Memory operations** — Read, write, and dump tag memory across Ultralight, NTAG, DESFire, FeliCa, ISO 15693, and NFC Forum Type 4 Tags
 - **DESFire application layer** — Enumerate applications and files, handle Additional Frame chaining, authenticated reads (ISO & EV2)
-- **Passport / eMRTD reading** — PACE (ECDH Generic Mapping on NIST curves) with BAC fallback, Secure Messaging, data group parsing (MRZ, face photo), Passive Authentication against your CSCA trust anchors, Active Authentication, and a per-stage security report
+- **Passport / eMRTD reading** — PACE (ECDH Generic Mapping on NIST P-256/384/521 and Brainpool P-224 to P-512 curves) with BAC fallback, Secure Messaging, data group parsing (MRZ, face photo), Passive Authentication against your CSCA trust anchors, Active Authentication, and a per-stage security report
 - **Transit cards** — Balance and history for Japan IC, Hong Kong Octopus, Singapore CEPAS, Korea KS X 6924 (including Snapper), and China T-Union
 - **My Number card (Japan)** — JPKI token read, individual-number read with card-info-input-support PIN, PIN-attempt lookup
 - **Crypto primitives** — CRC_A/CRC_B, AES-CMAC, 3DES, ISO 9797-1 MAC, key derivation; OpenSSL backs the elliptic-curve and CMS work
 - **Dump export** — Hex, JSON, Flipper NFC, Proxmark3 MFU, and libnfc MFD formats
-- **Typed errors** — Every failure is an `NFCError`; `error.isNFCCancellation` tells you to stay silent
+- **Typed errors** — Every failure is an `NFCError` (task cancellation surfaces as `CancellationError`); `error.isNFCCancellation` tells you to stay silent
 - **Testability** — Card logic talks to the `NFCTagTransport` protocol, so it can be tested with a mock transport and no NFC hardware
 
 **CoreNFC vs CoreExtendedNFC:**
@@ -188,7 +188,7 @@ PIN, password and authentication exchanges are always logged as `<redacted n byt
 
 **Errors**
 
-Every failure is an `NFCError` (`Equatable`). Check `error.isNFCCancellation` (user dismissed the sheet, task cancelled, or the app ended the scan) before showing an alert. See the [error reference](docs/api/errors.html).
+Failures are thrown as `NFCError` (`Equatable`); a cancelled task throws `CancellationError`. Check `error.isNFCCancellation` (user dismissed the sheet, task cancelled, or the app ended the scan) before showing an alert. See the [error reference](docs/api/errors.html).
 
 ## Installation
 
