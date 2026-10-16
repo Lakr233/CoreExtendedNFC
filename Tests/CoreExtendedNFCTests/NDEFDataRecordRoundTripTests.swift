@@ -7,7 +7,7 @@
 import Foundation
 import Testing
 
-// MARK: - Mirror type (matching Example/CENFC/Backend/NDEFDataRecord.swift)
+// MARK: - Mirror type (matching Example/CENFC/Backend/NDEF/NDEFDataRecord.swift)
 
 private struct TestNDEFDataRecord: Codable, Equatable {
     let id: UUID

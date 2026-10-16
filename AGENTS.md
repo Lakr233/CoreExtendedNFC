@@ -24,7 +24,7 @@ Sources/CoreExtendedNFC/
 │   ├── ISO14443.swift              CRC_A/CRC_B (ISO 14443-3)
 │   ├── CardIdentifier.swift        ATQA+SAK → CardType (NXP AN10833)
 │   ├── APDUBuilder.swift           ISO 7816-4 APDU construction
-│   ├── PassportAPDU.swift          eMRTD APDU builders (ICAO 9303 Part 10)
+│   ├── CommandAPDU+Passport.swift  eMRTD APDU builders (ICAO 9303 Part 10)
 │   ├── ASN1Parser.swift            BER-TLV parser (ITU-T X.690)
 │   └── NFCErrors.swift             NFCError enum
 │

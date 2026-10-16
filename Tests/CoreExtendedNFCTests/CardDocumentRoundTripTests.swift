@@ -6,7 +6,7 @@
 import Foundation
 import Testing
 
-// MARK: - Mirror types (matching Example/CENFC/Backend/ Codable layout after refactor)
+// MARK: - Mirror types (matching Example/CENFC/Backend/Card/ Codable layout after refactor)
 
 private struct TestScanRecord: Codable, Equatable {
     let id: UUID
