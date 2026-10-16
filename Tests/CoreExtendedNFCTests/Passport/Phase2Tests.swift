@@ -424,11 +424,11 @@ struct Phase2Tests {
         #expect(SMEncryptionMode.tripleDES.macLength == 8)
 
         #expect(SMEncryptionMode.aes128.blockSize == 16)
-        #expect(SMEncryptionMode.aes128.sscLength == 8) // SSC is always 8 bytes, padded to 16 for AES
+        #expect(SMEncryptionMode.aes128.sscLength == 8) // initial SSC; zero-extended to the 16-byte block
         #expect(SMEncryptionMode.aes128.macLength == 8)
 
         #expect(SMEncryptionMode.aes256.blockSize == 16)
-        #expect(SMEncryptionMode.aes256.sscLength == 8) // SSC is always 8 bytes
+        #expect(SMEncryptionMode.aes256.sscLength == 8) // initial SSC; zero-extended to the 16-byte block
     }
 
     // MARK: - PACE Handler

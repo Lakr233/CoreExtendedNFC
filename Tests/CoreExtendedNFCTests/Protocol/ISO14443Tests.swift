@@ -143,11 +143,32 @@ struct ISO14443Tests {
 
     @Test
     func `FSCI to max frame size mapping`() {
-        let expected = [16, 24, 32, 40, 48, 64, 96, 128, 256]
+        // ISO/IEC 14443-4:2016 Table 1; D-F are reserved (before: 9-C were 256 too).
+        let expected = [16, 24, 32, 40, 48, 64, 96, 128, 256, 512, 1024, 2048, 4096, 256, 256, 256]
         for (fsci, size) in expected.enumerated() {
             let ats = Data([UInt8(fsci)])
             let info = ISO14443.parseATS(ats)
             #expect(info.maxFrameSize == size)
         }
+    }
+
+    @Test
+    func `Parse ATS that still carries its TL byte`() {
+        // TL = 06 (whole ATS length), T0 = 78: same fields as without TL.
+        // before: 06 was read as T0 (FSCI 6, no TA/TB/TC).
+        let info = ISO14443.parseATS(Data([0x06, 0x78, 0x77, 0x81, 0x02, 0xAB]))
+        #expect(info.fsci == 8)
+        #expect(info.ta == 0x77)
+        #expect(info.tb == 0x81)
+        #expect(info.tc == 0x02)
+        #expect(info.historicalBytes == Data([0xAB]))
+        #expect(ISO14443.parseATS(Data([0x02, 0x05])).fsci == 5)
+    }
+
+    @Test
+    func `ATS with T0 bit 8 set is rejected`() {
+        // ISO/IEC 14443-4 §5.2.3: T0 b8 shall be 0.
+        let info = ISO14443.parseATS(Data([0xF8, 0x77, 0x81, 0x02]))
+        #expect(info == ATSInfo(fsci: 0, ta: nil, tb: nil, tc: nil, historicalBytes: Data()))
     }
 }

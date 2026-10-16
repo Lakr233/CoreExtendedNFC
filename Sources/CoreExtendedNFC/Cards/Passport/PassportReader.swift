@@ -99,9 +99,20 @@ open class PassportReader: @unchecked Sendable {
             throw NFCError.bacFailed("SELECT eMRTD failed: SW=\(String(format: "%04X", selectResponse.statusWord))")
         }
 
-        // Step 2: Prefer PACE when EF.CardAccess advertises it, otherwise fall back to BAC.
+        // Step 2: Prefer PACE when EF.CardAccess advertises parameters this library
+        // supports, otherwise fall back to BAC. ICAO 9303-11 §4.2 lets the inspection
+        // system pick any advertised parameter set, so an unsupported first entry does
+        // not rule PACE out.
         var smTransport: SecureMessagingTransport?
-        if let paceInfo = cardAccess?.paceInfos.first {
+        if let cardAccess, cardAccess.supportsPACE, PACEHandler.selectPACEInfo(from: cardAccess) == nil {
+            let reasons = cardAccess.paceInfos.compactMap(PACEHandler.unsupportedReason(for:))
+            paceStage = PassportSecurityStageResult(
+                status: .fallback,
+                detail: "None of the PACE parameters in EF.CardAccess is supported "
+                    + "(\(reasons.joined(separator: " "))). Falling back to BAC."
+            )
+        }
+        if let paceInfo = cardAccess.flatMap(PACEHandler.selectPACEInfo(from:)) {
             onProgress?(String(localized: "Authenticating…", bundle: .module))
             do {
                 smTransport = try await PACEHandler.performPACE(

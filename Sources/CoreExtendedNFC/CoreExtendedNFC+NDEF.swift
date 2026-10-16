@@ -4,6 +4,11 @@ import Foundation
 
 public extension CoreExtendedNFC {
     /// Read and parse an NDEF message using the best available family-specific path.
+    ///
+    /// An NDEF-formatted tag that holds an empty NDEF message (Type 2 / Type 5
+    /// `03 00`, Type 4 NLEN = 0, Type 3 Ln = 0), as left by erasing it with
+    /// ``writeNDEF(_:info:transport:)``, throws ``NFCError/ndefMessageNotFound`` on
+    /// every family.
     static func readNDEF(
         info: CardInfo,
         transport: any NFCTagTransport
@@ -13,19 +18,19 @@ public extension CoreExtendedNFC {
             // Multi-application cards (e.g. ePassport chips that also carry NDEF)
             // sit on ISO 7816 transport, so try the Type 4 NDEF path as a fallback.
             let payload = try await Type4Reader(transport: transport).readNDEF()
-            return try NDEFMessage(data: payload)
+            return try parseReadNDEF(payload)
         case .felica:
             guard let felicaTransport = transport as? any FeliCaTagTransporting else {
                 throw NFCError.unsupportedOperation("FeliCa NDEF reading requires a FeliCa transport")
             }
             let payload = try await FeliCaType3Reader(transport: felicaTransport).readNDEF()
-            return try NDEFMessage(data: payload)
+            return try parseReadNDEF(payload)
         case .iso15693:
             guard let iso15693Transport = transport as? any ISO15693TagTransporting else {
                 throw NFCError.unsupportedOperation("ISO 15693 NDEF reading requires an ISO 15693 transport")
             }
             let payload = try await readType5NDEF(transport: iso15693Transport)
-            return try NDEFMessage(data: payload)
+            return try parseReadNDEF(payload)
         case .ntag, .mifareUltralight:
             let dump = try await dumpCard(info: info, transport: transport)
             guard let parsed = dump.parsedNDEFMessage else {
@@ -48,6 +53,16 @@ public extension CoreExtendedNFC {
     /// does not fit, or ``NFCError/tagLocked`` when it denies write access. Only the
     /// blocks holding the NDEF TLV are written on Type 5 tags; use
     /// ``formatNDEF(info:transport:)`` to format a blank tag.
+    ///
+    /// Type 2 and Type 5 writes follow the NFC Forum write procedure: the NDEF TLV
+    /// length is first written as zero, then the message, and the real length last,
+    /// so an interrupted write leaves an empty message rather than a truncated one.
+    /// On Type 2 tags the NDEF TLV is written at the start of the user area (page 4);
+    /// Lock Control and Memory Control TLVs are not preserved, which suits the NXP
+    /// Ultralight and NTAG memory maps. A Type 2 message that fills the data area
+    /// exactly is written without a Terminator TLV. A Type 5 tag whose CC requires
+    /// the special frame format (CC byte 3 b4) is refused with
+    /// ``NFCError/unsupportedOperation(_:)``.
     static func writeNDEF(
         _ message: NDEFMessage,
         info: CardInfo,
@@ -112,6 +127,13 @@ public extension CoreExtendedNFC {
     }
 
     // MARK: - Private
+
+    /// Parse the bytes a family reader returned; an empty NDEF message (length 0)
+    /// is reported as ``NFCError/ndefMessageNotFound`` like on Type 2 tags.
+    static func parseReadNDEF(_ payload: Data) throws -> NDEFMessage {
+        guard !payload.isEmpty else { throw NFCError.ndefMessageNotFound }
+        return try NDEFMessage(data: payload)
+    }
 
     /// Read the NDEF message of a Type 5 tag without dumping the whole tag.
     ///
@@ -205,16 +227,22 @@ public extension CoreExtendedNFC {
 
         // Resolve every page address before the first write so an impossible layout
         // is refused up front instead of leaving the tag half-written.
-        let writes = try stride(from: 0, to: bytes.count, by: 4).enumerated().map { index, offset in
-            guard let page = UInt8(exactly: Int(memory.userDataStart) + index) else {
+        let pages = try stride(from: 0, to: bytes.count, by: 4).enumerated().map { index, offset in
+            guard UInt8(exactly: Int(memory.userDataStart) + index) != nil else {
                 throw NFCError.unsupportedOperation("Type 2 NDEF area extends beyond page 255")
             }
-            return (page: page, chunk: Data(bytes[offset ..< min(offset + 4, bytes.count)]))
+            return (block: Int(memory.userDataStart) + index, data: Data(bytes[offset ..< min(offset + 4, bytes.count)]))
         }
+        // NFC Forum write procedure: TLV length 0 first, the real length last.
+        let writes = NDEFTagMapping.lengthLastWriteOrder(
+            pages,
+            blockSize: 4,
+            tlvOffset: Int(memory.userDataStart) * 4
+        )
 
         for write in writes {
             try Task.checkCancellation()
-            try await commands.writePage(write.page, data: write.chunk, memoryMap: memory)
+            try await commands.writePage(UInt8(write.block), data: write.data, memoryMap: memory)
         }
     }
 
@@ -245,7 +273,8 @@ public extension CoreExtendedNFC {
     ///
     /// Reads the CC first and refuses tags that are not formatted (CC magic E1h/E2h)
     /// or deny write access, then writes only the blocks holding the NDEF TLV and
-    /// its terminator. Use ``formatNDEF(info:transport:)`` to format a blank tag.
+    /// its terminator: the TLV length as zero first and the real length last.
+    /// Use ``formatNDEF(info:transport:)`` to format a blank tag.
     static func writeType5NDEF(
         _ message: Data,
         transport: any ISO15693TagTransporting
@@ -295,7 +324,12 @@ public extension CoreExtendedNFC {
             writes = extendedWrites
         }
 
-        for write in writes {
+        let orderedWrites = NDEFTagMapping.lengthLastWriteOrder(
+            writes,
+            blockSize: systemInfo.blockSize,
+            tlvOffset: ccLength
+        )
+        for write in orderedWrites {
             try Task.checkCancellation()
             try await reader.writeBlock(at: write.block, data: write.data)
         }

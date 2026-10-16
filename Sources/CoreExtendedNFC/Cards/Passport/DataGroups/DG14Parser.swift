@@ -178,6 +178,34 @@ public struct PACEInfo: Sendable, Equatable, Codable {
     public let parameterID: Int?
 }
 
+/// Parsed PACEDomainParameterInfo (ICAO 9303-11 §9.2, BSI TR-03110-3 A.1.1.1).
+///
+/// ```asn1
+/// PACEDomainParameterInfo ::= SEQUENCE {
+///     protocol        OBJECT IDENTIFIER (id-PACE-DH-GM | id-PACE-ECDH-GM |
+///                                        id-PACE-DH-IM | id-PACE-ECDH-IM | id-PACE-ECDH-CAM),
+///     domainParameter AlgorithmIdentifier,
+///     parameterId     INTEGER OPTIONAL
+/// }
+/// ```
+///
+/// Explicit (proprietary) domain parameters. ``PACEHandler`` runs PACE only with
+/// standardized domain parameters, so these are recorded but not used.
+public struct PACEDomainParameterInfo: Sendable, Equatable, Codable {
+    /// The key agreement / mapping OID (10 arcs, e.g. `0.4.0.127.0.7.2.2.4.2` = id-PACE-ECDH-GM).
+    public let protocolOID: String
+    /// DER encoding of the `domainParameter` AlgorithmIdentifier.
+    public let domainParameter: Data
+    /// Identifier that a PACEInfo with the same `parameterId` refers to.
+    public let parameterID: Int?
+
+    public init(protocolOID: String, domainParameter: Data, parameterID: Int?) {
+        self.protocolOID = protocolOID
+        self.domainParameter = domainParameter
+        self.parameterID = parameterID
+    }
+}
+
 /// Parsed Chip Authentication info from DG14.
 public struct ChipAuthenticationInfo: Sendable, Equatable, Codable {
     /// The CA protocol OID.
@@ -212,26 +240,55 @@ public struct ActiveAuthenticationInfo: Sendable, Equatable, Codable {
     public let signatureAlgorithmOID: String?
 }
 
-/// Aggregated DG14 security info.
+/// Aggregated DG14 / EF.CardAccess security info.
 public struct SecurityInfos: Sendable, Equatable, Codable {
     public let paceInfos: [PACEInfo]
     public let chipAuthInfos: [ChipAuthenticationInfo]
     public let chipAuthPublicKeyInfos: [ChipAuthenticationPublicKeyInfo]
     public let activeAuthInfos: [ActiveAuthenticationInfo]
     public let terminalAuthInfos: [TerminalAuthenticationInfo]
+    /// PACEDomainParameterInfo entries (explicit PACE domain parameters).
+    public let paceDomainParameterInfos: [PACEDomainParameterInfo]
 
     public init(
         paceInfos: [PACEInfo],
         chipAuthInfos: [ChipAuthenticationInfo],
         chipAuthPublicKeyInfos: [ChipAuthenticationPublicKeyInfo],
         activeAuthInfos: [ActiveAuthenticationInfo],
-        terminalAuthInfos: [TerminalAuthenticationInfo] = []
+        terminalAuthInfos: [TerminalAuthenticationInfo] = [],
+        paceDomainParameterInfos: [PACEDomainParameterInfo] = []
     ) {
         self.paceInfos = paceInfos
         self.chipAuthInfos = chipAuthInfos
         self.chipAuthPublicKeyInfos = chipAuthPublicKeyInfos
         self.activeAuthInfos = activeAuthInfos
         self.terminalAuthInfos = terminalAuthInfos
+        self.paceDomainParameterInfos = paceDomainParameterInfos
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case paceInfos, chipAuthInfos, chipAuthPublicKeyInfos, activeAuthInfos
+        case terminalAuthInfos, paceDomainParameterInfos
+    }
+
+    /// Decodes models saved before `terminalAuthInfos` / `paceDomainParameterInfos` existed.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paceInfos = try container.decode([PACEInfo].self, forKey: .paceInfos)
+        chipAuthInfos = try container.decode([ChipAuthenticationInfo].self, forKey: .chipAuthInfos)
+        chipAuthPublicKeyInfos = try container.decode(
+            [ChipAuthenticationPublicKeyInfo].self,
+            forKey: .chipAuthPublicKeyInfos
+        )
+        activeAuthInfos = try container.decode([ActiveAuthenticationInfo].self, forKey: .activeAuthInfos)
+        terminalAuthInfos = try container.decodeIfPresent(
+            [TerminalAuthenticationInfo].self,
+            forKey: .terminalAuthInfos
+        ) ?? []
+        paceDomainParameterInfos = try container.decodeIfPresent(
+            [PACEDomainParameterInfo].self,
+            forKey: .paceDomainParameterInfos
+        ) ?? []
     }
 
     /// Whether PACE is supported by this document.
@@ -307,6 +364,7 @@ public enum DG14Parser {
         var chipAuthPublicKeyInfos: [ChipAuthenticationPublicKeyInfo] = []
         var activeAuthInfos: [ActiveAuthenticationInfo] = []
         var terminalAuthInfos: [TerminalAuthenticationInfo] = []
+        var paceDomainParameterInfos: [PACEDomainParameterInfo] = []
 
         for node in infoNodes where node.tag == 0x30 {
             guard let children = try? node.children(), !children.isEmpty else { continue }
@@ -317,16 +375,28 @@ public enum DG14Parser {
 
             let protocol_ = SecurityProtocol(rawValue: oid)
 
-            if oid.hasPrefix("0.4.0.127.0.7.2.2.4") {
-                // PACE (0.4.0.127.0.7.2.2.4.*)
-                let version = children.count > 1 ? decodeInteger(children[1].value) : 2
-                let parameterID = children.count > 2 ? decodeInteger(children[2].value) : nil
-                paceInfos.append(PACEInfo(
-                    protocolOID: oid,
-                    securityProtocol: protocol_,
-                    version: version,
-                    parameterID: parameterID
-                ))
+            if oid.hasPrefix("0.4.0.127.0.7.2.2.4.") {
+                // PACE (ICAO 9303-11 §9.2). PACEInfo names a full protocol (11 arcs,
+                // e.g. id-PACE-ECDH-GM-AES-CBC-CMAC-128) followed by INTEGER version;
+                // PACEDomainParameterInfo names only the key agreement and mapping (10
+                // arcs, e.g. id-PACE-ECDH-GM) followed by an AlgorithmIdentifier.
+                let arcCount = oid.split(separator: ".").count
+                let parameterID = children.count > 2 && children[2].tag == 0x02
+                    ? decodeInteger(children[2].value) : nil
+                if arcCount == 11, children.count > 1, children[1].tag == 0x02 {
+                    paceInfos.append(PACEInfo(
+                        protocolOID: oid,
+                        securityProtocol: protocol_,
+                        version: decodeInteger(children[1].value),
+                        parameterID: parameterID
+                    ))
+                } else if arcCount == 10, children.count > 1, children[1].tag == 0x30 {
+                    paceDomainParameterInfos.append(PACEDomainParameterInfo(
+                        protocolOID: oid,
+                        domainParameter: ASN1Parser.encodeTLV(tag: 0x30, value: children[1].value),
+                        parameterID: parameterID
+                    ))
+                }
             } else if oid.hasPrefix("0.4.0.127.0.7.2.2.3") {
                 // Chip Authentication (id-CA: 0.4.0.127.0.7.2.2.3.*)
                 let version = children.count > 1 ? decodeInteger(children[1].value) : 1
@@ -384,7 +454,8 @@ public enum DG14Parser {
             chipAuthInfos: chipAuthInfos,
             chipAuthPublicKeyInfos: chipAuthPublicKeyInfos,
             activeAuthInfos: activeAuthInfos,
-            terminalAuthInfos: terminalAuthInfos
+            terminalAuthInfos: terminalAuthInfos,
+            paceDomainParameterInfos: paceDomainParameterInfos
         )
     }
 

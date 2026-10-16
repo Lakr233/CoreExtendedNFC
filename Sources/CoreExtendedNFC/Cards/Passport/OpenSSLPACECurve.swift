@@ -68,6 +68,14 @@ import Foundation
             }
         }
 
+        /// Whether `privateScalar` (big-endian) lies in `[1, n-1]` for the curve order `n`.
+        public func isValidPrivateScalar(_ privateScalar: Data) throws -> Bool {
+            guard !privateScalar.isEmpty else { return false }
+            let scalar = try makeScalar(privateScalar)
+            defer { BN_free(scalar) }
+            return BN_num_bits(scalar) > 0 && BN_cmp(scalar, order) < 0
+        }
+
         public func publicPoint(privateScalar: Data, generator: Data?) throws -> Data {
             let scalar = try makeScalar(privateScalar)
             defer { BN_free(scalar) }
@@ -270,6 +278,7 @@ import Foundation
     }
 
     public extension PACEHandler.DomainParameterID {
+        /// OpenSSL curve NID for the curves ``isSupportedForPACE`` covers; `NID_undef` otherwise.
         var opensslNID: Int32 {
             switch self {
             case .secp256r1:
@@ -278,6 +287,16 @@ import Foundation
                 Int32(NID_secp384r1)
             case .secp521r1:
                 Int32(NID_secp521r1)
+            case .brainpoolP224r1:
+                Int32(NID_brainpoolP224r1)
+            case .brainpoolP256r1:
+                Int32(NID_brainpoolP256r1)
+            case .brainpoolP320r1:
+                Int32(NID_brainpoolP320r1)
+            case .brainpoolP384r1:
+                Int32(NID_brainpoolP384r1)
+            case .brainpoolP512r1:
+                Int32(NID_brainpoolP512r1)
             default:
                 Int32(NID_undef)
             }

@@ -113,12 +113,15 @@ public extension DESFireCommands {
     /// GET_VALUE: Read value from a value file.
     func getValue(fileID: UInt8) async throws -> Int32 {
         let data = try await sendCommand(Self.GET_VALUE, data: Data([fileID]))
+        return try Self.decodeDESFireValue(data)
+    }
+
+    /// Decode a plain GET_VALUE payload: exactly 4 bytes, signed little-endian.
+    static func decodeDESFireValue(_ data: Data) throws -> Int32 {
         guard data.count == 4 else {
             throw NFCError.invalidResponse(data)
         }
-        // Value is 4 bytes, little-endian, signed
-        let unsigned = data.uint32LE
-        return Int32(bitPattern: unsigned)
+        return Int32(bitPattern: data.uint32LE)
     }
 }
 

@@ -23,6 +23,21 @@ public enum ActiveAuthenticationVerifier {
 
     public static let ecPublicKeyOID = "1.2.840.10045.2.1"
 
+    /// Smallest RSA modulus accepted for Active Authentication, in bits. Shorter keys
+    /// are rejected: a 512- or 768-bit RSA key can be factored, so its signature proves nothing.
+    public static let minimumRSAModulusBits = 1024
+
+    /// Verify an INTERNAL AUTHENTICATE signature over `challenge` with the DG15 key
+    /// (ICAO 9303-11 §6.1).
+    ///
+    /// - Important: ``ActiveAuthenticationStatus/verified`` here only means the signature
+    ///   is valid for `publicKey`; it does not say the key is authentic. A clone can carry
+    ///   its own key pair. Pass the result through
+    ///   ``ActiveAuthenticationResult/classified(by:)`` with the Passive Authentication
+    ///   result before treating it as "chip genuine": only a DG15 authenticated by fully
+    ///   verified Passive Authentication keeps `.verified`, anything else becomes
+    ///   ``ActiveAuthenticationStatus/verifiedUnauthenticatedKey``. ``PassportReader``
+    ///   and ``PassportModel`` do this for you.
     public static func verify(
         challenge: Data,
         signature: Data,
@@ -68,6 +83,27 @@ public enum ActiveAuthenticationVerifier {
             do {
                 let publicKey = try readRSAPublicKey(modulus: modulus, exponent: exponent)
                 defer { EVP_PKEY_free(publicKey) }
+
+                // ISO/IEC 9796-2: the signature is an integer of exactly the modulus
+                // length; weak moduli are refused outright.
+                let modulusBits = Int(EVP_PKEY_get_bits(publicKey))
+                let modulusLength = Int(EVP_PKEY_get_size(publicKey))
+                guard modulusBits >= minimumRSAModulusBits else {
+                    return ActiveAuthenticationResult(
+                        success: false,
+                        details: "RSA Active Authentication key is \(modulusBits) bits; "
+                            + "at least \(minimumRSAModulusBits) bits are required",
+                        status: .failed
+                    )
+                }
+                guard signature.count == modulusLength else {
+                    return ActiveAuthenticationResult(
+                        success: false,
+                        details: "RSA Active Authentication signature is \(signature.count) bytes; "
+                            + "the \(modulusBits)-bit modulus requires \(modulusLength)",
+                        status: .failed
+                    )
+                }
 
                 let recovered = try rsaPublicRecover(signature: signature, publicKey: publicKey)
                 guard let (descriptor, payload, digest) = parseRecoveredRSASignature(recovered) else {
@@ -146,6 +182,18 @@ public enum ActiveAuthenticationVerifier {
                 )
             }
             defer { EVP_PKEY_free(publicKey) }
+
+            // BSI TR-03111 §5.2.1 plain format: r and s are each exactly as long as
+            // the curve order.
+            let orderLength = (Int(EVP_PKEY_get_bits(publicKey)) + 7) / 8
+            guard orderLength > 0, signature.count == 2 * orderLength else {
+                return ActiveAuthenticationResult(
+                    success: false,
+                    details: "ECDSA Active Authentication signature is \(signature.count) bytes; "
+                        + "the curve requires r || s of \(2 * orderLength)",
+                    status: .failed
+                )
+            }
 
             do {
                 let derSignature = try convertPlainECDSASignatureToDER(signature)

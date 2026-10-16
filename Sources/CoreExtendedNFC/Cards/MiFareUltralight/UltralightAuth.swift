@@ -33,8 +33,8 @@ public extension UltralightCommands {
     /// Read AUTH0 and ACCESS config pages to determine password protection range.
     /// Returns the first page protected by password and the access config byte.
     func readAuthConfig(configStartPage: UInt8) async throws -> (auth0Page: UInt8, accessBits: UInt8) {
-        // Config pages layout (EV1/NTAG):
-        // configStart + 0: MOD, RFUI, RFUI, AUTH0
+        // Config pages layout (MF0ULx1: MOD, RFUI, RFUI, AUTH0; NTAG21x:
+        // MIRROR, RFU, MIRROR_PAGE, AUTH0 — AUTH0 is byte 3 on both):
         // configStart + 1: ACCESS, RFUI, RFUI, RFUI
         let data = try await readPages(startPage: configStartPage)
         let auth0 = data[data.startIndex + 3] // 4th byte of first config page
@@ -51,7 +51,7 @@ public extension UltralightCommands {
 
         let auth0 = data[data.startIndex + 8]
         let auth1 = data[data.startIndex + 12]
-        let firstProtectedPage: UInt8? = auth0 == 0x30 ? nil : auth0
+        let firstProtectedPage = UltralightCAccessConfiguration.firstProtectedPage(fromAUTH0: auth0)
         return UltralightCAccessConfiguration(firstProtectedPage: firstProtectedPage, auth1: auth1)
     }
 }

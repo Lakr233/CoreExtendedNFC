@@ -39,9 +39,9 @@ public enum JapanICConstants {
     public static let historyEntryExit = 3
     /// Bytes 4-5: date as packed bits — year(7) month(4) day(5), base year 2000.
     public static let historyDateOffset = 4
-    /// Bytes 6-7: entry station code (product sales: purchase time hhhhhmmmmmm).
+    /// Bytes 6-7: entry station code (product sales: purchase time hhhhhmmmmmm; bus terminals: bus line code).
     public static let historyStationEntry = 6
-    /// Bytes 8-9: exit station code.
+    /// Bytes 8-9: exit station code (bus terminals: bus stop code; ticket machines: unused).
     public static let historyStationExit = 8
     /// Bytes 0x0A-0x0B: balance after transaction (2 bytes LE).
     public static let historyBalanceOffset = 0x0A
@@ -50,7 +50,9 @@ public enum JapanICConstants {
 
     // MARK: - Console / Process Type Classification (Metrodroid SuicaUtil / SuicaTrip)
 
-    /// Byte 1 bit 7 marks a cash-supplemented variant of the same process (e.g. 0xC6 = 0x46 + cash).
+    /// Masks off byte 1 bit 7, which flags a variant of the base process rather than a single
+    /// meaning: cash for 0xC6/0xCB (merchandise purchase/admission), third-party for 0x84/0x85
+    /// (payment/admission) (Metrodroid SuicaUtil.getProcessTypeName).
     public static let processTypeMask: UInt8 = 0x7F
 
     /// Process types (byte 1 & 0x7F) that add value: charge, auto-charge at entry/exit,
@@ -66,4 +68,12 @@ public enum JapanICConstants {
     /// Console types (byte 0) of product-sale terminals: 0xC7 POS, 0xC8 vending machine.
     /// Their bytes 6-7 hold the purchase time (hour 5 bits, minute 6 bits) instead of stations.
     public static let productSaleConsoleTypes: Set<UInt8> = [0xC7, 0xC8]
+
+    /// Console type (byte 0) of bus terminals. Bytes 6-7 hold the bus line code and bytes 8-9
+    /// the bus stop code instead of rail stations (Metrodroid SuicaTrip.parse).
+    public static let busConsoleType: UInt8 = 0x05
+
+    /// Console types (byte 0) of ticket machines, fare adjusters, and similar station terminals.
+    /// Their records carry only a station (bytes 6-7), with no exit station (Metrodroid SuicaTrip.isTVM).
+    public static let ticketMachineConsoleTypes: Set<UInt8> = [0x03, 0x07, 0x08, 0x12, 0x13, 0x14, 0x15]
 }

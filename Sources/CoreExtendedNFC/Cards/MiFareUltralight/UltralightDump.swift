@@ -138,7 +138,7 @@ open class UltralightDump: @unchecked Sendable {
             throw NFCError.invalidResponse(Data())
         }
 
-        let firstProtectedPage: UInt8? = auth0Page == 0x30 ? nil : auth0Page
+        let firstProtectedPage = UltralightCAccessConfiguration.firstProtectedPage(fromAUTH0: auth0Page)
         return UltralightCAccessConfiguration(firstProtectedPage: firstProtectedPage, auth1: auth1Page)
     }
 }

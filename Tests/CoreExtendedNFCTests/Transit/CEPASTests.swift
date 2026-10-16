@@ -312,6 +312,27 @@ struct CEPASTests {
         }
     }
 
+    @Test
+    func `Bus refunds and service charges expose their amounts`() async throws {
+        // Metrodroid CEPASTransaction.getType: 0x76 bus refund, 0x04 service charge.
+        let refund = Data([0x76, 0x00, 0x00, 0x64, 0, 0, 0, 0] + Array("BUS 12  ".utf8))
+        let serviceCharge = Data([0x04, 0xFF, 0xFF, 0xCE, 0, 0, 0, 0] + Array("SVC CHG ".utf8))
+        let transport = transport(purse: purse(recordCount: 2), history: [refund + serviceCharge])
+
+        let result = try await CEPASReader(transport: transport).readBalanceAndHistory()
+
+        let busRefund = try #require(result.transactions.first)
+        #expect(busRefund.type == .topup)
+        #expect(busRefund.amount == 100)
+        #expect(busRefund.metadata["balanceChange"] == "100")
+        #expect(busRefund.metadata["transactionType"] == "76")
+        let charge = try #require(result.transactions.last)
+        #expect(charge.type == .purchase)
+        #expect(charge.amount == 50)
+        #expect(charge.metadata["balanceChange"] == "-50")
+        #expect(charge.metadata["transactionType"] == "04")
+    }
+
     private func purse(recordCount: UInt8) -> Data {
         var data = Data(repeating: 0, count: 65)
         data[0] = 2

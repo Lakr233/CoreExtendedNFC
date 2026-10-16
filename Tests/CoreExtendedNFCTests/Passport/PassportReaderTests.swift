@@ -50,11 +50,40 @@ struct PassportReaderTests {
 
     #if canImport(OpenSSL)
         @Test
+        func `Passport reader runs PACE with the first supported PACEInfo when an earlier one is unsupported`() async throws {
+            let mrzKey = "L898902C<369080619406236"
+            let scenario = PACEReaderScenario.supportedNISTCurves[0]
+            let cardAccessData = makeCardAccessData(
+                securityProtocol: scenario.securityProtocol,
+                parameterID: scenario.parameterID,
+                precedingInfos: [(.paceECDHIMAESCBCCMAC128, .secp256r1), (.paceECDHGMAESCBCCMAC128, .secp192r1)]
+            )
+            let transport = try PassportPACESuccessTransport(
+                mrzKey: mrzKey,
+                scenario: scenario,
+                cardAccessData: cardAccessData,
+                files: [DataGroupId.com.fileID: makeCOMData()]
+            )
+
+            let model = try await PassportReader(transport: transport).readPassport(
+                mrzKey: mrzKey,
+                dataGroups: [.com],
+                performActiveAuth: false
+            )
+
+            #expect(model.cardAccess?.paceInfos.count == 3)
+            #expect(model.securityReport.pace.status == .succeeded)
+            #expect(model.securityReport.bac.status == .skipped)
+            #expect(transport.didCompletePACE)
+            #expect(transport.sentAPDUs.filter { $0.ins == 0x22 }.count == 1)
+        }
+
+        @Test
         func `Passport reader completes PACE, reads COM over secure messaging, and skips BAC on supported NIST curves`() async throws {
             let mrzKey = "L898902C<369080619406236"
             let comData = makeCOMData()
 
-            for scenario in PACEReaderScenario.supportedNISTCurves {
+            for scenario in PACEReaderScenario.supportedNISTCurves + PACEReaderScenario.supportedBrainpoolCurves {
                 let cardAccessData = makeCardAccessData(
                     securityProtocol: scenario.securityProtocol,
                     parameterID: scenario.parameterID
@@ -99,14 +128,39 @@ struct PassportReaderTests {
 
     private func makeCardAccessData(
         securityProtocol: SecurityProtocol = .paceECDHGMAESCBCCMAC128,
-        parameterID: PACEHandler.DomainParameterID = .secp256r1
+        parameterID: PACEHandler.DomainParameterID = .secp256r1,
+        precedingInfos: [(SecurityProtocol, PACEHandler.DomainParameterID)] = []
     ) -> Data {
-        let oid = ChipAuthenticationHandler.encodeOID(securityProtocol.rawValue)
-        let oidNode = ASN1Parser.encodeTLV(tag: 0x06, value: oid)
-        let versionNode = ASN1Parser.encodeTLV(tag: 0x02, value: Data([0x02]))
-        let paramIDNode = ASN1Parser.encodeTLV(tag: 0x02, value: Data([UInt8(parameterID.rawValue)]))
-        let sequence = ASN1Parser.encodeTLV(tag: 0x30, value: oidNode + versionNode + paramIDNode)
-        return ASN1Parser.encodeTLV(tag: 0x31, value: sequence)
+        func paceInfo(_ securityProtocol: SecurityProtocol, _ parameterID: PACEHandler.DomainParameterID) -> Data {
+            let oid = ChipAuthenticationHandler.encodeOID(securityProtocol.rawValue)
+            let oidNode = ASN1Parser.encodeTLV(tag: 0x06, value: oid)
+            let versionNode = ASN1Parser.encodeTLV(tag: 0x02, value: Data([0x02]))
+            let paramIDNode = ASN1Parser.encodeTLV(tag: 0x02, value: Data([UInt8(parameterID.rawValue)]))
+            return ASN1Parser.encodeTLV(tag: 0x30, value: oidNode + versionNode + paramIDNode)
+        }
+        let preceding = precedingInfos.reduce(into: Data()) { $0 += paceInfo($1.0, $1.1) }
+        return ASN1Parser.encodeTLV(tag: 0x31, value: preceding + paceInfo(securityProtocol, parameterID))
+    }
+
+    @Test
+    func `Passport reader skips PACE without any PACE APDU when no advertised parameters are supported`() async throws {
+        let mrzKey = "L898902C<369080619406236"
+        // Integrated Mapping on P-256: advertised, but not implemented.
+        let cardAccessData = makeCardAccessData(securityProtocol: .paceECDHIMAESCBCCMAC128)
+        let transport = PassportNegotiationTransport(mrzKey: mrzKey, cardAccessData: cardAccessData)
+
+        let model = try await PassportReader(transport: transport).readPassport(
+            mrzKey: mrzKey,
+            dataGroups: [],
+            performActiveAuth: false
+        )
+
+        #expect(model.cardAccess?.supportsPACE == true)
+        #expect(model.securityReport.pace.status == .fallback)
+        #expect(model.securityReport.bac.status == .succeeded)
+        let instructions = transport.sentAPDUs.map(\.ins)
+        #expect(!instructions.contains(0x22), "MSE:Set AT must not be sent for unsupported PACE parameters")
+        #expect(!instructions.contains(0x86), "General Authenticate must not be sent for unsupported PACE parameters")
     }
 
     private func makeCOMData() -> Data {
@@ -157,6 +211,24 @@ struct PassportReaderTests {
                 name: "PACE AES-256 / secp521r1",
                 securityProtocol: .paceECDHGMAESCBCCMAC256,
                 parameterID: .secp521r1
+            ),
+        ]
+
+        static let supportedBrainpoolCurves: [PACEReaderScenario] = [
+            .init(
+                name: "PACE AES-128 / brainpoolP256r1",
+                securityProtocol: .paceECDHGMAESCBCCMAC128,
+                parameterID: .brainpoolP256r1
+            ),
+            .init(
+                name: "PACE AES-192 / brainpoolP320r1",
+                securityProtocol: .paceECDHGMAESCBCCMAC192,
+                parameterID: .brainpoolP320r1
+            ),
+            .init(
+                name: "PACE AES-256 / brainpoolP512r1",
+                securityProtocol: .paceECDHGMAESCBCCMAC256,
+                parameterID: .brainpoolP512r1
             ),
         ]
     }
@@ -216,7 +288,12 @@ struct PassportReaderTests {
                 iv: Data(count: 16)
             )
             curve = try OpenSSLPACECurve(parameterID: scenario.parameterID)
-            mseSetAT = CommandAPDU.mseSetAT(oid: oidData, keyRef: PACEHandler.KeyReference.mrz.rawValue)
+            // Tag 84 names the standardized domain parameter ID (ICAO 9303-11 §4.4.4.1).
+            mseSetAT = CommandAPDU.mseSetAT(
+                oid: oidData,
+                keyRef: PACEHandler.KeyReference.mrz.rawValue,
+                privateKeyRef: UInt8(scenario.parameterID.rawValue)
+            )
         }
 
         func send(_: Data) async throws -> Data {

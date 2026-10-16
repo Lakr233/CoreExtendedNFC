@@ -54,19 +54,85 @@ public enum PACEHandler {
         case brainpoolP512r1 = 17
         case secp521r1 = 18 // P-521
 
-        /// Whether this is a standard NIST curve supported by CryptoKit.
+        /// Whether this is one of the NIST curves PACE supports (P-256, P-384, P-521).
         public var isNISTCurve: Bool {
             switch self {
             case .secp256r1, .secp384r1, .secp521r1: true
             default: false
             }
         }
+
+        /// Whether this is one of the Brainpool curves PACE supports (RFC 5639,
+        /// brainpoolP224r1 to brainpoolP512r1).
+        public var isBrainpoolCurve: Bool {
+            switch self {
+            case .brainpoolP224r1, .brainpoolP256r1, .brainpoolP320r1,
+                 .brainpoolP384r1, .brainpoolP512r1:
+                true
+            default:
+                false
+            }
+        }
+
+        /// Whether ``PACEHandler`` can run ECDH Generic Mapping on this curve.
+        ///
+        /// Standardized parameter IDs 11–18 are supported. The 192-bit curves (IDs 8
+        /// and 9) and secp224r1 (ID 10) are not; a chip that only offers them falls
+        /// back to BAC.
+        public var isSupportedForPACE: Bool {
+            isNISTCurve || isBrainpoolCurve
+        }
+    }
+
+    // MARK: - Parameter Selection
+
+    /// Why ``performPACE(paceInfo:password:keyReference:transport:mappingPrivateKey:ephemeralPrivateKey:)``
+    /// cannot run with `paceInfo`, or `nil` when it can.
+    ///
+    /// PACE runs only for a known PACE protocol OID with ECDH key agreement, Generic
+    /// Mapping and a standardized domain parameter ID whose curve
+    /// ``DomainParameterID/isSupportedForPACE``.
+    public static func unsupportedReason(for paceInfo: PACEInfo) -> String? {
+        guard let paceProtocol = paceInfo.securityProtocol, paceProtocol.isPACE else {
+            return "Unknown PACE protocol OID: \(paceInfo.protocolOID)."
+        }
+        guard paceProtocol.isECDH else {
+            return "PACE currently supports ECDH key agreement only; protocol \(paceInfo.protocolOID) is not supported."
+        }
+        guard paceProtocol.isGenericMapping else {
+            return "PACE currently supports Generic Mapping only; protocol \(paceInfo.protocolOID) is not supported."
+        }
+        guard let parameterID = paceInfo.parameterID,
+              let domainParameter = DomainParameterID(rawValue: parameterID),
+              domainParameter.isSupportedForPACE
+        else {
+            return "PACE currently supports standardized domain parameter IDs 11–18 (brainpoolP224r1 to "
+                + "brainpoolP512r1, NIST P-256, P-384 and P-521); parameter ID "
+                + "\(paceInfo.parameterID.map(String.init) ?? "none") is not supported."
+        }
+        return nil
+    }
+
+    /// Whether ``performPACE(paceInfo:password:keyReference:transport:mappingPrivateKey:ephemeralPrivateKey:)``
+    /// supports `paceInfo` (see ``unsupportedReason(for:)``).
+    public static func isSupported(_ paceInfo: PACEInfo) -> Bool {
+        unsupportedReason(for: paceInfo) == nil
+    }
+
+    /// The PACE parameters to use from EF.CardAccess: the first PACEInfo this
+    /// handler supports, or `nil` when none is supported.
+    ///
+    /// ICAO 9303-11 §4.4.4.1 lets the inspection system select any of the parameter
+    /// sets the chip advertises, so an unsupported first entry (for example Integrated
+    /// Mapping) does not rule PACE out.
+    public static func selectPACEInfo(from securityInfos: SecurityInfos) -> PACEInfo? {
+        securityInfos.paceInfos.first(where: isSupported)
     }
 
     /// Attempt PACE authentication using MRZ-derived password.
     ///
     /// - Parameters:
-    ///   - paceInfo: Parsed PACEInfo from DG14.
+    ///   - paceInfo: PACEInfo parsed from EF.CardAccess.
     ///   - mrzKey: The MRZ key string.
     ///   - transport: The underlying (unauthenticated) NFC tag transport.
     /// - Returns: A `SecureMessagingTransport` with PACE session keys.
@@ -86,7 +152,7 @@ public enum PACEHandler {
     /// Attempt PACE authentication using CAN (Card Access Number).
     ///
     /// - Parameters:
-    ///   - paceInfo: Parsed PACEInfo from DG14.
+    ///   - paceInfo: PACEInfo parsed from EF.CardAccess.
     ///   - can: The 6-digit Card Access Number.
     ///   - transport: The underlying (unauthenticated) NFC tag transport.
     /// - Returns: A `SecureMessagingTransport` with PACE session keys.
@@ -105,20 +171,43 @@ public enum PACEHandler {
 
     /// Core PACE implementation.
     ///
+    /// Unsupported parameters (see ``unsupportedReason(for:)``) and invalid passwords
+    /// are rejected before any APDU is sent, so the caller can fall back to BAC
+    /// without PACE traffic on the chip.
+    ///
     /// - Parameters:
-    ///   - paceInfo: Parsed PACEInfo from DG14.
+    ///   - paceInfo: PACEInfo parsed from EF.CardAccess (ICAO 9303-11 §4.4.4.1,
+    ///     §9.2.11); use ``selectPACEInfo(from:)`` to pick a supported entry.
     ///   - password: The password (MRZ key or CAN).
     ///   - keyReference: Which key type to use.
     ///   - transport: The underlying NFC tag transport.
+    ///   - mappingPrivateKey: Terminal private key for the Generic Mapping step, as a
+    ///     big-endian scalar in `[1, n-1]`. `nil` (the default) generates a random key.
+    ///     Supply it only to reproduce published test vectors.
+    ///   - ephemeralPrivateKey: Terminal ephemeral private key for key agreement, as a
+    ///     big-endian scalar in `[1, n-1]`. `nil` (the default) generates a random key.
     /// - Returns: A `SecureMessagingTransport` with PACE session keys.
+    /// - Throws: `NFCError.unsupportedOperation` for unsupported parameters,
+    ///   `NFCError.invalidParameter` for an out-of-range supplied private key, and
+    ///   `NFCError.secureMessagingError` when the chip rejects a step or a token fails.
     public static func performPACE(
         paceInfo: PACEInfo,
         password: String,
         keyReference: KeyReference,
-        transport: any NFCTagTransport
+        transport: any NFCTagTransport,
+        mappingPrivateKey: Data? = nil,
+        ephemeralPrivateKey: Data? = nil
     ) async throws -> SecureMessagingTransport {
-        guard let paceProtocol = paceInfo.securityProtocol else {
-            throw NFCError.secureMessagingError("Unknown PACE protocol OID: \(paceInfo.protocolOID)")
+        // Check the parameters before touching the chip so unsupported cards fall back
+        // to BAC without a half-run PACE.
+        if let reason = unsupportedReason(for: paceInfo) {
+            throw NFCError.unsupportedOperation(reason)
+        }
+        guard let paceProtocol = paceInfo.securityProtocol,
+              let parameterID = paceInfo.parameterID,
+              let domainParameter = DomainParameterID(rawValue: parameterID)
+        else {
+            throw NFCError.unsupportedOperation("PACE parameters are incomplete: \(paceInfo.protocolOID)")
         }
 
         // Determine SM encryption mode from protocol
@@ -139,68 +228,58 @@ public enum PACEHandler {
             keyReference: keyReference,
             mode: smMode
         )
-
-        // Step 1: MSE:Set AT — select PACE protocol
         let oidData = ChipAuthenticationHandler.encodeOID(paceInfo.protocolOID)
-        let mseAPDU = CommandAPDU.mseSetAT(oid: oidData, keyRef: keyReference.rawValue)
-        let mseResponse = try await transport.sendAPDU(mseAPDU)
-
-        guard mseResponse.isSuccess else {
-            throw NFCError.secureMessagingError(
-                "MSE:Set AT for PACE failed: SW=\(String(format: "%04X", mseResponse.statusWord))"
-            )
-        }
-
-        // Step 2: General Authenticate — get encrypted nonce
-        let step1Data = ASN1Parser.encodeTLV(tag: 0x7C, value: Data())
-        let step1APDU = CommandAPDU.generalAuthenticate(data: step1Data)
-        let step1Response = try await transport.sendAPDU(step1APDU)
-
-        guard step1Response.isSuccess else {
-            throw NFCError.secureMessagingError(
-                "PACE step 1 (get nonce) failed: SW=\(String(format: "%04X", step1Response.statusWord))"
-            )
-        }
-
-        // Parse encrypted nonce from response: 7C { 80 <nonce> }
-        let encryptedNonce = try parseTag80FromDynamicAuth(step1Response.data)
-
-        // Step 3: Decrypt nonce using password-derived key
-        let decryptedNonce: Data
-        switch smMode {
-        case .tripleDES:
-            decryptedNonce = try CryptoUtils.tripleDESDecrypt(key: passwordKey, message: encryptedNonce)
-        case .aes128, .aes192, .aes256:
-            let iv = Data(count: 16) // Zero IV for nonce decryption
-            decryptedNonce = try CryptoUtils.aesDecrypt(key: passwordKey, message: encryptedNonce, iv: iv)
-        }
-
-        guard paceProtocol.isECDH else {
-            throw NFCError.unsupportedOperation(
-                "PACE currently supports ECDH key agreement only; protocol \(paceInfo.protocolOID) is not supported."
-            )
-        }
-
-        guard paceProtocol.isGenericMapping else {
-            throw NFCError.unsupportedOperation(
-                "PACE currently supports Generic Mapping only; protocol \(paceInfo.protocolOID) is not supported."
-            )
-        }
-
-        guard let parameterID = paceInfo.parameterID,
-              let domainParameter = DomainParameterID(rawValue: parameterID),
-              domainParameter.isNISTCurve
-        else {
-            throw NFCError.unsupportedOperation(
-                "PACE currently supports standardized NIST curves only (parameter IDs 12, 15, 18)."
-            )
-        }
 
         #if canImport(OpenSSL)
             let curve = try OpenSSLPACECurve(parameterID: domainParameter)
+            for suppliedKey in [mappingPrivateKey, ephemeralPrivateKey].compactMap(\.self) {
+                guard try curve.isValidPrivateScalar(suppliedKey) else {
+                    throw NFCError.invalidParameter("PACE private key must be a scalar in [1, n-1] of the curve order n")
+                }
+            }
+
+            // Step 1: MSE:Set AT — select the PACE protocol, the password and the domain
+            // parameters. Tag 84 carries the standardized domain parameter ID; ICAO
+            // 9303-11 §4.4.4.1 requires it whenever the chip offers more than one set.
+            let mseAPDU = CommandAPDU.mseSetAT(
+                oid: oidData,
+                keyRef: keyReference.rawValue,
+                privateKeyRef: UInt8(domainParameter.rawValue)
+            )
+            let mseResponse = try await transport.sendAPDU(mseAPDU)
+
+            guard mseResponse.isSuccess else {
+                throw NFCError.secureMessagingError(
+                    "MSE:Set AT for PACE failed: SW=\(String(format: "%04X", mseResponse.statusWord))"
+                )
+            }
+
+            // Step 2: General Authenticate — get encrypted nonce
+            let step1Data = ASN1Parser.encodeTLV(tag: 0x7C, value: Data())
+            let step1APDU = CommandAPDU.generalAuthenticate(data: step1Data)
+            let step1Response = try await transport.sendAPDU(step1APDU)
+
+            guard step1Response.isSuccess else {
+                throw NFCError.secureMessagingError(
+                    "PACE step 1 (get nonce) failed: SW=\(String(format: "%04X", step1Response.statusWord))"
+                )
+            }
+
+            // Parse encrypted nonce from response: 7C { 80 <nonce> }
+            let encryptedNonce = try parseTag80FromDynamicAuth(step1Response.data)
+
+            // Step 3: Decrypt nonce using password-derived key
+            let decryptedNonce: Data
+            switch smMode {
+            case .tripleDES:
+                decryptedNonce = try CryptoUtils.tripleDESDecrypt(key: passwordKey, message: encryptedNonce)
+            case .aes128, .aes192, .aes256:
+                let iv = Data(count: 16) // Zero IV for nonce decryption
+                decryptedNonce = try CryptoUtils.aesDecrypt(key: passwordKey, message: encryptedNonce, iv: iv)
+            }
 
             // Step 4: exchange mapping public keys over the standardized generator G.
-            let mappingPrivateKey = try curve.generatePrivateScalar()
+            let mappingPrivateKey = try mappingPrivateKey ?? curve.generatePrivateScalar()
             let terminalMappingPublicKey = try curve.publicPoint(
                 privateScalar: mappingPrivateKey,
                 generator: nil
@@ -233,7 +312,7 @@ public enum PACEHandler {
             )
 
             // Step 5: exchange ephemeral public keys over the mapped generator G^.
-            let ephemeralPrivateKey = try curve.generatePrivateScalar()
+            let ephemeralPrivateKey = try ephemeralPrivateKey ?? curve.generatePrivateScalar()
             let terminalEphemeralPublicKey = try curve.publicPoint(
                 privateScalar: ephemeralPrivateKey,
                 generator: mappedGenerator
@@ -297,6 +376,7 @@ public enum PACEHandler {
                 mode: smMode
             )
         #else
+            _ = (passwordKey, oidData, domainParameter, mappingPrivateKey, ephemeralPrivateKey)
             throw NFCError.unsupportedOperation(
                 "PACE ECDH key agreement requires OpenSSL-backed elliptic-curve point operations."
             )

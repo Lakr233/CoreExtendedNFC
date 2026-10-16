@@ -179,8 +179,21 @@ public extension SODParser {
             }
             defer { CMS_ContentInfo_free(cms) }
 
-            // ICAO 9303-10 §4.6.2: the SOD carries exactly one SignerInfo (the DSC's).
-            guard let signerInfos = CMS_get0_SignerInfos(cms), OPENSSL_sk_num(signerInfos) == 1 else {
+            // ICAO 9303-10 §4.6.2 recommends a single SignerInfo (the DSC's). This
+            // implementation requires exactly one, so the signer certificate checked
+            // against the CSCA anchors is unambiguous; an EF.SOD with several is reported
+            // invalid.
+            guard let signerInfos = CMS_get0_SignerInfos(cms),
+                  OPENSSL_sk_num(signerInfos) == 1,
+                  let signerInfoPointer = OPENSSL_sk_value(signerInfos, 0)
+            else {
+                return .invalid
+            }
+
+            // The eContentType must be id-icao-ldsSecurityObject, and the signed
+            // contentType attribute must equal it (RFC 5652 §11.1). CMS_verify checks
+            // neither, and eContentType itself is not covered by the signature.
+            guard hasLDSSecurityObjectContentType(cms: cms, signerInfo: OpaquePointer(signerInfoPointer)) else {
                 return .invalid
             }
 
@@ -218,6 +231,29 @@ public extension SODParser {
         #else
             return .unavailable
         #endif
+    }
+
+    /// Whether the CMS eContentType is id-icao-ldsSecurityObject and the SignerInfo's
+    /// signed contentType attribute (exactly one, single-valued) has the same value.
+    private static func hasLDSSecurityObjectContentType(cms: OpaquePointer, signerInfo: OpaquePointer) -> Bool {
+        guard let expected = ldsSecurityObjectOID.withCString({ OBJ_txt2obj($0, 1) }) else {
+            return false
+        }
+        defer { ASN1_OBJECT_free(expected) }
+
+        guard let eContentType = CMS_get0_eContentType(cms),
+              OBJ_cmp(eContentType, expected) == 0,
+              let contentTypeAttributeOID = OBJ_nid2obj(NID_pkcs9_contentType),
+              let attributeValue = CMS_signed_get0_data_by_OBJ(
+                  signerInfo,
+                  contentTypeAttributeOID,
+                  -3,
+                  V_ASN1_OBJECT
+              )
+        else {
+            return false
+        }
+        return OBJ_cmp(OpaquePointer(attributeValue), eContentType) == 0
     }
 
     /// DER of the embedded certificate that the (single) SignerInfo's SID identifies.
@@ -276,6 +312,17 @@ public extension SODParser {
         return Data(bytes)
     }
 
+    /// Certification path validation of the Document Signer certificate (RFC 5280 §6)
+    /// against the CSCA certificates in `trustAnchorsDER`, then the DSC key usage check.
+    ///
+    /// Limits of this check:
+    /// - No revocation checking: CRLs (ICAO 9303-12) are not fetched or consulted.
+    /// - The path is built only from the DSC and `trustAnchorsDER`. Certificates
+    ///   embedded in the EF.SOD are not used as intermediates, and partial chains are
+    ///   not accepted, so a CSCA link certificate must itself be supplied in
+    ///   `trustAnchorsDER` together with the CSCA that issued it.
+    /// - When the DSC has a keyUsage extension it must assert digitalSignature
+    ///   (ICAO 9303-12 Document Signer certificate profile); a DSC without the extension is accepted.
     static func verifyTrustChain(
         documentSignerCertificateDER: Data?,
         trustAnchorsDER: [Data]
@@ -310,7 +357,13 @@ public extension SODParser {
             return false
         }
 
-        return X509_verify_cert(context) == 1
+        guard X509_verify_cert(context) == 1 else {
+            return false
+        }
+
+        // X509_get_key_usage returns UINT32_MAX when the certificate has no keyUsage
+        // extension, so this only rejects a DSC whose keyUsage omits digitalSignature.
+        return X509_get_key_usage(signerCertificate) & UInt32(KU_DIGITAL_SIGNATURE) != 0
     }
 
     private static func loadX509Certificate(_ der: Data) -> OpaquePointer? {

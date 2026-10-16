@@ -108,7 +108,7 @@ public extension CoreExtendedNFC {
     static func authenticateDESFireEV2(
         keyNo: UInt8,
         key: Data,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6),
+        pcdCapabilities: Data = Data(),
         transport: any NFCTagTransport
     ) async throws -> DESFireAuthenticationSession {
         try await DESFireCommands(transport: transport)
@@ -143,7 +143,7 @@ public extension CoreExtendedNFC {
         key: Data,
         offset: UInt32 = 0,
         length: UInt32 = 0,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6),
+        pcdCapabilities: Data = Data(),
         transport: any NFCTagTransport
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await DESFireCommands(transport: transport)
@@ -183,7 +183,7 @@ public extension CoreExtendedNFC {
         key: Data,
         offset: UInt32 = 0,
         count: UInt32 = 0,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6),
+        pcdCapabilities: Data = Data(),
         transport: any NFCTagTransport
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await DESFireCommands(transport: transport)
@@ -213,7 +213,7 @@ public extension CoreExtendedNFC {
         fileID: UInt8,
         keyNo: UInt8,
         key: Data,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6),
+        pcdCapabilities: Data = Data(),
         transport: any NFCTagTransport
     ) async throws -> (session: DESFireAuthenticationSession, value: Int32) {
         try await DESFireCommands(transport: transport)

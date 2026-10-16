@@ -234,7 +234,171 @@ struct SODParserTests {
         }
     }
 
+    // MARK: - LDSSecurityObject structure (ICAO 9303-10 §4.6.2.2)
+
+    /// EF.SOD around `ldsSecurityObject` with SignedData digestAlgorithms SHA-256 and no signer.
+    private func makeUnsignedSOD(
+        ldsSecurityObject: Data,
+        eContentTypeOID: String = "2.23.136.1.1.1"
+    ) -> Data {
+        let sha256OID = ChipAuthenticationHandler.encodeOID("2.16.840.1.101.3.4.2.1")
+        let digestAlgorithms = ASN1Parser.encodeTLV(tag: 0x31, value:
+            ASN1Parser.encodeTLV(tag: 0x30, value: ASN1Parser.encodeTLV(tag: 0x06, value: sha256OID)))
+        let encapContent = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID(eContentTypeOID))
+                + ASN1Parser.encodeTLV(tag: 0xA0, value: ASN1Parser.encodeTLV(tag: 0x04, value: ldsSecurityObject)))
+        let signedData = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x02, value: Data([0x03]))
+                + digestAlgorithms + encapContent + ASN1Parser.encodeTLV(tag: 0x31, value: Data()))
+        let contentInfo = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID(SODParser.signedDataOID))
+                + ASN1Parser.encodeTLV(tag: 0xA0, value: signedData))
+        return ASN1Parser.encodeTLV(tag: 0x77, value: contentInfo)
+    }
+
+    private func makeLDSSecurityObject(
+        version: UInt8,
+        hashOID: String = "2.16.840.1.101.3.4.2.1",
+        ldsVersionInfo: Data? = nil
+    ) -> Data {
+        let hashAlgorithm = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID(hashOID)))
+        let dgHash = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x02, value: Data([0x01]))
+                + ASN1Parser.encodeTLV(tag: 0x04, value: Data(repeating: 0xAB, count: 32)))
+        let dgHashes = ASN1Parser.encodeTLV(tag: 0x30, value: dgHash)
+        return ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x02, value: Data([version])) + hashAlgorithm + dgHashes + (ldsVersionInfo ?? Data()))
+    }
+
+    @Test
+    func `LDSVersionInfo encoded as PrintableString is parsed`() throws {
+        let versionInfo = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x13, value: Data("0108".utf8))
+                + ASN1Parser.encodeTLV(tag: 0x13, value: Data("040000".utf8)))
+        let sod = try SODParser.parse(makeUnsignedSOD(
+            ldsSecurityObject: makeLDSSecurityObject(version: 1, ldsVersionInfo: versionInfo)
+        ))
+        #expect(sod.ldsVersion == "0108")
+        #expect(sod.unicodeVersion == "040000")
+        #expect(sod.dataGroupHashes[.dg1] == Data(repeating: 0xAB, count: 32))
+    }
+
+    @Test
+    func `LDSSecurityObject versions other than v0 and v1 are rejected`() {
+        #expect(throws: NFCError.self) {
+            _ = try SODParser.parse(makeUnsignedSOD(ldsSecurityObject: makeLDSSecurityObject(version: 2)))
+        }
+        let versionInfo = ASN1Parser.encodeTLV(tag: 0x30, value:
+            ASN1Parser.encodeTLV(tag: 0x13, value: Data("0108".utf8))
+                + ASN1Parser.encodeTLV(tag: 0x13, value: Data("040000".utf8)))
+        #expect(throws: NFCError.self) {
+            _ = try SODParser.parse(makeUnsignedSOD(
+                ldsSecurityObject: makeLDSSecurityObject(version: 0, ldsVersionInfo: versionInfo)
+            ))
+        }
+        #expect(throws: Never.self) {
+            _ = try SODParser.parse(makeUnsignedSOD(ldsSecurityObject: makeLDSSecurityObject(version: 0)))
+        }
+    }
+
+    @Test
+    func `Unknown LDSSecurityObject hash OID is unsupported, not replaced by digestAlgorithms`() throws {
+        let sod = try SODParser.parse(makeUnsignedSOD(
+            ldsSecurityObject: makeLDSSecurityObject(version: 0, hashOID: "1.2.3.4.5")
+        ))
+        #expect(sod.hashAlgorithmOID == "1.2.3.4.5")
+
+        let result = SODParser.verifyHashes(sodContent: sod, rawDataGroups: [.dg1: Data("dg1".utf8)])
+        #expect(result.status == .unsupportedHashAlgorithm)
+    }
+
+    @Test
+    func `EF.SOD whose eContentType is not the LDS security object is rejected`() {
+        #expect(throws: NFCError.self) {
+            _ = try SODParser.parse(makeUnsignedSOD(
+                ldsSecurityObject: makeLDSSecurityObject(version: 0),
+                eContentTypeOID: "1.2.840.113549.1.7.1"
+            ))
+        }
+    }
+
     #if canImport(OpenSSL)
+        // MARK: - CMS content type and DSC key usage
+
+        /// Replace the first DER encoding of `from` (the eContentType, which precedes the
+        /// signed attributes) with `to`. eContentType is outside the signature.
+        private func replacingFirstOID(in data: Data, from: String, to: String) throws -> Data {
+            let fromDER = ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID(from))
+            let toDER = ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID(to))
+            #expect(fromDER.count == toDER.count)
+            let range = try #require(data.range(of: fromDER))
+            var patched = data
+            patched.replaceSubrange(range, with: toDER)
+            return patched
+        }
+
+        @Test
+        func `CMS whose eContentType is not the LDS security object fails the signature check`() throws {
+            let rawDG1 = Data("P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<".utf8)
+            let (sodData, _) = try makeSignedSOD(rawDataGroups: [.dg1: rawDG1])
+            let parsed = try SODParser.parse(sodData)
+            let cmsData = try #require(parsed.rawCMSData)
+            let patchedCMS = try replacingFirstOID(in: cmsData, from: "2.23.136.1.1.1", to: "2.23.136.1.1.2")
+
+            #expect(throws: NFCError.self) {
+                _ = try SODParser.parse(ASN1Parser.encodeTLV(tag: 0x77, value: patchedCMS))
+            }
+            let patched = SODContent(
+                hashAlgorithmOID: parsed.hashAlgorithmOID,
+                hashAlgorithm: parsed.hashAlgorithm,
+                dataGroupHashes: parsed.dataGroupHashes,
+                ldsVersion: parsed.ldsVersion,
+                unicodeVersion: parsed.unicodeVersion,
+                documentSignerCertificate: parsed.documentSignerCertificate,
+                signedAttributes: parsed.signedAttributes,
+                signature: parsed.signature,
+                signatureAlgorithmOID: parsed.signatureAlgorithmOID,
+                encapsulatedContent: parsed.encapsulatedContent,
+                rawCMSData: patchedCMS
+            )
+            #expect(SODParser.verifyCMSSignature(sodContent: patched) == .invalid)
+        }
+
+        @Test
+        func `CMS whose signed contentType attribute differs from eContentType is invalid`() throws {
+            let rawDG1 = Data("P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<".utf8)
+            // Signed as 2.23.136.1.1.2 (contentType attribute = .2), then eContentType
+            // rewritten to the LDS security object OID.
+            let (signedData, _) = try makeSignedSOD(rawDataGroups: [.dg1: rawDG1], eContentTypeOID: "2.23.136.1.1.2")
+            let sodData = try replacingFirstOID(in: signedData, from: "2.23.136.1.1.2", to: "2.23.136.1.1.1")
+
+            let sodContent = try SODParser.parse(sodData)
+            let result = SODParser.verifyPassiveAuthentication(sodContent: sodContent, rawDataGroups: [.dg1: rawDG1])
+
+            #expect(result.allHashesValid)
+            #expect(result.cmsSignatureValid == false)
+            #expect(result.status == .signatureInvalid)
+        }
+
+        @Test
+        func `DSC whose keyUsage omits digitalSignature fails trust validation`() throws {
+            let rawDG1 = Data("P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<".utf8)
+            for (keyUsage, expected) in [
+                ("critical,digitalSignature", PassiveAuthenticationStatus.fullyVerified),
+                ("critical,nonRepudiation", PassiveAuthenticationStatus.trustChainInvalid),
+            ] {
+                let (sodData, signerDER) = try makeSignedSOD(rawDataGroups: [.dg1: rawDG1], keyUsage: keyUsage)
+                let result = SODParser.verifyPassiveAuthentication(
+                    sodContent: try SODParser.parse(sodData),
+                    rawDataGroups: [.dg1: rawDG1],
+                    trustAnchorsDER: [signerDER]
+                )
+                #expect(result.cmsSignatureValid == true, "\(keyUsage)")
+                #expect(result.status == expected, "\(keyUsage)")
+            }
+        }
+
         @Test
         func `CMS-backed SOD verifies embedded signature and hashes`() throws {
             let rawDG1 = Data("P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<".utf8)
@@ -326,10 +490,12 @@ struct SODParserTests {
 
         private func makeSignedSOD(
             rawDataGroups: [DataGroupId: Data],
-            returnSignerDER _: Bool = false
+            returnSignerDER _: Bool = false,
+            eContentTypeOID: String = "2.23.136.1.1.1",
+            keyUsage: String? = nil
         ) throws -> (Data, Data) {
             let ldsSecurityObject = buildLDSSecurityObject(rawDataGroups: rawDataGroups)
-            let (certificate, privateKey) = try makeSelfSignedCertificate()
+            let (certificate, privateKey) = try makeSelfSignedCertificate(keyUsage: keyUsage)
             let signerDER = try exportCertificateDER(certificate)
             defer {
                 X509_free(certificate)
@@ -354,7 +520,7 @@ struct SODParserTests {
             }
             defer { CMS_ContentInfo_free(cms) }
 
-            let oid = "2.23.136.1.1.1".withCString { OBJ_txt2obj($0, 1) }
+            let oid = eContentTypeOID.withCString { OBJ_txt2obj($0, 1) }
             guard let oid else {
                 throw NFCError.cryptoError("OBJ_txt2obj failed")
             }
@@ -426,7 +592,7 @@ struct SODParserTests {
             }
         }
 
-        private func makeSelfSignedCertificate() throws -> (OpaquePointer, OpaquePointer) {
+        private func makeSelfSignedCertificate(keyUsage: String? = nil) throws -> (OpaquePointer, OpaquePointer) {
             guard let keygenContext = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nil) else {
                 throw NFCError.cryptoError("Failed to allocate RSA keygen context")
             }
@@ -471,6 +637,20 @@ struct SODParserTests {
             let addNameResult = commonName.withUnsafeBufferPointer { ptr in
                 X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_ASC, ptr.baseAddress, Int32(commonName.count), -1, 0)
             }
+            if let keyUsage {
+                guard let extensionValue = keyUsage.withCString({ X509V3_EXT_conf_nid(nil, nil, NID_key_usage, $0) }) else {
+                    EVP_PKEY_free(privateKey)
+                    X509_free(certificate)
+                    throw NFCError.cryptoError("X509V3_EXT_conf_nid failed")
+                }
+                defer { X509_EXTENSION_free(extensionValue) }
+                guard X509_add_ext(certificate, extensionValue, -1) == 1 else {
+                    EVP_PKEY_free(privateKey)
+                    X509_free(certificate)
+                    throw NFCError.cryptoError("X509_add_ext failed")
+                }
+            }
+
             guard addNameResult == 1,
                   X509_set_issuer_name(certificate, subject) == 1,
                   X509_sign(certificate, privateKey, EVP_sha256()) > 0

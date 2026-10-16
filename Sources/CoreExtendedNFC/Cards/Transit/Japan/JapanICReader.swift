@@ -160,15 +160,28 @@ open class JapanICReader: @unchecked Sendable {
         // Product sales store the purchase time in bytes 6-7 (Metrodroid SuicaUtil.extractDate).
         let date = parseDate(block, includeTime: isProductSale)
 
-        // Station codes as hex strings. Unused blocks, product sales, and charges carry none
-        // (Metrodroid SuicaTrip.parse).
-        let hasStations = date != nil && !isProductSale && processType != JapanICConstants.chargeProcessType
-        let entryStation = hasStations
-            ? Data(bytes[JapanICConstants.historyStationEntry ..< JapanICConstants.historyStationEntry + 2]).hexString
-            : nil
-        let exitStation = hasStations
-            ? Data(bytes[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
-            : nil
+        // Station codes as hex strings, following Metrodroid SuicaTrip.parse: unused blocks, product
+        // sales, and charges carry none; bus records carry a line and stop instead of stations;
+        // ticket machines record a single station and no exit.
+        var metadata = [
+            "consoleType": String(format: "%02X", consoleType),
+            "processType": String(format: "%02X", bytes[JapanICConstants.historyUsageType]),
+        ]
+        let entryCode = Data(bytes[JapanICConstants.historyStationEntry ..< JapanICConstants.historyStationEntry + 2]).hexString
+        let exitCode = Data(bytes[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
+        var entryStation: String?
+        var exitStation: String?
+        if date != nil, !isProductSale, processType != JapanICConstants.chargeProcessType {
+            if consoleType == JapanICConstants.busConsoleType {
+                metadata["busLineCode"] = entryCode
+                metadata["busStopCode"] = exitCode
+            } else if JapanICConstants.ticketMachineConsoleTypes.contains(consoleType) {
+                entryStation = entryCode
+            } else {
+                entryStation = entryCode
+                exitStation = exitCode
+            }
+        }
 
         // Balance after transaction (little-endian)
         let balanceAfter = Int(bytes[JapanICConstants.historyBalanceOffset])
@@ -181,10 +194,7 @@ open class JapanICReader: @unchecked Sendable {
             date: date,
             entryStation: entryStation,
             exitStation: exitStation,
-            metadata: [
-                "consoleType": String(format: "%02X", consoleType),
-                "processType": String(format: "%02X", bytes[JapanICConstants.historyUsageType]),
-            ]
+            metadata: metadata
         )
     }
 

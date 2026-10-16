@@ -263,7 +263,116 @@ struct ActiveAuthenticationTests {
         #expect(result.status == .failed)
     }
 
+    @Test
+    func `ECDSA Active Authentication rejects r and s longer than the curve order`() throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let challenge = Data([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF])
+        let derSignature = try privateKey.signature(for: challenge).derRepresentation
+        let plainSignature = try derSignatureToPlain(derSignature, componentLength: 32)
+        // Same r and s, each left-padded to 33 bytes: numerically valid, wrong length.
+        let padded = Data([0x00]) + plainSignature.prefix(32) + Data([0x00]) + plainSignature.suffix(32)
+
+        let securityInfos = SecurityInfos(
+            paceInfos: [],
+            chipAuthInfos: [],
+            chipAuthPublicKeyInfos: [],
+            activeAuthInfos: [ActiveAuthenticationInfo(
+                protocolOID: SecurityProtocol.aaRSA.rawValue,
+                securityProtocol: .aaRSA,
+                version: 1,
+                signatureAlgorithmOID: "0.4.0.127.0.7.1.1.4.1.3"
+            )]
+        )
+        let publicKey = ActiveAuthenticationPublicKey.ecdsa(
+            curveOID: "1.2.840.10045.3.1.7",
+            publicPoint: privateKey.publicKey.x963Representation
+        )
+
+        let rejected = ActiveAuthenticationVerifier.verify(
+            challenge: challenge,
+            signature: padded,
+            publicKey: publicKey,
+            securityInfos: securityInfos
+        )
+        #expect(rejected.status == .failed)
+        #expect(!rejected.success)
+
+        let accepted = ActiveAuthenticationVerifier.verify(
+            challenge: challenge,
+            signature: plainSignature,
+            publicKey: publicKey,
+            securityInfos: securityInfos
+        )
+        #expect(accepted.status == .verified)
+    }
+
     #if canImport(OpenSSL)
+        /// ISO 9796-2 scheme 1 signature (SHA-256, trailer 34CC) over `challenge`.
+        private func makeISO9796Signature(
+            challenge: Data,
+            privateKey: OpaquePointer,
+            payloadByte: UInt8 = 0xA5
+        ) throws -> Data {
+            let keySize = Int(EVP_PKEY_get_size(privateKey))
+            let digestLength = 32
+            let payload = Data(repeating: payloadByte, count: keySize - 1 - digestLength - 2)
+            var recovered = Data([0x6A])
+            recovered.append(payload)
+            recovered.append(HashUtils.sha256(payload + challenge))
+            recovered.append(contentsOf: [0x34, 0xCC])
+            return try rawRSASign(message: recovered, privateKey: privateKey)
+        }
+
+        @Test
+        func `RSA Active Authentication rejects a signature shorter than the modulus`() throws {
+            let privateKey = try makeRSATestKey(bits: 1024)
+            defer { EVP_PKEY_free(privateKey) }
+            let publicKey = try exportRSAPublicKey(privateKey)
+
+            // Find a signature with a leading zero byte (about 1 in 256), then drop it:
+            // the integer is unchanged, but ISO/IEC 9796-2 fixes the length to the
+            // modulus length.
+            var challenge = Data()
+            var stripped: Data?
+            for attempt in UInt32(0) ..< 8192 where stripped == nil {
+                challenge = Data([0x11, 0x22, 0x33, 0x44]) + withUnsafeBytes(of: attempt.bigEndian) { Data($0) }
+                let signature = try makeISO9796Signature(challenge: challenge, privateKey: privateKey)
+                if signature.first == 0x00 { stripped = Data(signature.dropFirst()) }
+                if attempt == 0 {
+                    let full = ActiveAuthenticationVerifier.verify(
+                        challenge: challenge, signature: signature, publicKey: publicKey, securityInfos: nil
+                    )
+                    #expect(full.status == .verified)
+                }
+            }
+            let shortSignature = try #require(stripped)
+
+            let result = ActiveAuthenticationVerifier.verify(
+                challenge: challenge,
+                signature: shortSignature,
+                publicKey: publicKey,
+                securityInfos: nil
+            )
+            #expect(result.status == .failed)
+            #expect(!result.success)
+        }
+
+        @Test
+        func `RSA Active Authentication rejects moduli shorter than 1024 bits`() throws {
+            let challenge = Data([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88])
+            let privateKey = try makeRSATestKey(bits: 768)
+            defer { EVP_PKEY_free(privateKey) }
+
+            let result = ActiveAuthenticationVerifier.verify(
+                challenge: challenge,
+                signature: try makeISO9796Signature(challenge: challenge, privateKey: privateKey),
+                publicKey: try exportRSAPublicKey(privateKey),
+                securityInfos: nil
+            )
+            #expect(result.status == .failed)
+            #expect(result.details.contains("1024"))
+        }
+
         @Test
         func `RSA Active Authentication verifier succeeds for ISO 9796-2 recovered message`() throws {
             let challenge = Data([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88])

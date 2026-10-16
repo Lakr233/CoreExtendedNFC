@@ -4,7 +4,8 @@
 // - ICAO Doc 9303 Part 11, Appendix D: BAC worked example (D.2–D.4 secure messaging)
 // - ICAO Doc 9303 Part 11, Appendix G.1: PACE ECDH-GM AES-128 worked example
 // - ICAO Doc 9303 Part 11, §6.2 / BSI TR-03110-3 B.11: Chip Authentication APDUs
-// - ICAO Doc 9303 Part 11, §9.8: Secure messaging (DO'99 and DO'8E mandatory)
+// - ICAO Doc 9303 Part 11, §9.8: Secure messaging (DO'8E mandatory; DO'99 optional in §9.8.4,
+//   required by this library so the status word is authenticated)
 // - ISO/IEC 7816-4 §10.2 (SM data objects), §11.3.3 (READ BINARY odd INS)
 // - X.690 §8.19 (OBJECT IDENTIFIER encoding)
 // - BSI TR-03110-3 Appendix A (Terminal Authentication OIDs)
@@ -95,6 +96,101 @@ struct PassportConformanceTests {
         #expect(mock.sentAPDUs[1].bytes == vectorHex("0CB000000D9701048E08ED6705417E96BA5500"))
         #expect(read.isSuccess)
         #expect(read.data == vectorHex("60145F01"))
+    }
+
+    @Test
+    func `SM matches ICAO 9303-11 Appendix D.4 step 3 READ BINARY of the remaining 18 bytes`() async throws {
+        let mock = MockTransport()
+        mock.apduResponses = [
+            ResponseAPDU(data: vectorHex("990290008E08FA855A5D4C50A8ED"), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: vectorHex("8709019FF0EC34F9922651990290008E08AD55CC17140B2DED"), sw1: 0x90, sw2: 0x00),
+            // Appendix D.4 step 3: RAPDU = DO'87 || DO'99 || DO'8E, SW 9000 (SSC ...C22C).
+            ResponseAPDU(
+                data: vectorHex(
+                    "871901FB9235F4E4037F2327DCC8964F1F9B8C30F42C8E2FFF224A"
+                        + "990290008E08C8B2787EAEA07D74"
+                ),
+                sw1: 0x90,
+                sw2: 0x00
+            ),
+        ]
+        let sm = makeAppendixDTransport(mock, ssc: Self.appendixDSSC)
+
+        _ = try await sm.sendAPDU(.selectEF(id: Data([0x01, 0x1E])))
+        _ = try await sm.sendAPDU(CommandAPDU(cla: 0x00, ins: 0xB0, p1: 0x00, p2: 0x00, le: 0x04))
+        // READ BINARY offset 4, Le 18 (SSC ...C22B).
+        let read = try await sm.sendAPDU(CommandAPDU(cla: 0x00, ins: 0xB0, p1: 0x00, p2: 0x04, le: 0x12))
+
+        #expect(mock.sentAPDUs[2].bytes == vectorHex("0CB000040D9701128E082EA28A70F3C7B53500"))
+        #expect(read.isSuccess)
+        #expect(read.data == vectorHex("04303130365F36063034303030305C026175"))
+    }
+
+    @Test
+    func `SM uses extended Le 0000 when the protected command needs extended length`() async throws {
+        let mock = MockTransport()
+        mock.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82)]
+        let sm = makeAppendixDTransport(mock, ssc: Self.appendixDSSC)
+
+        // 240 plain bytes protect to DO'87 (252) + DO'97 (3) + DO'8E (10) = 265 bytes,
+        // so the protected APDU is extended although Ne is only 256.
+        _ = try? await sm.sendAPDU(CommandAPDU(
+            cla: 0x00, ins: 0xD6, p1: 0x00, p2: 0x00, data: Data(repeating: 0x5A, count: 240), le: 0x00
+        ))
+
+        let sent = try #require(mock.sentAPDUs.first)
+        #expect(sent.data?.count == 265)
+        #expect(sent.isExtendedLength)
+        #expect(sent.expectedResponseLength == CommandAPDU.maxExpectedResponseLength)
+        // ICAO 9303-11 §9.8 Figure 5: extended Le is 0000, not the plain Ne (0100).
+        #expect(sent.bytes.suffix(2) == Data([0x00, 0x00]))
+        #expect(sent.bytes.prefix(7) == vectorHex("0CD60000000109"))
+    }
+
+    @Test
+    func `AES SM accepts a 16-byte block-sized SSC and matches the 8-byte form`() async throws {
+        let response = ResponseAPDU(data: vectorHex("990290008E08BEA7B381C494A079"), sw1: 0x90, sw2: 0x00)
+        var sentBySSCLength: [Int: Data] = [:]
+        for ssc in [Data(count: 8), Data(count: 16)] {
+            let mock = MockTransport()
+            mock.apduResponses = [response]
+            let sm = SecureMessagingTransport(
+                transport: mock,
+                ksEnc: vectorHex("F5F0E35C0D7161EE6724EE513A0D9A7F"),
+                ksMac: vectorHex("FE251C7858B356B24514B3BD5F4297D1"),
+                ssc: ssc,
+                mode: .aes128
+            )
+            let select = try await sm.sendAPDU(.selectEF(id: Data([0x01, 0x1E])))
+            #expect(select.isSuccess)
+            sentBySSCLength[ssc.count] = mock.sentAPDUs.first?.data
+        }
+        #expect(sentBySSCLength[16] == vectorHex("871101EE0E4724F4465C1BE9C2F73ABDD73A3D8E08835D1B54575C955F"))
+        #expect(sentBySSCLength[8] == sentBySSCLength[16])
+    }
+
+    @Test
+    func `SM refuses an SSC of the wrong length without sending anything`() async {
+        let cases: [(SMEncryptionMode, Int)] = [(.tripleDES, 16), (.tripleDES, 4), (.aes128, 12), (.aes256, 0)]
+        for (mode, length) in cases {
+            let mock = MockTransport()
+            let sm = SecureMessagingTransport(
+                transport: mock,
+                ksEnc: Data(count: mode == .tripleDES ? 16 : 32),
+                ksMac: Data(count: mode == .tripleDES ? 16 : 32),
+                ssc: Data(count: length),
+                mode: mode
+            )
+            do {
+                _ = try await sm.sendAPDU(.selectEF(id: Data([0x01, 0x1E])))
+                Issue.record("Expected invalidParameter for \(mode) with a \(length)-byte SSC")
+            } catch NFCError.invalidParameter {
+                // expected
+            } catch {
+                Issue.record("Unexpected error \(error)")
+            }
+            #expect(mock.sentAPDUs.isEmpty)
+        }
     }
 
     @Test
@@ -274,6 +370,165 @@ struct PassportConformanceTests {
             _ = try await PACEHandler.performPACE(paceInfo: info, can: "１２３４５６", transport: mock)
         }
         #expect(mock.sentAPDUs.isEmpty)
+    }
+
+    #if canImport(OpenSSL)
+        @Test
+        func `PACE runs ICAO 9303-11 Appendix G.1 end to end on brainpoolP256r1`() async throws {
+            // The chip side is the published G.1 APDU trace; the terminal uses the G.1
+            // private keys so every command it sends is fixed.
+            let pkMapIC = vectorHex(
+                "04824FBA91C9CBE26BEF53A0EBE7342A3BF178CEA9F45DE0B70AA601651FBA3F57"
+                    + "30D8C879AAA9C9F73991E61B58F4D52EB87A0A0C709A49DC63719363CCD13C54"
+            )
+            let pkIC = vectorHex(
+                "049E880F842905B8B3181F7AF7CAA9F0EFB743847F44A306D2D28C1D9EC65DF6DB"
+                    + "7764B22277A2EDDC3C265A9F018F9CB852E111B768B326904B59A0193776F094"
+            )
+            let mock = MockTransport()
+            mock.apduResponses = [
+                ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: vectorHex("7C12801095A3A016522EE98D01E76CB6B98B42C3"), sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: vectorHex("7C438241") + pkMapIC, sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: vectorHex("7C438441") + pkIC, sw1: 0x90, sw2: 0x00),
+                ResponseAPDU(data: vectorHex("7C0A86083ABB9674BCE93C08"), sw1: 0x90, sw2: 0x00),
+                // AES-128 SELECT EF.COM response under the G.1 session keys (see the AES SM test).
+                ResponseAPDU(data: vectorHex("990290008E08BEA7B381C494A079"), sw1: 0x90, sw2: 0x00),
+            ]
+            let info = PACEInfo(
+                protocolOID: SecurityProtocol.paceECDHGMAESCBCCMAC128.rawValue,
+                securityProtocol: .paceECDHGMAESCBCCMAC128,
+                version: 2,
+                parameterID: PACEHandler.DomainParameterID.brainpoolP256r1.rawValue
+            )
+
+            let sm = try await PACEHandler.performPACE(
+                paceInfo: info,
+                password: "T22000129364081251010318",
+                keyReference: .mrz,
+                transport: mock,
+                mappingPrivateKey: vectorHex("7F4EF07B9EA82FD78AD689B38D0BC78CF21F249D953BC46F4C6E19259C010F99"),
+                ephemeralPrivateKey: vectorHex("A73FB703AC1436A18E0CFA5ABB3F7BEC7A070E7A6788486BEE230C4A22762595")
+            )
+
+            let sent = mock.sentAPDUs.map(\.bytes)
+            // G.1 MSE:Set AT, plus tag 84 naming standardized domain parameter 13.
+            #expect(sent[0] == vectorHex("0022C1A412800A04007F00070202040202830101" + "84010D"))
+            #expect(sent[1] == vectorHex("10860000027C0000"))
+            #expect(sent[2] == vectorHex(
+                "10860000457C438141"
+                    + "047ACF3EFC982EC45565A4B155129EFBC74650DCBFA6362D896FC70262E0C2CC5E"
+                    + "544552DCB6725218799115B55C9BAA6D9F6BC3A9618E70C25AF71777A9C4922D00"
+            ))
+            #expect(sent[3] == vectorHex(
+                "10860000457C438341"
+                    + "042DB7A64C0355044EC9DF190514C625CBA2CEA48754887122F3A5EF0D5EDD301C"
+                    + "3556F3B3B186DF10B857B58F6A7EB80F20BA5DC7BE1D43D9BF850149FBB3646200"
+            ))
+            #expect(sent[4] == vectorHex("008600000C7C0A8508C2B0BD78D94BA86600"))
+
+            // The returned transport runs AES-128 SM with KSenc/KSmac from G.1 and SSC 0.
+            #expect(sm.mode == .aes128)
+            let select = try await sm.sendAPDU(.selectEF(id: Data([0x01, 0x1E])))
+            #expect(select.isSuccess)
+            #expect(mock.sentAPDUs[5].data == vectorHex("871101EE0E4724F4465C1BE9C2F73ABDD73A3D8E08835D1B54575C955F"))
+        }
+
+        @Test
+        func `PACE refuses a supplied private key outside the curve order before any APDU`() async {
+            let mock = MockTransport()
+            let info = PACEInfo(
+                protocolOID: SecurityProtocol.paceECDHGMAESCBCCMAC128.rawValue,
+                securityProtocol: .paceECDHGMAESCBCCMAC128,
+                version: 2,
+                parameterID: 12
+            )
+            await #expect(throws: NFCError.self) {
+                _ = try await PACEHandler.performPACE(
+                    paceInfo: info,
+                    password: "T22000129364081251010318",
+                    keyReference: .mrz,
+                    transport: mock,
+                    mappingPrivateKey: Data(count: 32)
+                )
+            }
+            #expect(mock.sentAPDUs.isEmpty)
+        }
+    #endif
+
+    @Test
+    func `PACE rejects unsupported parameters before sending any APDU`() async {
+        let unsupported: [PACEInfo] = [
+            // Integrated Mapping
+            PACEInfo(
+                protocolOID: SecurityProtocol.paceECDHIMAESCBCCMAC128.rawValue,
+                securityProtocol: .paceECDHIMAESCBCCMAC128,
+                version: 2,
+                parameterID: 12
+            ),
+            // DH Generic Mapping
+            PACEInfo(
+                protocolOID: SecurityProtocol.paceDHGMAESCBCCMAC128.rawValue,
+                securityProtocol: .paceDHGMAESCBCCMAC128,
+                version: 2,
+                parameterID: 0
+            ),
+            // secp192r1
+            PACEInfo(
+                protocolOID: SecurityProtocol.paceECDHGMAESCBCCMAC128.rawValue,
+                securityProtocol: .paceECDHGMAESCBCCMAC128,
+                version: 2,
+                parameterID: 8
+            ),
+            // Proprietary domain parameters
+            PACEInfo(
+                protocolOID: SecurityProtocol.paceECDHGMAESCBCCMAC128.rawValue,
+                securityProtocol: .paceECDHGMAESCBCCMAC128,
+                version: 2,
+                parameterID: 32
+            ),
+            // Unknown OID
+            PACEInfo(protocolOID: "0.4.0.127.0.7.2.2.4.6.2", securityProtocol: nil, version: 2, parameterID: 13),
+        ]
+        for info in unsupported {
+            let mock = MockTransport()
+            #expect(!PACEHandler.isSupported(info))
+            do {
+                _ = try await PACEHandler.performPACE(paceInfo: info, mrzKey: "T22000129364081251010318", transport: mock)
+                Issue.record("Expected unsupportedOperation for \(info)")
+            } catch NFCError.unsupportedOperation {
+                // expected
+            } catch {
+                Issue.record("Unexpected error \(error)")
+            }
+            #expect(mock.sentAPDUs.isEmpty, "\(info.protocolOID) / \(String(describing: info.parameterID))")
+        }
+    }
+
+    @Test
+    func `PACE selects the first supported PACEInfo from EF.CardAccess`() {
+        let integrated = PACEInfo(
+            protocolOID: SecurityProtocol.paceECDHIMAESCBCCMAC128.rawValue,
+            securityProtocol: .paceECDHIMAESCBCCMAC128,
+            version: 2,
+            parameterID: 12
+        )
+        let generic = PACEInfo(
+            protocolOID: SecurityProtocol.paceECDHGMAESCBCCMAC256.rawValue,
+            securityProtocol: .paceECDHGMAESCBCCMAC256,
+            version: 2,
+            parameterID: 16
+        )
+        let infos = SecurityInfos(
+            paceInfos: [integrated, generic],
+            chipAuthInfos: [],
+            chipAuthPublicKeyInfos: [],
+            activeAuthInfos: []
+        )
+        #expect(PACEHandler.selectPACEInfo(from: infos) == generic)
+
+        let none = SecurityInfos(paceInfos: [integrated], chipAuthInfos: [], chipAuthPublicKeyInfos: [], activeAuthInfos: [])
+        #expect(PACEHandler.selectPACEInfo(from: none) == nil)
     }
 
     // MARK: - Chip Authentication

@@ -7,7 +7,13 @@ import Foundation
 /// - TD2: 2 lines × 36 characters (visas, some ID cards)
 /// - TD3: 2 lines × 44 characters (passports)
 ///
-/// Reference: ICAO Doc 9303 Part 3, Sections 4.2-4.4
+/// Document numbers longer than nine characters (TD1 and TD2) are reassembled from the
+/// principal characters and the overflow at the start of the optional data field, per
+/// ICAO 9303-5/-6 §4.2.2, Note j.
+///
+/// Reference: ICAO Doc 9303 Part 4 §4.2.2 (TD3), Part 5 §4.2.2 (TD1), Part 6 §4.2.2 (TD2)
+/// https://www.icao.int/publications/Documents/9303_p5_cons_en.pdf
+/// Reference: ICAO Doc 9303 Part 3 §4.9 (check digits)
 /// https://www.icao.int/publications/Documents/9303_p3_cons_en.pdf
 /// Cross-ref: JMRTD MRZInfo.java
 /// https://github.com/jmrtd/jmrtd/blob/master/jmrtd/src/main/java/org/jmrtd/lds/icao/MRZInfo.java
@@ -44,8 +50,11 @@ public struct MRZData: Sendable, Equatable, Codable {
             format = .td1
             documentCode = Self.clean(String(chars[0 ..< 2]))
             issuingState = Self.clean(String(chars[2 ..< 5]))
-            documentNumber = Self.clean(String(chars[5 ..< 14]))
-            optionalData1 = Self.clean(String(chars[15 ..< 30]))
+            (documentNumber, optionalData1) = Self.parseDocumentNumber(
+                principal: chars[5 ..< 14],
+                checkDigit: chars[14],
+                optionalData: chars[15 ..< 30]
+            )
             dateOfBirth = String(chars[30 ..< 36])
             sex = Self.clean(String(chars[37 ..< 38]))
             dateOfExpiry = String(chars[38 ..< 44])
@@ -60,12 +69,15 @@ public struct MRZData: Sendable, Equatable, Codable {
             issuingState = Self.clean(String(chars[2 ..< 5]))
             let nameLine = String(chars[5 ..< 36])
             (lastName, firstName) = Self.parseNames(nameLine)
-            documentNumber = Self.clean(String(chars[36 ..< 45]))
+            (documentNumber, optionalData1) = Self.parseDocumentNumber(
+                principal: chars[36 ..< 45],
+                checkDigit: chars[45],
+                optionalData: chars[64 ..< 71]
+            )
             nationality = Self.clean(String(chars[46 ..< 49]))
             dateOfBirth = String(chars[49 ..< 55])
             sex = Self.clean(String(chars[56 ..< 57]))
             dateOfExpiry = String(chars[57 ..< 63])
-            optionalData1 = Self.clean(String(chars[64 ..< 71]))
             optionalData2 = ""
 
         case 88: // TD3: 2 lines × 44
@@ -88,6 +100,35 @@ public struct MRZData: Sendable, Equatable, Codable {
     }
 
     // MARK: - Private
+
+    /// Splits the document number and optional data fields of a TD1 or TD2 MRZ.
+    ///
+    /// When the document number check-digit position holds a filler (`<`), the number is
+    /// longer than nine characters: the remaining characters start the optional data field,
+    /// followed by the check digit and a filler (ICAO 9303-5 and 9303-6 §4.2.2, Note j).
+    /// The check digit covers the principal and overflow characters but not the filler
+    /// (§4.2.4). It is not part of the returned document number or optional data.
+    static func parseDocumentNumber(
+        principal: ArraySlice<Character>,
+        checkDigit: Character,
+        optionalData: ArraySlice<Character>
+    ) -> (documentNumber: String, optionalData: String) {
+        let principalNumber = clean(String(principal))
+        guard checkDigit == "<", principal.last != "<" else {
+            return (principalNumber, clean(String(optionalData)))
+        }
+        let overflowEnd = optionalData.firstIndex(of: "<") ?? optionalData.endIndex
+        let overflow = optionalData[optionalData.startIndex ..< overflowEnd]
+        // At least one extra character plus its check digit; otherwise not a long number.
+        guard overflow.count >= 2 else {
+            return (principalNumber, clean(String(optionalData)))
+        }
+        let remainderStart = min(overflowEnd + 1, optionalData.endIndex)
+        return (
+            principalNumber + String(overflow.dropLast()),
+            clean(String(optionalData[remainderStart...]))
+        )
+    }
 
     /// Replaces filler characters and trims surrounding whitespace.
     public static func clean(_ str: String) -> String {

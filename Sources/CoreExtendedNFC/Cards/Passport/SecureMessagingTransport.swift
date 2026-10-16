@@ -3,24 +3,28 @@ import Foundation
 /// Encryption mode for Secure Messaging sessions.
 ///
 /// - `tripleDES`: Used after BAC authentication. 8-byte SSC, Retail MAC, 3DES-CBC.
-/// - `aes128/192/256`: Used after PACE or Chip Authentication. AES-CBC + AES-CMAC.
+/// - `aes128/192/256`: Used after PACE or Chip Authentication. 16-byte SSC, AES-CBC + AES-CMAC.
 ///
 /// ## SSC and IV Conventions
 ///
-/// The Send Sequence Counter (SSC) is always an 8-byte big-endian counter,
-/// incremented by 1 before each protect and unprotect operation.
+/// The Send Sequence Counter (SSC) is a big-endian counter as long as the cipher block
+/// (ICAO 9303-11 §9.8.2): 8 bytes for 3DES, 16 bytes for AES. It is incremented by 1
+/// before each protect and unprotect operation.
 ///
-/// For AES modes, the SSC is padded to 16 bytes by prepending 8 zero bytes:
-///   `paddedSSC = [0x00]*8 || SSC`
+/// As an implementation detail, ``SecureMessagingTransport`` also accepts an 8-byte SSC
+/// in AES mode and zero-extends it to 16 bytes (`[0x00]*8 || SSC`); BAC, PACE and Chip
+/// Authentication all start from a zero SSC, so the two forms are equivalent.
 ///
-/// The AES IV is computed as: `IV = AES-ECB-Encrypt(KSenc, paddedSSC)`
+/// The AES IV is computed as `IV = AES-ECB-Encrypt(KSenc, SSC)` over the 16-byte SSC
+/// (ICAO 9303-11 §9.8.7.3).
 ///
-/// MAC computation uses AES-CMAC over `pad(paddedSSC || cmdHeader || DO'87 || DO'97)`,
+/// MAC computation uses AES-CMAC over `pad(SSC || cmdHeader || DO'87 || DO'97)`,
 /// truncated to 8 bytes.
 ///
 /// References:
 /// - ICAO Doc 9303 Part 11, Section 9.8 (Secure Messaging)
-/// - ICAO Doc 9303 Part 11, Section 9.8.6.1 (AES Secure Messaging — SSC padding, IV derivation)
+/// - ICAO Doc 9303 Part 11, Section 9.8.2 (SSC length equals the block size)
+/// - ICAO Doc 9303 Part 11, Section 9.8.7.3 (AES Secure Messaging — IV derivation)
 /// - BSI TR-03110 Part 3, Section D.3 (AES Secure Messaging with AES-CMAC)
 /// - NIST SP 800-38B (AES-CMAC specification)
 /// - ISO/IEC 9797-1, MAC Algorithm 3 (Retail MAC for 3DES mode)
@@ -39,8 +43,12 @@ public enum SMEncryptionMode: Sendable {
         }
     }
 
-    /// SSC (Send Sequence Counter) length in bytes.
-    /// Always 8 bytes — for AES, the SSC is zero-padded to 16 bytes when used.
+    /// Length in bytes of the initial SSC (Send Sequence Counter) that BAC, PACE and
+    /// Chip Authentication pass to ``SecureMessagingTransport``: 8 for every mode.
+    ///
+    /// The SSC in use is as long as the cipher block (ICAO 9303-11 §9.8.2); in AES mode
+    /// the transport zero-extends an 8-byte SSC to ``blockSize`` bytes. The transport
+    /// accepts either length for AES.
     public var sscLength: Int {
         8
     }
@@ -69,8 +77,11 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
     private let underlying: any NFCTagTransport
     private let ksEnc: Data
     private let ksMac: Data
-    /// Send Sequence Counter. Only read or mutated while `exchangeGate` is held.
+    /// Send Sequence Counter, ``SMEncryptionMode/blockSize`` bytes long. Only read or
+    /// mutated while `exchangeGate` is held.
     private var ssc: Data
+    /// Set when `init` received an SSC of the wrong length; every exchange then throws it.
+    private let configurationError: NFCError?
     /// Cipher suite of this Secure Messaging session.
     public let mode: SMEncryptionMode
     /// Serializes command/response pairs so concurrent callers cannot desynchronize the SSC.
@@ -103,6 +114,13 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
         underlying.identifier
     }
 
+    /// Creates a Secure Messaging session.
+    ///
+    /// - Parameters:
+    ///   - ssc: The initial Send Sequence Counter: 8 bytes for 3DES; 16 bytes (the
+    ///     block size, ICAO 9303-11 §9.8.2) or 8 bytes (zero-extended) for AES.
+    ///     Any other length makes every ``sendAPDU(_:)`` throw
+    ///     `NFCError.invalidParameter` without sending anything.
     public init(
         transport: any NFCTagTransport,
         ksEnc: Data,
@@ -113,8 +131,22 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
         underlying = transport
         self.ksEnc = Data(ksEnc)
         self.ksMac = Data(ksMac)
-        self.ssc = Data(ssc)
         self.mode = mode
+        let ssc = Data(ssc)
+        switch (mode, ssc.count) {
+        case (.tripleDES, 8), (.aes128, 16), (.aes192, 16), (.aes256, 16):
+            self.ssc = ssc
+            configurationError = nil
+        case (.aes128, 8), (.aes192, 8), (.aes256, 8):
+            self.ssc = Data(count: 8) + ssc
+            configurationError = nil
+        default:
+            self.ssc = Data(count: mode.blockSize)
+            configurationError = NFCError.invalidParameter(
+                "Secure messaging SSC must be \(mode == .tripleDES ? "8" : "8 or 16") bytes "
+                    + "for \(mode), got \(ssc.count)"
+            )
+        }
     }
 
     open func send(_: Data) async throws -> Data {
@@ -140,6 +172,9 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
         await exchangeGate.acquire()
         defer { exchangeGate.release() }
 
+        if let configurationError {
+            throw configurationError
+        }
         if let sessionEndReason {
             throw NFCError.secureMessagingError("Secure messaging session ended: \(sessionEndReason)")
         }
@@ -259,9 +294,11 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
         protectedData.append(contentsOf: [0x8E, UInt8(mode.macLength)])
         protectedData.append(cc)
 
-        // Outer Le covers the protected response: 256 for short commands, 65 536
-        // (extended Le 0000) when the plain command asked for more than 256 bytes.
-        let extended = (apdu.expectedResponseLength ?? 0) > 256
+        // Outer Le asks for the maximum protected response (ICAO 9303-11 §9.8, Figure 5):
+        // short Le 00 (256), or extended Le 0000 (65 536) whenever the protected APDU
+        // uses extended length — because the plain command asked for more than 256
+        // bytes, or because the protected data no longer fits a short Lc.
+        let extended = (apdu.expectedResponseLength ?? 0) > 256 || protectedData.count > 255
         return CommandAPDU(
             cla: maskedCLA,
             ins: apdu.ins,
@@ -276,9 +313,12 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
 
     /// Unprotect a Secure Messaging response: verify DO'8E MAC, then decrypt DO'87/DO'85.
     ///
-    /// ICAO 9303-11 §9.8 makes DO'99 and DO'8E mandatory in every protected response, and
-    /// ISO/IEC 7816-4 §10.2 requires verifying the checksum before using any data object.
-    /// The MAC covers every odd-tag data object preceding DO'8E exactly as received.
+    /// DO'8E is mandatory. ICAO 9303-11 §9.8.4 lists DO'99 as optional (`[DO'99]`), but
+    /// this transport requires it: without DO'99 the status word sits outside the MAC,
+    /// so an attacker could turn an error into `9000` (or the reverse) undetected. Chips
+    /// seen in practice always include it. ISO/IEC 7816-4 §10.2 requires verifying the
+    /// checksum before using any data object; the MAC covers every odd-tag data object
+    /// preceding DO'8E exactly as received.
     private func unprotect(_ response: ResponseAPDU) throws -> ResponseAPDU {
         let data = Data(response.data)
 
@@ -389,14 +429,9 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
 
     // MARK: - MAC Computation
 
-    /// SSC as used in MAC input: 8 bytes for 3DES, zero-extended to 16 bytes for AES.
+    /// SSC as used in MAC input: already block-sized (8 bytes for 3DES, 16 for AES).
     private func paddedSSC() -> Data {
-        switch mode {
-        case .tripleDES:
-            ssc
-        case .aes128, .aes192, .aes256:
-            Data(repeating: 0x00, count: 8) + ssc
-        }
+        ssc
     }
 
     /// Compute MAC using the appropriate algorithm for the current mode.
@@ -411,11 +446,9 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
         }
     }
 
-    /// Compute AES IV = AES-ECB(KSenc, paddedSSC).
-    /// paddedSSC = [0x00]*8 || SSC (8 bytes → 16 bytes for AES block size)
+    /// Compute AES IV = AES-ECB(KSenc, SSC) over the 16-byte SSC (ICAO 9303-11 §9.8.7.3).
     private func computeAESIV() throws -> Data {
-        let paddedSSC = Data(repeating: 0x00, count: 8) + ssc
-        return try CryptoUtils.aesECBEncrypt(key: ksEnc, message: paddedSSC)
+        try CryptoUtils.aesECBEncrypt(key: ksEnc, message: ssc)
     }
 
     // MARK: - SSC

@@ -37,6 +37,9 @@ public enum SODParser {
     // MARK: - Known OIDs
 
     public static let signedDataOID = "1.2.840.113549.1.7.2"
+    /// id-icao-mrtd-security-ldsSecurityObject, the eContentType of an EF.SOD
+    /// (ICAO 9303-10 §4.6.2).
+    public static let ldsSecurityObjectOID = "2.23.136.1.1.1"
     /// Hash algorithm OIDs to names.
     public static let hashAlgorithmNames: [String: String] = [
         "1.3.14.3.2.26": "SHA-1",
@@ -132,11 +135,21 @@ public enum SODParser {
             case 0x30:
                 // EncapsulatedContentInfo SEQUENCE
                 let ecChildren = (try? child.children()) ?? []
+                // eContentType must be id-icao-ldsSecurityObject (ICAO 9303-10 §4.6.2).
+                if let contentTypeNode = ecChildren.first, contentTypeNode.tag == 0x06 {
+                    let contentType = DG14Parser.decodeOID(contentTypeNode.value)
+                    guard contentType == Self.ldsSecurityObjectOID else {
+                        throw NFCError.dataGroupParseFailed(
+                            "SOD: eContentType is \(contentType), expected \(Self.ldsSecurityObjectOID)"
+                        )
+                    }
+                }
                 for ecChild in ecChildren {
                     if ecChild.tag == 0xA0 {
                         // Explicit [0] contains OCTET STRING with LDS Security Object
                         if let octetString = try? ASN1Parser.parseTLV(ecChild.value).first(where: { $0.tag == 0x04 }) {
                             encapContent = octetString.value
+                            try validateLDSSecurityObjectVersion(octetString.value)
                             parseLDSSecurityObject(
                                 octetString.value,
                                 hashAlgOID: &hashAlgOID,
@@ -185,6 +198,33 @@ public enum SODParser {
 
     // MARK: - LDS Security Object
 
+    /// Check the LDSSecurityObject `version` (ICAO 9303-10 §4.6.2.2): `v0` (0) without
+    /// `ldsVersionInfo`, or `v1` (1) with it.
+    ///
+    /// - Throws: `NFCError.dataGroupParseFailed` for any other version, a missing
+    ///   version, or an `ldsVersionInfo` in a v0 object.
+    public static func validateLDSSecurityObjectVersion(_ data: Data) throws {
+        guard let nodes = try? ASN1Parser.parseTLV(data),
+              let seqNode = nodes.first(where: { $0.tag == 0x30 }),
+              let children = try? seqNode.children(),
+              let versionNode = children.first, versionNode.tag == 0x02,
+              versionNode.value.count == 1
+        else {
+            throw NFCError.dataGroupParseFailed("SOD: LDSSecurityObject has no version INTEGER")
+        }
+        let version = versionNode.value[versionNode.value.startIndex]
+        // version, hashAlgorithm, dataGroupHashValues, [ldsVersionInfo]
+        let hasLDSVersionInfo = children.count > 3
+        switch version {
+        case 0 where !hasLDSVersionInfo, 1:
+            return
+        case 0:
+            throw NFCError.dataGroupParseFailed("SOD: LDSSecurityObject v0 must not carry ldsVersionInfo")
+        default:
+            throw NFCError.dataGroupParseFailed("SOD: unsupported LDSSecurityObject version \(version)")
+        }
+    }
+
     /// Parse the LDS Security Object (inside the EncapsulatedContentInfo).
     ///
     /// ```asn1
@@ -193,6 +233,11 @@ public enum SODParser {
     ///     hashAlgorithm       DigestAlgorithmIdentifier,
     ///     dataGroupHashValues SEQUENCE OF DataGroupHash,
     ///     ldsVersionInfo      LDSVersionInfo OPTIONAL     -- only if version = 1
+    /// }
+    ///
+    /// LDSVersionInfo ::= SEQUENCE {
+    ///     ldsVersion      PRINTABLE STRING,
+    ///     unicodeVersion  PRINTABLE STRING
     /// }
     ///
     /// DataGroupHash ::= SEQUENCE {
@@ -225,17 +270,19 @@ public enum SODParser {
                 if subChildren.count >= 1, subChildren[0].tag == 0x06 {
                     // AlgorithmIdentifier: OID + optional parameters (RFC 5754 §2: SHA-2
                     // identifiers SHOULD omit the NULL parameters). The LDSSecurityObject
-                    // hashAlgorithm governs DG hashes (ICAO 9303-10 §4.6.2.2).
+                    // hashAlgorithm governs DG hashes (ICAO 9303-10 §4.6.2.2), even when it
+                    // is unknown: falling back to the SignedData digestAlgorithms would hash
+                    // with the wrong algorithm and report a mismatch instead of an
+                    // unsupported algorithm.
                     let oid = DG14Parser.decodeOID(subChildren[0].value)
-                    if hashAlgOID.isEmpty || Self.hashAlgorithmNames[oid] != nil {
-                        hashAlgOID = oid
-                        hashAlgName = Self.hashAlgorithmNames[oid] ?? oid
-                    }
+                    hashAlgOID = oid
+                    hashAlgName = Self.hashAlgorithmNames[oid] ?? oid
                 } else if subChildren.count == 2,
-                          subChildren[0].tag == 0x16 || subChildren[0].tag == 0x04,
-                          subChildren[1].tag == 0x16 || subChildren[1].tag == 0x04
+                          Self.isLDSVersionStringTag(subChildren[0].tag),
+                          Self.isLDSVersionStringTag(subChildren[1].tag)
                 {
-                    // LDSVersionInfo: two IA5String or OCTET STRING
+                    // LDSVersionInfo: two PrintableStrings (ICAO 9303-10 §4.6.2.2); IA5String
+                    // and OCTET STRING are accepted from older encoders.
                     ldsVersion = String(data: subChildren[0].value, encoding: .ascii)
                     unicodeVersion = String(data: subChildren[1].value, encoding: .ascii)
                 }
@@ -283,6 +330,11 @@ public enum SODParser {
                 }
             }
         }
+    }
+
+    /// PrintableString (0x13), IA5String (0x16) or OCTET STRING (0x04).
+    private static func isLDSVersionStringTag(_ tag: UInt) -> Bool {
+        tag == 0x13 || tag == 0x16 || tag == 0x04
     }
 
     // MARK: - Signer Info

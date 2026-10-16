@@ -71,13 +71,24 @@ public enum ISO14443 {
     // MARK: - ATS Parsing
 
     /// Parse an ATS (Answer To Select) from ISO 14443-4A.
-    /// Byte 0 is T0 and indicates whether TA, TB, and TC are present.
+    ///
+    /// The input is normally the ATS without its length byte TL, as CoreNFC hands it
+    /// over, so byte 0 is T0 and indicates whether TA, TB, and TC are present. A
+    /// complete ATS whose first byte TL equals its length (ISO/IEC 14443-4 §5.2.1)
+    /// is accepted too: TL is skipped. An ATS without TL whose T0 happens to equal
+    /// its length is therefore read as one with TL. T0 b8 must be 0 (§5.2.3); an
+    /// ATS with it set is not parsed and yields empty fields, like an empty ATS.
     public static func parseATS(_ ats: Data) -> ATSInfo {
-        guard !ats.isEmpty else {
-            return ATSInfo(fsci: 0, ta: nil, tb: nil, tc: nil, historicalBytes: Data())
+        let empty = ATSInfo(fsci: 0, ta: nil, tb: nil, tc: nil, historicalBytes: Data())
+        var ats = ats
+        // TL counts itself, so a full ATS starts with its own length (≥ 2 with T0).
+        if ats.count >= 2, Int(ats[ats.startIndex]) == ats.count {
+            ats = Data(ats.dropFirst())
         }
+        guard !ats.isEmpty else { return empty }
 
         let t0 = ats[ats.startIndex]
+        guard t0 & 0x80 == 0 else { return empty }
         let fsci = t0 & 0x0F
         var offset = ats.startIndex + 1
 
@@ -126,7 +137,9 @@ public struct ATSInfo: Sendable, Equatable, Codable {
         self.historicalBytes = historicalBytes
     }
 
-    /// Maximum frame size the card can receive, derived from FSCI.
+    /// Maximum frame size the card can receive, derived from FSCI
+    /// (ISO/IEC 14443-4:2016 Table 1: FSCI 9-C are 512, 1024, 2048 and 4096 bytes;
+    /// D-F are reserved and treated as 256 bytes, as in the 2008 edition).
     public var maxFrameSize: Int {
         switch fsci {
         case 0: 16
@@ -138,6 +151,10 @@ public struct ATSInfo: Sendable, Equatable, Codable {
         case 6: 96
         case 7: 128
         case 8: 256
+        case 9: 512
+        case 10: 1024
+        case 11: 2048
+        case 12: 4096
         default: 256
         }
     }

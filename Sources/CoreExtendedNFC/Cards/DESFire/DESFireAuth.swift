@@ -4,7 +4,13 @@ public extension DESFireCommands {
     /// AuthenticateISO (0x1A) — 2K3DES mutual authentication.
     ///
     /// This establishes card-side authentication state for subsequent plain reads.
-    /// Session key diversification beyond the 2K3DES flow remains out of scope.
+    /// A 16-byte key whose halves are equal (including the all-zero factory
+    /// key) is single DES; the session key then repeats `RndA[0..3] ‖ RndB[0..3]`
+    /// in both halves, as proxmark3 `DesfireAuthenticate` does.
+    ///
+    /// Not implemented: AuthenticateAES (0xAA), 3K3DES keys, and the EV1 CMAC
+    /// secure-messaging layer for later commands (IV chaining, command MACs,
+    /// response MAC verification, enciphered communication).
     func authenticateISO(keyNo: UInt8, key: Data) async throws -> DESFireAuthenticationSession {
         try await authenticateISO(keyNo: keyNo, key: key, rndA: nil)
     }
@@ -13,10 +19,17 @@ public extension DESFireCommands {
     ///
     /// Reference: NXP AN12343 section 10.1, including the `SV1` / `SV2`
     /// session-vector derivation for `SesAuthENCKey` and `SesAuthMACKey`.
+    /// Part 1 is sent as `KeyNo ‖ LenCap ‖ PCDcap2`, where `LenCap` is
+    /// `pcdCapabilities.count` (0–6 bytes; the default sends `LenCap = 0`).
+    ///
+    /// Not implemented: AuthenticateEV2NonFirst, EV2 secure messaging for
+    /// later commands (command counter, CMACt, enciphered communication) and
+    /// Transaction MAC (TMAC) computation. Follow-up reads therefore only
+    /// work on files whose communication mode is plain.
     func authenticateEV2First(
         keyNo: UInt8,
         key: Data,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6)
+        pcdCapabilities: Data = Data()
     ) async throws -> DESFireAuthenticationSession {
         try await authenticateEV2First(
             keyNo: keyNo,
@@ -27,6 +40,9 @@ public extension DESFireCommands {
     }
 
     /// Authenticate, then immediately read a plain-communication data file.
+    ///
+    /// After AuthenticateISO the PICC appends an 8-byte EV1 CMAC to plain
+    /// responses; it is stripped from the returned data but not verified.
     func readDataAuthenticatedISO(
         fileID: UInt8,
         keyNo: UInt8,
@@ -51,7 +67,7 @@ public extension DESFireCommands {
         key: Data,
         offset: UInt32 = 0,
         length: UInt32 = 0,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6)
+        pcdCapabilities: Data = Data()
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await readDataAuthenticatedEV2(
             fileID: fileID,
@@ -65,6 +81,9 @@ public extension DESFireCommands {
     }
 
     /// Authenticate, then immediately read a plain-communication record file.
+    ///
+    /// After AuthenticateISO the PICC appends an 8-byte EV1 CMAC to plain
+    /// responses; it is stripped from the returned data but not verified.
     func readRecordsAuthenticatedISO(
         fileID: UInt8,
         keyNo: UInt8,
@@ -89,7 +108,7 @@ public extension DESFireCommands {
         key: Data,
         offset: UInt32 = 0,
         count: UInt32 = 0,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6)
+        pcdCapabilities: Data = Data()
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await readRecordsAuthenticatedEV2(
             fileID: fileID,
@@ -103,6 +122,9 @@ public extension DESFireCommands {
     }
 
     /// Authenticate, then immediately read a plain-communication value file.
+    ///
+    /// After AuthenticateISO the PICC appends an 8-byte EV1 CMAC to plain
+    /// responses; it is stripped before decoding but not verified.
     func getValueAuthenticatedISO(
         fileID: UInt8,
         keyNo: UInt8,
@@ -121,7 +143,7 @@ public extension DESFireCommands {
         fileID: UInt8,
         keyNo: UInt8,
         key: Data,
-        pcdCapabilities: Data = Data(repeating: 0x00, count: 6)
+        pcdCapabilities: Data = Data()
     ) async throws -> (session: DESFireAuthenticationSession, value: Int32) {
         try await getValueAuthenticatedEV2(
             fileID: fileID,
@@ -165,7 +187,7 @@ public extension DESFireCommands {
             rndA: rndA
         )
         let data = try await readData(fileID: fileID, offset: offset, length: length)
-        return (session, data)
+        return try (session, Self.stripEV1ResponseMAC(data))
     }
 
     func readDataAuthenticatedEV2(
@@ -197,7 +219,7 @@ public extension DESFireCommands {
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         let session = try await authenticateISO(keyNo: keyNo, key: key, rndA: rndA)
         let data = try await readRecords(fileID: fileID, offset: offset, count: count)
-        return (session, data)
+        return try (session, Self.stripEV1ResponseMAC(data))
     }
 
     func readRecordsAuthenticatedEV2(
@@ -226,7 +248,8 @@ public extension DESFireCommands {
         rndA: Data?
     ) async throws -> (session: DESFireAuthenticationSession, value: Int32) {
         let session = try await authenticateISO(keyNo: keyNo, key: key, rndA: rndA)
-        let value = try await getValue(fileID: fileID)
+        let response = try await sendCommand(Self.GET_VALUE, data: Data([fileID]))
+        let value = try Self.decodeDESFireValue(Self.stripEV1ResponseMAC(response))
         return (session, value)
     }
 
@@ -275,10 +298,7 @@ public extension DESFireCommands {
             throw NFCError.authenticationFailed
         }
 
-        let sessionKey = Data(rndAValue.prefix(4))
-            + Data(rndB.prefix(4))
-            + Data(rndAValue.suffix(4))
-            + Data(rndB.suffix(4))
+        let sessionKey = Self.deriveISOSessionKey(key: key, rndA: rndAValue, rndB: rndB)
 
         return DESFireAuthenticationSession(
             scheme: .authenticateISO,
@@ -299,13 +319,14 @@ public extension DESFireCommands {
                 "AuthenticateEV2First currently supports 16-byte AES keys"
             )
         }
-        guard pcdCapabilities.count == 6 else {
-            throw NFCError.invalidParameter("PCD capabilities must be 6 bytes")
+        guard pcdCapabilities.count <= 6 else {
+            throw NFCError.invalidParameter("PCD capabilities must be at most 6 bytes")
         }
 
+        // AN12343 §10.1: Part 1 = KeyNo ‖ LenCap ‖ PCDcap2 (LenCap bytes).
         let startResponse = try await sendAuthenticationStart(
             command: Self.AUTHENTICATE_EV2_FIRST,
-            data: Data([keyNo, 0x00])
+            data: Data([keyNo, UInt8(pcdCapabilities.count)]) + Data(pcdCapabilities)
         )
         guard startResponse.data.count >= 16 else {
             throw NFCError.invalidResponse(startResponse.data)
@@ -331,7 +352,8 @@ public extension DESFireCommands {
         )
         let finalResponse = try await sendAuthenticationContinuation(challengeCiphertext)
 
-        guard finalResponse.data.count >= 20 else {
+        // E(Kx, TI ‖ RndA' ‖ PDcap2 ‖ PCDcap2) is always exactly 32 bytes.
+        guard finalResponse.data.count == 32 else {
             throw NFCError.invalidResponse(finalResponse.data)
         }
 
@@ -340,7 +362,7 @@ public extension DESFireCommands {
             message: finalResponse.data,
             iv: Data(count: 16)
         )
-        guard decryptedResponse.count >= 20 else {
+        guard decryptedResponse.count == 32 else {
             throw NFCError.invalidResponse(finalResponse.data)
         }
 
@@ -352,8 +374,8 @@ public extension DESFireCommands {
         guard CryptoUtils.constantTimeEquals(rotatedRndA, rotateLeft(rndAValue)) else {
             throw NFCError.authenticationFailed
         }
-        let piccCapabilities = plain.count >= 26 ? Data(plain[20 ..< 26]) : Data()
-        let echoedPCDCapabilities = plain.count >= 32 ? Data(plain[26 ..< 32]) : pcdCapabilities
+        let piccCapabilities = Data(plain[20 ..< 26])
+        let echoedPCDCapabilities = Data(plain[26 ..< 32])
 
         let (sessionENCKey, sessionMACKey) = try Self.deriveEV2SessionKeys(
             staticKey: key,
@@ -370,6 +392,34 @@ public extension DESFireCommands {
             piccCapabilities: piccCapabilities,
             pcdCapabilities: echoedPCDCapabilities
         )
+    }
+
+    /// EV1 AuthenticateISO session key for a 16-byte DES/2K3DES key
+    /// (proxmark3 `DesfireGenSessionKeyEV1`, `desfirecore.c`):
+    /// `RndA[0..3] ‖ RndB[0..3] ‖ RndA[4..7] ‖ RndB[4..7]`, or, when both key
+    /// halves are equal (single DES), `RndA[0..3] ‖ RndB[0..3]` twice.
+    static func deriveISOSessionKey(key: Data, rndA: Data, rndB: Data) -> Data {
+        let a = [UInt8](rndA)
+        let b = [UInt8](rndB)
+        let k = [UInt8](key)
+        let first = Data(a[0 ..< 4]) + Data(b[0 ..< 4])
+        if k.count == 16, k[0 ..< 8] == k[8 ..< 16] {
+            return first + first
+        }
+        return first + Data(a[4 ..< 8]) + Data(b[4 ..< 8])
+    }
+
+    /// Strip the 8-byte CMAC that the PICC appends to plain-mode responses
+    /// once an EV1 (AuthenticateISO) session is active (proxmark3
+    /// `DesfireSecureChannelDecodeEV1`: "if comm mode = plain --> response
+    /// with MAC"). The MAC is not verified: that needs the EV1 CMAC IV chained
+    /// over every command since authentication, which this library does not
+    /// track.
+    static func stripEV1ResponseMAC(_ data: Data) throws -> Data {
+        guard data.count >= 8 else {
+            throw NFCError.invalidResponse(data)
+        }
+        return Data(data.dropLast(8))
     }
 
     static func deriveEV2SessionKeys(

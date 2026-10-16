@@ -273,16 +273,83 @@ struct Type4Tests {
     func `A card without the NDEF application reports not formatted`() async {
         for sw2: UInt8 in [0x82, 0x86] {
             let mock = MockTransport()
-            mock.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: sw2)]
+            // Neither the mapping 2.0 nor the mapping 1.0 NDEF application is present.
+            mock.apduResponses = Array(repeating: ResponseAPDU(data: Data(), sw1: 0x6A, sw2: sw2), count: 2)
             // before: unexpectedStatusWord(6A, 82)
             await #expect(throws: NFCError.tagNotNDEFFormatted) {
                 _ = try await Type4Reader(transport: mock).readNDEF()
             }
         }
         let other = MockTransport()
-        other.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x99)]
+        other.apduResponses = Array(repeating: ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x99), count: 2)
         await #expect(throws: NFCError.unexpectedStatusWord(0x69, 0x99)) {
             _ = try await Type4Reader(transport: other).readNDEF()
+        }
+    }
+
+    // MARK: - T4T mapping 1.0 (nfcpy tt4.py)
+
+    @Test
+    func `Mapping 1.0 tag is read through the D2760000850100 application`() async throws {
+        let mock = MockTransport()
+        let message = Data([0xD0, 0x00, 0x00])
+        mock.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // SELECT D2760000850101
+            Self.ok, // SELECT D2760000850100
+            Self.ok, // SELECT E103
+            ResponseAPDU(data: Data([
+                0x00, 0x0F, 0x10, 0x00, 0x3B, 0x00, 0x34,
+                0x04, 0x06, 0xE1, 0x04, 0x00, 0x32, 0x00, 0x00,
+            ]), sw1: 0x90, sw2: 0x00),
+            Self.ok, // SELECT E104
+            ResponseAPDU(data: Data([0x00, 0x03]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: message, sw1: 0x90, sw2: 0x00),
+        ]
+
+        let reader = Type4Reader(transport: mock)
+        // before: tagNotNDEFFormatted
+        #expect(try await reader.readNDEF() == message)
+        #expect(reader.selectedApplicationAID == Type4Constants.ndefAIDVersion1)
+
+        let selects = mock.sentAPDUs.filter { $0.ins == 0xA4 }
+        #expect(selects.map(\.data) == [
+            Type4Constants.ndefAID, Type4Constants.ndefAIDVersion1,
+            Type4Constants.ccFileID, Type4Constants.ndefFileID,
+        ])
+        #expect(selects[1].p1 == 0x04)
+        // Mapping 1.0 selects files by identifier with P2 = 00h.
+        #expect(selects[2].p1 == 0x00 && selects[2].p2 == 0x00)
+        #expect(selects[3].p1 == 0x00 && selects[3].p2 == 0x00)
+    }
+
+    @Test
+    func `Mapping 2.0 tag keeps P2 0C for file selection`() async throws {
+        let mock = MockTransport()
+        mock.apduResponses = [
+            Self.ok, Self.ok, ResponseAPDU(data: Self.cc20, sw1: 0x90, sw2: 0x00),
+            Self.ok, ResponseAPDU(data: Data([0x00, 0x00]), sw1: 0x90, sw2: 0x00),
+        ]
+        let reader = Type4Reader(transport: mock)
+        _ = try await reader.readNDEF()
+        #expect(reader.selectedApplicationAID == Type4Constants.ndefAID)
+        let fileSelects = mock.sentAPDUs.filter { $0.ins == 0xA4 && $0.p1 == 0x00 }
+        #expect(fileSelects.count == 2)
+        #expect(fileSelects.allSatisfy { $0.p2 == 0x0C })
+    }
+
+    // MARK: - Erased tag (NLEN = 0)
+
+    @Test
+    func `Erased Type 4 tag reads back as ndefMessageNotFound`() async throws {
+        let tag = SimulatedType4Tag(mlc: 0x34)
+        let info = CardInfo(type: .type4NDEF, uid: tag.identifier)
+        try await CoreExtendedNFC.writeNDEF(.text("Hi"), info: info, transport: tag)
+        #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: tag).records.count == 1)
+
+        try await CoreExtendedNFC.writeNDEF(NDEFMessage(records: []), info: info, transport: tag)
+        // before: invalidResponse from parsing an empty message
+        await #expect(throws: NFCError.ndefMessageNotFound) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: tag)
         }
     }
 

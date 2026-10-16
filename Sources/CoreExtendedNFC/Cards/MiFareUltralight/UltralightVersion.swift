@@ -35,7 +35,7 @@ public struct UltralightVersionResponse: Sendable, Equatable {
         case 0x03:
             // Ultralight family
             switch storageSize {
-            case 0x06, 0x0B:
+            case 0x0B:
                 return .mifareUltralightEV1_MF0UL11 // 48 bytes (pages 0-16)
             case 0x0E:
                 return .mifareUltralightEV1_MF0UL21 // 128 bytes (pages 0-40)
@@ -43,6 +43,11 @@ public struct UltralightVersionResponse: Sendable, Equatable {
                 return .mifareUltralight
             }
         case 0x04:
+            // NTAG I2C (NT3H1x01 / NT3H2x11) reports product subtype 05h with
+            // storage sizes that collide with NTAG216 (13h) but has a different
+            // configuration and session-register map, so it must not get the
+            // NTAG21x maps. NTAG21x uses subtypes 01h/02h/04h.
+            guard productSubtype != 0x05 else { return .mifareUltralight }
             // NTAG family. Storage sizes from the NXP NTAG210/212 and
             // NTAG213/215/216 datasheets (GET_VERSION byte 6).
             switch storageSize {

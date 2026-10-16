@@ -339,6 +339,58 @@ struct FeliCaTests {
         #expect(transport.readCount == 1)
     }
 
+    // MARK: - Block writes (Sony FeliCa Lite-S User's Manual: 1 block per write)
+
+    @Test
+    func `writeFeliCaBlocks sends one block per Write Without Encryption by default`() async throws {
+        let transport = RecordingFeliCaWriteTransport()
+        let blocks = (0 ..< 3).map { Data(repeating: UInt8($0), count: 16) }
+
+        try await CoreExtendedNFC.writeFeliCaBlocks(startingAt: 5, blocks: blocks, transport: transport)
+
+        // before: one command carrying all three blocks, which FeliCa Lite / Lite-S reject.
+        #expect(transport.writes.map(\.blockList) == [
+            [Data([0x80, 0x05])], [Data([0x80, 0x06])], [Data([0x80, 0x07])],
+        ])
+        #expect(transport.writes.map(\.blockData) == blocks.map { [$0] })
+    }
+
+    @Test
+    func `writeFeliCaBlocks groups blocks when the caller allows it`() async throws {
+        let transport = RecordingFeliCaWriteTransport()
+        let blocks = Array(repeating: Data(count: 16), count: 3)
+
+        try await CoreExtendedNFC.writeFeliCaBlocks(startingAt: 1, blocks: blocks, maxBlocksPerWrite: 2, transport: transport)
+
+        #expect(transport.writes.map(\.blockList.count) == [2, 1])
+    }
+}
+
+/// A FeliCa tag that records every Write Without Encryption.
+private final class RecordingFeliCaWriteTransport: FeliCaTagTransporting, @unchecked Sendable {
+    let identifier = Data([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF])
+    let systemCode = Data([0x88, 0xB4])
+    var writes: [(blockList: [Data], blockData: [Data])] = []
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func readWithoutEncryption(serviceCode _: Data, blockList _: [Data]) async throws -> [Data] {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func writeWithoutEncryption(serviceCode _: Data, blockList: [Data], blockData: [Data]) async throws {
+        writes.append((blockList, blockData))
+    }
+
+    func requestService(nodeCodeList: [Data]) async throws -> [Data] {
+        nodeCodeList.map { _ in Data([0x00, 0x00]) }
+    }
 }
 
 /// A FeliCa tag that leaves the field on the first block read.

@@ -237,8 +237,9 @@ struct TopLevelIntegrationTests {
     func `ISO 7816 refiner falls back to DESFire probe`() async throws {
         let transport = QueuedISO7816Transport(
             responses: [
-                ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
-                ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82),
+                ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // eMRTD SELECT
+                ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // NDEF AID D2760000850101
+                ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // NDEF mapping 1.0 AID D2760000850100
                 // HW frame: NXP, DESFire, HW major 0x12 = EV2 (MF3D(H)x2 datasheet).
                 ResponseAPDU(data: Data([0x04, 0x01, 0x01, 0x12, 0x00, 0x18, 0x05]), sw1: 0x91, sw2: 0xAF),
                 // SW frame: EV2 software major 0x02.
@@ -258,7 +259,7 @@ struct TopLevelIntegrationTests {
         let refined = try await CardInfoRefiner.refine(info, transport: transport)
 
         #expect(refined.type == .mifareDesfireEV2)
-        #expect(transport.sentAPDUs.count == 5)
+        #expect(transport.sentAPDUs.count == 6)
     }
 
     @Test

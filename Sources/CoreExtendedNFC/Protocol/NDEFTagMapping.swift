@@ -112,12 +112,75 @@ public enum NDEFTagMapping {
         return min(memoryMap.userDataByteCount, Int(bytes[2]) * 8)
     }
 
+    /// Lay out the `capacity`-byte Type 2 data area for `message`: the NDEF TLV
+    /// starting at the first byte, a Terminator TLV when there is room for one,
+    /// and zero padding. A message whose NDEF TLV fills the area exactly is
+    /// written without a terminator (NFC Forum T2T 1.0 §2.3, nfcpy `tt2.py`).
+    ///
+    /// The NDEF TLV always starts at the first byte of the area: Lock Control and
+    /// Memory Control TLVs, and the reserved or lock bytes they describe, are not
+    /// preserved. NXP Ultralight and NTAG products keep their lock and
+    /// configuration bytes outside the user area, so the layout suits them.
     public static func buildType2Area(message: Data, capacity: Int) throws -> Data {
-        let tlv = encodeNDEFTLV(message)
+        var tlv = encodeNDEFTLV(message)
+        // The Terminator TLV is optional when the NDEF TLV ends the data area.
+        if tlv.count - 1 == capacity {
+            tlv.removeLast()
+        }
         guard tlv.count <= capacity else {
-            throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: capacity)
+            throw NFCError.ndefCapacityExceeded(required: tlv.count - 1, capacity: capacity)
         }
         return tlv + Data(repeating: 0x00, count: capacity - tlv.count)
+    }
+
+    /// Order a write plan the way the NFC Forum NDEF write procedure requires
+    /// (T2T 1.0 §6.4.3, T5T 1.0 §7.5.1, nfcpy `tt2.py`): first the blocks holding
+    /// the NDEF TLV length with that length set to zero, then the other blocks,
+    /// and finally the length blocks with the real length. A write interrupted
+    /// part-way therefore leaves an empty NDEF message, never a truncated one.
+    ///
+    /// `writes` holds the block contents in block order. `tlvOffset` is the byte
+    /// offset of the NDEF TLV's T field counted from the start of block 0, and
+    /// `blockSize` is the size of one block (4 bytes for a Type 2 page). Length
+    /// blocks whose content does not change (an empty message, `03 00`) are not
+    /// written twice.
+    public static func lengthLastWriteOrder(
+        _ writes: [(block: Int, data: Data)],
+        blockSize: Int,
+        tlvOffset: Int
+    ) -> [(block: Int, data: Data)] {
+        guard blockSize > 0 else { return writes }
+        /// Byte at absolute `offset`, when a planned write covers it.
+        func byte(at offset: Int) -> UInt8? {
+            guard let write = writes.first(where: { $0.block == offset / blockSize }) else { return nil }
+            let index = offset % blockSize
+            return index < write.data.count ? write.data[write.data.startIndex + index] : nil
+        }
+        guard let first = byte(at: tlvOffset + 1) else { return writes }
+        let lengthRange = (tlvOffset + 1) ..< (tlvOffset + 1 + (first == 0xFF ? 3 : 1))
+
+        var interim: [(block: Int, data: Data)] = []
+        var body: [(block: Int, data: Data)] = []
+        var final: [(block: Int, data: Data)] = []
+        for write in writes {
+            let start = write.block * blockSize
+            let lower = max(start, lengthRange.lowerBound)
+            let upper = min(start + write.data.count, lengthRange.upperBound)
+            guard lower < upper else {
+                body.append(write)
+                continue
+            }
+            let overlap = lower ..< upper
+            var zeroed = write.data
+            for offset in overlap {
+                zeroed[zeroed.startIndex + offset - start] = 0x00
+            }
+            interim.append((write.block, zeroed))
+            if zeroed != write.data {
+                final.append(write)
+            }
+        }
+        return interim + body + final
     }
 
     /// Highest block count reachable with single-byte block addresses
@@ -127,6 +190,10 @@ public enum NDEFTagMapping {
     /// Highest block count reachable with two-byte block addresses
     /// (EXTENDED READ/WRITE SINGLE BLOCK, ISO/IEC 15693-3 commands 30h / 31h).
     public static let type5ExtendedAddressableBlocks = 65536
+
+    /// CC byte 3 b4: the tag needs the special frame format for writes
+    /// (NFC Forum T5T 1.0 §4.3.1, neard `TYPE5_CC3_SPECIAL_FRAME_FLAG`).
+    public static let type5SpecialFrameFlag: UInt8 = 0x10
 
     /// Largest MLEN an 8-byte CC can announce (16-bit field, NFC Forum T5T 1.0 §4.3.1).
     public static let type5MaximumMemoryLengthUnits = 0xFFFF
@@ -219,7 +286,10 @@ public enum NDEFTagMapping {
     /// - byte 0 must be the magic E1h or E2h, otherwise the tag is not NDEF formatted;
     /// - byte 1 b7-b6 is the major mapping version (only 1 is supported);
     /// - byte 1 b1-b0 is write access: only 00b (granted) permits writing;
-    /// - byte 2 = 00h selects the 8-byte CC (16-bit MLEN in bytes 6-7).
+    /// - byte 2 = 00h selects the 8-byte CC (16-bit MLEN in bytes 6-7);
+    /// - byte 3 b4 (Special_Frame) means writes need the ISO/IEC 15693 special
+    ///   frame (Option flag, response after an EOF). CoreNFC offers no reliable way
+    ///   to send it, so such a tag is refused with ``NFCError/unsupportedOperation(_:)``.
     public static func type5CCLength(firstBlock: Data) throws -> Int {
         let bytes = [UInt8](firstBlock.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else {
@@ -231,13 +301,17 @@ public enum NDEFTagMapping {
         guard bytes[1] & 0x03 == 0x00 else {
             throw NFCError.tagLocked
         }
+        guard bytes[3] & type5SpecialFrameFlag == 0 else {
+            throw NFCError.unsupportedOperation("Type 5 tag requires special frame writes, which are not supported")
+        }
         return bytes[2] == 0x00 ? 8 : 4
     }
 
     /// Plan the block writes that store `message` on an NDEF-formatted Type 5 tag.
     ///
     /// `leadingBytes` are the bytes read from block 0 onwards and must cover the CC.
-    /// Only the blocks holding the NDEF TLV and its terminator TLV are returned; the
+    /// Only the blocks holding the NDEF TLV and its terminator TLV are returned, in
+    /// block order (write them in ``lengthLastWriteOrder(_:blockSize:tlvOffset:)``); the
     /// CC is kept as read (a block it shares with the TLV is rewritten with the
     /// CC bytes unchanged) and memory after the terminator is left untouched.
     /// The data area is bounded by MLEN and by the first `addressableBlockCount`

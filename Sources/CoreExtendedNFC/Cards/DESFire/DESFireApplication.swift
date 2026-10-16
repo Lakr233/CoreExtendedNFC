@@ -55,15 +55,22 @@ public struct DESFireVersionInfo: Sendable {
 
     /// Determine DESFire variant from version info.
     ///
-    /// Hardware major versions per the NXP datasheets: MF3ICD40 = 0x00,
-    /// EV1 (MF3ICDx1) = 0x01, EV2 (MF3DHx2) = 0x12 (0x22 EV2 XL, 0x42 later EV2
-    /// variants), EV3 (MF3DHx3) = 0x33. Same mapping as proxmark3 `getCardType`.
+    /// Hardware major versions per the NXP datasheets and proxmark3
+    /// `getCardType` (`client/src/cmdhfmfdes.c`): MF3ICD40 = 0x00,
+    /// EV1 (MF3ICDx1) = 0x01, EV2 (MF3DHx2) = 0x12, EV2 XL = 0x22,
+    /// DESFire/EMV combo chip (hardware type 0x81) = 0x42 → EV2,
+    /// EV3 (MF3DHx3) = 0x33, EV3 on hardware type 0x81 = 0x43.
+    ///
+    /// Other parts that answer GET_VERSION — DESFire Light (type 0x08, major
+    /// 0x30), DUOX (major 0xA0), NTAG 424 DNA — fall back to the generic
+    /// `.mifareDesfire`; inspect `hardwareType` / `hardwareMajorVersion` to
+    /// tell them apart.
     public var cardType: CardType {
         switch hardwareMajorVersion {
         case 0x00: .mifareDesfire
         case 0x01: .mifareDesfireEV1
         case 0x12, 0x22, 0x42: .mifareDesfireEV2
-        case 0x33: .mifareDesfireEV3
+        case 0x33, 0x43: .mifareDesfireEV3
         default: .mifareDesfire
         }
     }

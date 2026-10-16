@@ -124,8 +124,17 @@ struct CardIdentifierATQAOrderTests {
         #expect(CardIdentifier.identify(atqa: Data([0x00, 0x02]), sak: 0x38) == .smartMX)
         // Exact AN10833 matches are kept.
         #expect(CardIdentifier.identify(atqa: Data([0x03, 0x44]), sak: 0x20) == .mifareDesfire)
-        #expect(CardIdentifier.identify(atqaValue: 0x0004, sak: 0x20) == .mifarePlusSL3_2K)
-        #expect(CardIdentifier.identify(atqaValue: 0x0042, sak: 0x20) == .mifarePlusSL3_4K)
+    }
+
+    @Test
+    func `SAK 0x20 with a MIFARE Plus ATQA is left to the refiner`() {
+        // AN10833 Rev 3.9 §2.1: MIFARE Plus SL3 is told apart by the ATS or card
+        // capabilities, not ATQA/SAK. before: mifarePlusSL3_2K / mifarePlusSL3_4K
+        for atqa: UInt16 in [0x0004, 0x0044, 0x0002, 0x0042] {
+            #expect(CardIdentifier.identify(atqaValue: atqa, sak: 0x20) == .smartMX)
+        }
+        // SL1 / SL2 SAKs still map to MIFARE Plus.
+        #expect(CardIdentifier.identify(atqaValue: 0x0042, sak: 0x11) == .mifarePlusSL2_4K)
     }
 
     @Test

@@ -44,7 +44,15 @@ open class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         throw NFCError.unsupportedOperation("FeliCa does not use ISO 7816 APDUs")
     }
 
+    /// Status flag as two hex digits, as the FeliCa manuals list them.
+    static func hex(_ flag: Int) -> String {
+        String(format: "%02X", flag)
+    }
+
     /// Read blocks without encryption from one or more services.
+    ///
+    /// A non-zero status throws ``NFCError/felicaBlockReadFailed(statusFlag:)`` with
+    /// Status Flag 1; Status Flag 2 (the error detail) is logged with it.
     open func readWithoutEncryption(
         serviceCodeList: [Data],
         blockList: [Data]
@@ -57,7 +65,7 @@ open class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
             )
         }
         guard statusFlag1 == 0, statusFlag2 == 0 else {
-            NFCLog.error("← READ_WO_ENC failed SF1=\(statusFlag1) SF2=\(statusFlag2)", source: "FeliCa")
+            NFCLog.error("← READ_WO_ENC failed SF1=\(Self.hex(statusFlag1)) SF2=\(Self.hex(statusFlag2))", source: "FeliCa")
             throw NFCError.felicaBlockReadFailed(statusFlag: Int(statusFlag1))
         }
         NFCLog.debug("← READ_WO_ENC \(blocks.count) block(s)", source: "FeliCa")
@@ -76,6 +84,9 @@ open class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     }
 
     /// Write blocks without encryption to one or more services.
+    ///
+    /// A non-zero status throws ``NFCError/felicaBlockWriteFailed(statusFlag:)`` with
+    /// Status Flag 1; Status Flag 2 (the error detail) is logged with it.
     open func writeWithoutEncryption(
         serviceCodeList: [Data],
         blockList: [Data],
@@ -90,7 +101,7 @@ open class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
             )
         }
         guard statusFlag1 == 0, statusFlag2 == 0 else {
-            NFCLog.error("← WRITE_WO_ENC failed SF1=\(statusFlag1) SF2=\(statusFlag2)", source: "FeliCa")
+            NFCLog.error("← WRITE_WO_ENC failed SF1=\(Self.hex(statusFlag1)) SF2=\(Self.hex(statusFlag2))", source: "FeliCa")
             throw NFCError.felicaBlockWriteFailed(statusFlag: Int(statusFlag1))
         }
         NFCLog.debug("← WRITE_WO_ENC OK", source: "FeliCa")

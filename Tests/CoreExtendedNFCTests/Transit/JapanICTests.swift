@@ -293,6 +293,37 @@ struct JapanICTests {
     }
 
     @Test
+    func `Ticket machine records report an entry station and no exit station`() throws {
+        // Process 0x01, 2024-03-15, station 0123, bytes 8-9 ignored; console set per Metrodroid isTVM.
+        for console in [UInt8(0x03), 0x07, 0x08, 0x12, 0x13, 0x14, 0x15] {
+            var block = hexToData("00010000306F0123ABCDF40100000000")
+            block[0] = console
+            let tx = try #require(JapanICReader.parseHistoryBlock(block))
+            #expect(tx.entryStation == "0123")
+            #expect(tx.exitStation == nil)
+        }
+    }
+
+    @Test
+    func `Bus records carry line and stop codes instead of stations`() throws {
+        // Logged bus record: console 0x05, line 0E38, stop 011F.
+        let tx = try #require(JapanICReader.parseHistoryBlock(hexToData("050F000F30B40E38011F7808000068A0")))
+        #expect(tx.type == .trip)
+        #expect(tx.entryStation == nil)
+        #expect(tx.exitStation == nil)
+        #expect(tx.metadata["busLineCode"] == "0E38")
+        #expect(tx.metadata["busStopCode"] == "011F")
+        #expect(tx.balanceAfter == 2168)
+    }
+
+    @Test
+    func `Gate records keep entry and exit stations`() throws {
+        let tx = try #require(JapanICReader.parseHistoryBlock(hexToData("1601000230B563237024A80000006E00")))
+        #expect(tx.entryStation == "6323")
+        #expect(tx.exitStation == "7024")
+    }
+
+    @Test
     func `Process type classification follows Metrodroid tables`() throws {
         func type(console: UInt8, process: UInt8) throws -> TransactionType {
             var block = Data(repeating: 0x00, count: 16)

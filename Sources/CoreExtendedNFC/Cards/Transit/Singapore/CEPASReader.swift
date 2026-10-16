@@ -127,10 +127,13 @@ open class CEPASReader: @unchecked Sendable {
 
     open class func transaction(_ record: Data, recordNumber: Int) -> TransitTransaction {
         let type: TransactionType
+        // Type codes follow Metrodroid CEPASTransaction.getType.
         switch record[0] {
-        case 0x30, 0x31: type = .trip
+        case 0x30, 0x31: type = .trip // MRT, bus
         case 0x03, 0x75: type = .topup
-        case 0x01: type = .purchase
+        case 0x76: type = .topup // bus refund: value returned to the purse
+        case 0x01: type = .purchase // retail
+        case 0x04: type = .purchase // service charge
         default: type = .unknown
         }
         // Interpret amount bytes only for recognized monetary records.

@@ -4,7 +4,9 @@
 // - ICAO Doc 9303 Part 11, Section 9.8: Secure Messaging
 // - BSI TR-03110 Part 3, Section A.3: AES-based Secure Messaging conventions
 //   https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/Technische-Richtlinien/TR-nach-Thema-sortiert/tr03110/tr-03110.html
-// - BSI TR-03110 Part 3: SSC is always 8 bytes; AES IV = AES-ECB(KSenc, 0x00^8 || SSC)
+// - ICAO Doc 9303 Part 11, §9.8.2: the SSC is as long as the cipher block (16 bytes for
+//   AES); §9.8.7.3: AES IV = AES-ECB(KSenc, SSC). This library starts sessions from an
+//   8-byte zero SSC and zero-extends it in AES mode (an implementation detail).
 // - BSI TR-03110 Part 3: MAC truncated to 8 bytes for DO'8E
 // - JMRTD AESSecureMessagingWrapper.java:
 //   https://github.com/jmrtd/jmrtd/blob/master/jmrtd/src/main/java/org/jmrtd/AESSecureMessagingWrapper.java
@@ -15,10 +17,11 @@ import Testing
 struct AESSecureMessagingTests {
     // MARK: - SSC Convention
 
-    // BSI TR-03110 Part 3, Section A.3: SSC is always 8 bytes
+    // Initial SSC length passed by BAC/PACE/CA (implementation detail; the AES SSC in
+    // use is 16 bytes, ICAO 9303-11 §9.8.2).
 
     @Test
-    func `SSC is always 8 bytes regardless of mode`() {
+    func `Initial SSC length is 8 bytes regardless of mode`() {
         #expect(SMEncryptionMode.tripleDES.sscLength == 8)
         #expect(SMEncryptionMode.aes128.sscLength == 8)
         #expect(SMEncryptionMode.aes192.sscLength == 8)

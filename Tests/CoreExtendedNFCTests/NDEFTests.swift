@@ -135,13 +135,13 @@ struct NDEFTests {
         // NTAG215: page 3 = E1 10 3E 00, so the NDEF area is 0x3E × 8 = 496 bytes.
         transport.responses = [Data([0xE1, 0x10, 0x3E, 0x00]) + Data(count: 12)]
             + Array(repeating: Data([0x0A]), count: 200)
-        // 498-byte payload: TLV = 03 FF 01 F2 + 498 + FE = 503 bytes. It fits the 504
-        // user bytes but not the 496-byte data area readers scan.
+        // 498-byte payload: TLV = 03 FF 01 F2 + 498 = 502 bytes (plus an optional FE).
+        // It fits the 504 user bytes but not the 496-byte data area readers scan.
         // Record: header, type length, 4-byte payload length, "a/b", payload = 9 + 489 bytes.
         let message = NDEFMessage(records: [.mime(type: "a/b", data: Data(count: 489))])
         #expect(message.data.count == 498)
 
-        await #expect(throws: NFCError.ndefCapacityExceeded(required: 503, capacity: 496)) {
+        await #expect(throws: NFCError.ndefCapacityExceeded(required: 502, capacity: 496)) {
             try await CoreExtendedNFC.writeNDEF(
                 message,
                 info: CardInfo(type: .ntag215, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
@@ -264,7 +264,7 @@ struct NDEFTests {
     func `Unified Type 2 NDEF write lays out TLV pages`() async throws {
         let transport = MockTransport()
         transport.responses = [Data([0xE1, 0x10, 0x06, 0x00]) + Data(count: 12)]
-            + Array(repeating: Data([0x0A]), count: 12)
+            + Array(repeating: Data([0x0A]), count: 13)
 
         let message = NDEFMessage.text("Hi")
         try await CoreExtendedNFC.writeNDEF(
@@ -273,14 +273,17 @@ struct NDEFTests {
             transport: transport
         )
 
-        // READ page 3 (CC), then 12 page writes.
-        #expect(transport.sentCommands.count == 13)
+        // READ page 3 (CC), page 4 with L = 0, pages 5-15, then page 4 with the real L.
+        #expect(transport.sentCommands.count == 14)
         #expect(transport.sentCommands[0] == Data([0x30, 0x03]))
-        #expect(transport.sentCommands[1].prefix(2) == Data([0xA2, 0x04]))
 
         let expectedArea = try NDEFTagMapping.buildType2Area(message: message.data, capacity: 48)
-        #expect(Data(transport.sentCommands[1].dropFirst(2)) == expectedArea.prefix(4))
-        #expect(Data(transport.sentCommands[2].dropFirst(2)) == Data(expectedArea[4 ..< 8]))
+        var interim = expectedArea.prefix(4)
+        interim[interim.startIndex + 1] = 0x00
+        #expect(transport.sentCommands[1] == Data([0xA2, 0x04]) + interim)
+        #expect(transport.sentCommands[2] == Data([0xA2, 0x05]) + expectedArea[4 ..< 8])
+        #expect(transport.sentCommands[12] == Data([0xA2, 0x0F]) + expectedArea[44 ..< 48])
+        #expect(transport.sentCommands[13] == Data([0xA2, 0x04]) + expectedArea.prefix(4))
     }
 
     @Test
@@ -341,11 +344,13 @@ struct NDEFTests {
         // Text record "A"/en (NFC Forum RTD Text): D1 01 04 54 02 65 6E 41.
         // TLV 03 08 <record> FE fills bytes 4-14; block 4 is past the terminator.
         // before: CC rewritten and all 5 blocks written (block 4 zero-filled).
+        // Block 1 is written with L = 0 first and with the real L last.
         #expect(transport.readBlockNumbers.first == 0)
-        #expect(transport.writtenBlocks.map(\.number) == [1, 2, 3])
-        #expect(transport.writtenBlocks[0].data == Data([0x03, 0x08, 0xD1, 0x01]))
+        #expect(transport.writtenBlocks.map(\.number) == [1, 2, 3, 1])
+        #expect(transport.writtenBlocks[0].data == Data([0x03, 0x00, 0xD1, 0x01]))
         #expect(transport.writtenBlocks[1].data == Data([0x04, 0x54, 0x02, 0x65]))
         #expect(transport.writtenBlocks[2].data == Data([0x6E, 0x41, 0xFE, 0x00]))
+        #expect(transport.writtenBlocks[3].data == Data([0x03, 0x08, 0xD1, 0x01]))
         #expect(transport.storedBlocks[4] == Data([0xAA, 0xBB, 0xCC, 0xDD]))
     }
 
@@ -442,9 +447,139 @@ struct NDEFTests {
         )
 
         #expect(transport.readBlockNumbers == [0, 1])
-        #expect(transport.writtenBlocks.map(\.number) == [2, 3, 4])
-        #expect(transport.writtenBlocks[0].data == Data([0x03, 0x08, 0xD1, 0x01]))
+        #expect(transport.writtenBlocks.map(\.number) == [2, 3, 4, 2])
+        #expect(transport.writtenBlocks[0].data == Data([0x03, 0x00, 0xD1, 0x01]))
         #expect(transport.writtenBlocks[2].data == Data([0x6E, 0x41, 0xFE, 0x00]))
+        #expect(transport.writtenBlocks[3].data == Data([0x03, 0x08, 0xD1, 0x01]))
+    }
+
+    // MARK: - NDEF write procedure (T2T 1.0 §6.4.3, T5T 1.0 §7.5.1, nfcpy tt2.py)
+
+    @Test
+    func `Type 2 write zeroes the 3-byte TLV length first and sets it last`() async throws {
+        // NTAG215: CC2 3Eh → 496-byte area (124 pages). A 300-byte message needs the
+        // 3-byte length form: page 4 = 03 FF 01 2C.
+        let transport = MockTransport()
+        transport.responses = [Data([0xE1, 0x10, 0x3E, 0x00]) + Data(count: 12)]
+            + Array(repeating: Data([0x0A]), count: 125)
+        let message = NDEFMessage(records: [.mime(type: "a/b", data: Data(repeating: 0x5A, count: 291))])
+        #expect(message.data.count == 300)
+
+        try await CoreExtendedNFC.writeNDEF(
+            message,
+            info: CardInfo(type: .ntag215, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
+            transport: transport
+        )
+
+        let writes = Array(transport.sentCommands.dropFirst())
+        // before: page 4 written once, first, with its final length.
+        #expect(writes.count == 125)
+        #expect(writes.first == Data([0xA2, 0x04, 0x03, 0x00, 0x00, 0x00]))
+        #expect(writes.last == Data([0xA2, 0x04, 0x03, 0xFF, 0x01, 0x2C]))
+        #expect(writes.dropFirst().dropLast().allSatisfy { $0[1] != 0x04 })
+    }
+
+    @Test
+    func `Write order helper zeroes a 3-byte length spread over two blocks`() {
+        // TLV at byte 2 of block 0: 03 FF | 01 2C ...
+        let writes: [(block: Int, data: Data)] = [
+            (0, Data([0xE1, 0x40, 0x03, 0xFF])),
+            (1, Data([0x01, 0x2C, 0xAA, 0xAA])),
+            (2, Data([0xAA, 0xAA, 0xAA, 0xAA])),
+        ]
+        let ordered = NDEFTagMapping.lengthLastWriteOrder(writes, blockSize: 4, tlvOffset: 2)
+        #expect(ordered.map(\.block) == [0, 1, 2, 0, 1])
+        #expect(ordered[0].data == Data([0xE1, 0x40, 0x03, 0x00]))
+        #expect(ordered[1].data == Data([0x00, 0x00, 0xAA, 0xAA]))
+        #expect(ordered[3].data == writes[0].data)
+        #expect(ordered[4].data == writes[1].data)
+    }
+
+    @Test
+    func `Type 2 message that fills the data area exactly is written without a terminator`() async throws {
+        // Ultralight: 48-byte area. TLV 03 2E + 46-byte message = 48 bytes; no room for FE.
+        let message = NDEFMessage(records: [.mime(type: "a/b", data: Data(repeating: 0x11, count: 40))])
+        #expect(message.data.count == 46)
+        // before: ndefCapacityExceeded(required: 49, capacity: 48)
+        let area = try NDEFTagMapping.buildType2Area(message: message.data, capacity: 48)
+        #expect(area == Data([0x03, 0x2E]) + message.data)
+        #expect(throws: NFCError.ndefCapacityExceeded(required: 49, capacity: 48)) {
+            _ = try NDEFTagMapping.buildType2Area(message: message.data + Data([0x00]), capacity: 48)
+        }
+
+        let transport = MockTransport()
+        transport.responses = [Data([0xE1, 0x10, 0x06, 0x00]) + Data(count: 12)]
+            + Array(repeating: Data([0x0A]), count: 13)
+        let info = CardInfo(type: .mifareUltralight, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+        try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
+
+        // Replay the page writes (last one wins) and read the message back.
+        var memory: [UInt8: Data] = [3: Data([0xE1, 0x10, 0x06, 0x00])]
+        for command in transport.sentCommands.dropFirst() {
+            memory[command[1]] = Data(command.dropFirst(2))
+        }
+        var pages: [MemoryDump.Page] = []
+        for (number, data) in memory {
+            pages.append(MemoryDump.Page(number: number, data: data))
+        }
+        #expect(memory[0x0F] == Data(area.suffix(4)))
+        #expect(NDEFTagMapping.extractType2Message(from: pages) == message.data)
+    }
+
+    // MARK: - Erased tags read as ndefMessageNotFound on every family
+
+    @Test
+    func `Erased Type 5 tag reads back as ndefMessageNotFound`() async throws {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 8, icReference: 0x01
+            ),
+            storedBlocks: [0: Data([0xE1, 0x40, 0x03, 0x00])]
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        try await CoreExtendedNFC.writeNDEF(.text("A"), info: info, transport: transport)
+        #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: transport).records.count == 1)
+
+        try await CoreExtendedNFC.writeNDEF(NDEFMessage(records: []), info: info, transport: transport)
+        #expect(transport.storedBlocks[1]?.prefix(3) == Data([0x03, 0x00, 0xFE]))
+        // before: invalidResponse from parsing an empty message
+        await #expect(throws: NFCError.ndefMessageNotFound) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        }
+    }
+
+    @Test
+    func `Erased Type 3 tag reads back as ndefMessageNotFound`() async {
+        let transport = MockFeliCaWriteTransport()
+        transport.readResponses = [makeAttributeInfoBlock(nbr: 4, nbw: 1, nmaxb: 4, rwFlag: 0x01, ndefLength: 0)]
+        let info = CardInfo(type: .felicaLiteS, uid: transport.identifier)
+        await #expect(throws: NFCError.ndefMessageNotFound) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        }
+    }
+
+    // MARK: - T5T special frame (CC byte 3 b4)
+
+    @Test
+    func `Type 5 write refuses a CC that requires special frames`() async {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 8, icReference: 0x01
+            ),
+            storedBlocks: [0: Data([0xE1, 0x40, 0x03, 0x10])]
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        // before: written with plain frames
+        await #expect(throws: NFCError.unsupportedOperation("Type 5 tag requires special frame writes, which are not supported")) {
+            try await CoreExtendedNFC.writeNDEF(.text("A"), info: info, transport: transport)
+        }
+        #expect(transport.writtenBlocks.isEmpty)
+        // Reading is unaffected.
+        #expect(throws: Never.self) {
+            _ = try NDEFTagMapping.type5CCLength(firstBlock: Data([0xE1, 0x40, 0x03, 0x01]))
+        }
     }
 
     // MARK: - T2T NDEF detection (NFC Forum T2T 1.0 §6.4.1)
@@ -660,8 +795,9 @@ struct NDEFTests {
         #expect(transport.writtenBlocks[1].data == Data([0x00, 0x00, 0x01, 0xFF]))
         #expect(transport.writtenBlocks[2].data == Data([0x03, 0x00, 0xFE, 0x00]))
         try await CoreExtendedNFC.writeNDEF(.uri("https://a.b"), info: info, transport: transport)
-        // The CC is kept as read: the 11-byte TLV goes in blocks 2-4, after the 8-byte CC.
-        #expect(transport.writtenBlocks.suffix(3).map(\.number) == [2, 3, 4])
+        // The CC is kept as read: the 11-byte TLV goes in blocks 2-4, after the 8-byte CC,
+        // with block 2 (the TLV length) written first as L = 0 and last with the real L.
+        #expect(transport.writtenBlocks.suffix(4).map(\.number) == [2, 3, 4, 2])
         #expect(transport.storedBlocks[1] == Data([0x00, 0x00, 0x01, 0xFF]))
         #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: transport) == .uri("https://a.b"))
     }

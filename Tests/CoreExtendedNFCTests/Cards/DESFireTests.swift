@@ -314,11 +314,12 @@ struct DESFireTests {
         let session = try await commands.authenticateEV2First(
             keyNo: 0x00,
             key: Data(count: 16),
-            pcdCapabilities: Data(count: 6),
+            pcdCapabilities: Data(),
             rndA: Self.an12196RndA
         )
 
         #expect(mock.sentAPDUs.map(\.ins) == [0x71, 0xAF])
+        // AN12196 Part 1: KeyNo = 00, LenCap = 00 (no PCDcap2).
         #expect(mock.sentAPDUs[0].data == Data([0x00, 0x00]))
         #expect(
             mock.sentAPDUs[1].data
@@ -453,7 +454,8 @@ struct DESFireTests {
         mock.apduResponses = [
             ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: finalCiphertext, sw1: 0x91, sw2: 0x00),
-            ResponseAPDU(data: filePayload, sw1: 0x91, sw2: 0x00),
+            // EV1 secure channel: plain responses carry an 8-byte CMAC suffix.
+            ResponseAPDU(data: Self.concat(filePayload, Self.ev1ResponseMAC), sw1: 0x91, sw2: 0x00),
         ]
 
         let commands = DESFireCommands(transport: mock)
@@ -495,7 +497,7 @@ struct DESFireTests {
         mock.apduResponses = [
             ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: finalCiphertext, sw1: 0x91, sw2: 0x00),
-            ResponseAPDU(data: recordPayload, sw1: 0x91, sw2: 0x00),
+            ResponseAPDU(data: Self.concat(recordPayload, Self.ev1ResponseMAC), sw1: 0x91, sw2: 0x00),
         ]
 
         let commands = DESFireCommands(transport: mock)
@@ -539,7 +541,7 @@ struct DESFireTests {
         mock.apduResponses = [
             ResponseAPDU(data: encryptedRndB, sw1: 0x91, sw2: 0xAF),
             ResponseAPDU(data: finalCiphertext, sw1: 0x91, sw2: 0x00),
-            ResponseAPDU(data: valueBytes, sw1: 0x91, sw2: 0x00),
+            ResponseAPDU(data: Self.concat(valueBytes, Self.ev1ResponseMAC), sw1: 0x91, sw2: 0x00),
         ]
 
         let commands = DESFireCommands(transport: mock)
@@ -586,6 +588,10 @@ struct DESFireTests {
         #expect(mock.sentAPDUs.map(\.ins) == [0x71, 0xAF, 0x6C])
         #expect(mock.sentAPDUs[2].data == Data([0x08]))
     }
+
+    /// Placeholder 8-byte EV1 CMAC the PICC appends to plain responses after
+    /// AuthenticateISO. The library strips it without verifying it.
+    private static let ev1ResponseMAC = Data([0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18])
 
     /// AN12196 AuthenticateEV2First example RndA.
     private static let an12196RndA = Data([

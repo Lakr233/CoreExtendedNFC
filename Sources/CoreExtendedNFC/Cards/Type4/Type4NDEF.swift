@@ -125,6 +125,15 @@ public struct Type4CC: Sendable {
 open class Type4Reader: @unchecked Sendable {
     public let transport: any NFCTagTransport
 
+    /// AID of the NDEF Tag Application selected by the last
+    /// ``readCapabilityContainer()``: ``Type4Constants/ndefAID`` or, on a T4T
+    /// mapping 1.0 tag, ``Type4Constants/ndefAIDVersion1``.
+    public var selectedApplicationAID: Data {
+        selectedAID.withLock { $0 }
+    }
+
+    private let selectedAID = LockedValue(Type4Constants.ndefAID)
+
     /// Highest file offset expressible in READ/UPDATE BINARY with P1 b8 = 0
     /// (ISO/IEC 7816-4). Larger offsets need the odd-INS variants.
     public static let maxShortFileOffset = 0x7FFF
@@ -191,16 +200,27 @@ open class Type4Reader: @unchecked Sendable {
 
     /// Read and parse the Capability Container.
     ///
-    /// Throws ``NFCError/tagNotNDEFFormatted`` when the card has no NDEF Tag
-    /// Application (SELECT answered `6A82` file not found or `6A86` incorrect P1-P2).
+    /// Selects the NDEF Tag Application D2760000850101 and, when the card refuses
+    /// it, the mapping 1.0 application D2760000850100 (as nfcpy `tt4.py` does);
+    /// files of a mapping 1.0 application are then selected with P2 = 00h.
+    /// Throws ``NFCError/tagNotNDEFFormatted`` when the card has neither (SELECT
+    /// answered `6A82` file not found or `6A86` incorrect P1-P2).
     open func readCapabilityContainer() async throws -> Type4CC {
-        let selectAID = CommandAPDU.select(aid: Type4Constants.ndefAID)
-        let aidResp = try await transport.sendAPDU(selectAID)
-        guard aidResp.isSuccess else {
-            if aidResp.sw1 == 0x6A, aidResp.sw2 == 0x82 || aidResp.sw2 == 0x86 {
-                throw NFCError.tagNotNDEFFormatted
+        let aidResp = try await transport.sendAPDU(CommandAPDU.select(aid: Type4Constants.ndefAID))
+        if aidResp.isSuccess {
+            selectedAID.withLock { $0 = Type4Constants.ndefAID }
+        } else {
+            // Mapping 1.0 SELECT carries no Le (nfcpy tt4.py).
+            let legacySelect = CommandAPDU(cla: 0x00, ins: 0xA4, p1: 0x04, p2: 0x00, data: Type4Constants.ndefAIDVersion1)
+            let legacyResp = try await transport.sendAPDU(legacySelect)
+            guard legacyResp.isSuccess else {
+                if aidResp.sw1 == 0x6A, aidResp.sw2 == 0x82 || aidResp.sw2 == 0x86 {
+                    throw NFCError.tagNotNDEFFormatted
+                }
+                throw NFCError.unexpectedStatusWord(aidResp.sw1, aidResp.sw2)
             }
-            throw NFCError.unexpectedStatusWord(aidResp.sw1, aidResp.sw2)
+            NFCLog.debug("Selected the T4T mapping 1.0 NDEF application", source: "Type4")
+            selectedAID.withLock { $0 = Type4Constants.ndefAIDVersion1 }
         }
 
         try await selectFile(Type4Constants.ccFileID)
@@ -277,8 +297,13 @@ open class Type4Reader: @unchecked Sendable {
     }
 
     /// SELECT FILE by 2-byte file ID in the currently selected application.
+    /// P2 is 0Ch (no response data), or 00h in a mapping 1.0 application.
     open func selectFile(_ fileID: Data) async throws {
-        let response = try await transport.sendAPDU(CommandAPDU.selectFile(id: fileID))
+        var command = CommandAPDU.selectFile(id: fileID)
+        if selectedApplicationAID == Type4Constants.ndefAIDVersion1 {
+            command = CommandAPDU(cla: command.cla, ins: command.ins, p1: command.p1, p2: 0x00, data: fileID)
+        }
+        let response = try await transport.sendAPDU(command)
         guard response.isSuccess else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }

@@ -249,7 +249,7 @@ struct UltralightTests {
         #expect(mock.sentCommands.isEmpty)
     }
 
-    /// MF0ICU2 datasheet: lock bytes 28h-29h, AUTH0 2Ah, AUTH1 2Bh, 3DES key 2Ch-2Fh.
+    /// MF0ICU2 datasheet: lock bytes 2/3 at 28h, counter 29h, AUTH0 2Ah, AUTH1 2Bh, 3DES key 2Ch-2Fh.
     @Test(arguments: [UInt8(0x28), 0x29, 0x2A, 0x2B, 0x2C, 0x2F])
     func `WRITE refuses Ultralight C lock, AUTH and key pages with a memory map`(page: UInt8) async {
         let mock = MockTransport()
@@ -461,11 +461,35 @@ struct UltralightTests {
 
         let config = try await commands.readUltralightCAccessConfiguration()
 
+        // AUTH1 = 01h: write access restricted, reads allowed (MF0ICU2 Table 12).
         #expect(config.firstProtectedPage == 0x10)
         #expect(config.requiresAuthenticationForWrites)
-        #expect(config.requiresAuthenticationForReads)
-        #expect(config.protectionDescription == "Read and write")
+        #expect(!config.requiresAuthenticationForReads)
+        #expect(config.protectionDescription == "Write-only")
         #expect(mock.sentCommands[0] == Data([0x30, 0x28]))
+    }
+
+    @Test(arguments: [(UInt8(0x00), true), (0x01, false), (0xFE, true), (0xFF, false)])
+    func `Ultralight C AUTH1 bit 0 selects read protection`(auth1: UInt8, readsProtected: Bool) {
+        let config = UltralightCAccessConfiguration(firstProtectedPage: 0x10, auth1: auth1)
+        #expect(config.requiresAuthenticationForReads == readsProtected)
+        #expect(config.protectionDescription == (readsProtected ? "Read and write" : "Write-only"))
+    }
+
+    @Test(arguments: [(UInt8(0x03), UInt8?(0x03)), (0x2F, 0x2F), (0x30, nil), (0x31, nil), (0xFF, nil)])
+    func `Ultralight C AUTH0 at or past 30h disables protection`(auth0: UInt8, expected: UInt8?) {
+        #expect(UltralightCAccessConfiguration.firstProtectedPage(fromAUTH0: auth0) == expected)
+    }
+
+    @Test(arguments: [
+        (Data([0x00, 0x04, 0x04, 0x05, 0x02, 0x01, 0x13, 0x03]), CardType.mifareUltralight), // NTAG I2C 1k
+        (Data([0x00, 0x04, 0x04, 0x05, 0x02, 0x02, 0x15, 0x03]), CardType.mifareUltralight), // NTAG I2C plus 2k
+        (Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x13, 0x03]), CardType.ntag216),
+        (Data([0x00, 0x04, 0x04, 0x04, 0x01, 0x00, 0x13, 0x03]), CardType.ntag216), // NTAG216F
+        (Data([0x00, 0x04, 0x03, 0x01, 0x01, 0x00, 0x06, 0x03]), CardType.mifareUltralight), // undocumented size
+    ])
+    func `GET_VERSION keeps NTAG I2C and unknown sizes off the NTAG21x maps`(version: Data, expected: CardType) throws {
+        #expect(try UltralightVersionResponse(data: version).cardType == expected)
     }
 
     // MARK: - Command framing guards

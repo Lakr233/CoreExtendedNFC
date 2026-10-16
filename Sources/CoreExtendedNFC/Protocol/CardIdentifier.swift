@@ -68,7 +68,11 @@ public enum CardIdentifier {
             return .mifareClassic4K
         }
 
-        // MIFARE Plus uses several ATQA values; SAK selects the security level.
+        // MIFARE Plus uses several ATQA values; SAK selects the security level for
+        // SL1 / SL2. SAK 0x20 (SL3) is not mapped here: AN10833 Rev 3.9 §2.1 notes
+        // that "the MIFARE Plus in the SL3 uses the ATS or the card capabilities to
+        // distinguish between different card types", so SAK 0x20 falls through to
+        // the generic ISO 14443-4 card below and the refiner probes it.
         let isPlusATQA = (atqaValue == 0x0004 || atqaValue == 0x0002
             || atqaValue == 0x0044 || atqaValue == 0x0042)
         if isPlusATQA {
@@ -77,13 +81,6 @@ public enum CardIdentifier {
             case 0x18: return .mifarePlusSL1_4K
             case 0x10: return .mifarePlusSL2_2K
             case 0x11: return .mifarePlusSL2_4K
-            case 0x20:
-                // SAK 0x20 with non-DESFire ATQA maps to MIFARE Plus SL3.
-                if atqaValue == 0x0004 || atqaValue == 0x0044 {
-                    return .mifarePlusSL3_2K
-                } else {
-                    return .mifarePlusSL3_4K
-                }
             default:
                 break
             }

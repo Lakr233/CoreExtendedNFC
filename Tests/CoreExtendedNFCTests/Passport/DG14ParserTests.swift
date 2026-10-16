@@ -282,4 +282,66 @@ struct DG14ParserTests {
                     "CA OID \(caOID) should NOT be classified as Active Authentication")
         }
     }
+
+    // MARK: - PACEDomainParameterInfo (ICAO 9303-11 §9.2)
+
+    @Test
+    func `PACEDomainParameterInfo is kept apart from PACEInfo`() throws {
+        // PACEDomainParameterInfo: id-PACE-ECDH-GM (10 arcs), AlgorithmIdentifier, parameterId 32.
+        let ecPublicKey = ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID("1.2.840.10045.2.1"))
+        let namedCurve = ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID("1.3.36.3.3.2.8.1.1.7"))
+        let algorithmIdentifier = ASN1Parser.encodeTLV(tag: 0x30, value: ecPublicKey + namedCurve)
+        let domainParameterInfo = ASN1Parser.encodeTLV(
+            tag: 0x30,
+            value: ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID("0.4.0.127.0.7.2.2.4.2"))
+                + algorithmIdentifier
+                + ASN1Parser.encodeTLV(tag: 0x02, value: Data([0x20]))
+        )
+        let paceInfo = buildInfoSequence(
+            oid: "0.4.0.127.0.7.2.2.4.2.2",
+            version: 2,
+            optional: ASN1Parser.encodeTLV(tag: 0x02, value: Data([0x20]))
+        )
+        let cardAccess = ASN1Parser.encodeTLV(tag: 0x31, value: domainParameterInfo + paceInfo)
+
+        let result = try CardAccessParser.parse(cardAccess)
+
+        #expect(result.paceInfos.count == 1)
+        #expect(result.paceInfos.first?.protocolOID == "0.4.0.127.0.7.2.2.4.2.2")
+        #expect(result.paceInfos.first?.parameterID == 32)
+        #expect(result.paceDomainParameterInfos == [PACEDomainParameterInfo(
+            protocolOID: "0.4.0.127.0.7.2.2.4.2",
+            domainParameter: algorithmIdentifier,
+            parameterID: 32
+        )])
+    }
+
+    @Test
+    func `A PACE OID with a non-INTEGER version is not taken as PACEInfo`() throws {
+        let malformed = ASN1Parser.encodeTLV(
+            tag: 0x30,
+            value: ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID("0.4.0.127.0.7.2.2.4.2.2"))
+                + ASN1Parser.encodeTLV(tag: 0x30, value: Data())
+        )
+        let result = try DG14Parser.parse(buildDG14(sequences: [malformed]))
+        #expect(result.paceInfos.isEmpty)
+        #expect(result.paceDomainParameterInfos.isEmpty)
+        #expect(!result.supportsPACE)
+    }
+
+    @Test
+    func `SecurityInfos saved before PACEDomainParameterInfo existed still decode`() throws {
+        let legacyJSON = Data(#"""
+        {"paceInfos":[{"protocolOID":"0.4.0.127.0.7.2.2.4.2.2","version":2,"parameterID":12,
+        "securityProtocol":"0.4.0.127.0.7.2.2.4.2.2"}],"chipAuthInfos":[],"chipAuthPublicKeyInfos":[],
+        "activeAuthInfos":[]}
+        """#.utf8)
+        let decoded = try JSONDecoder().decode(SecurityInfos.self, from: legacyJSON)
+        #expect(decoded.paceInfos.count == 1)
+        #expect(decoded.terminalAuthInfos.isEmpty)
+        #expect(decoded.paceDomainParameterInfos.isEmpty)
+
+        let roundTripped = try JSONDecoder().decode(SecurityInfos.self, from: JSONEncoder().encode(decoded))
+        #expect(roundTripped == decoded)
+    }
 }

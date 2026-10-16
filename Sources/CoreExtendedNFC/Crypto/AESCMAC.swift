@@ -7,7 +7,12 @@ import Foundation
 /// https://csrc.nist.gov/pubs/sp/800/38/b/final
 public enum AESCMAC {
     /// Compute a 16-byte AES-CMAC. Key must be 16, 24, or 32 bytes.
+    ///
+    /// `key` and `message` may be `Data` slices with a non-zero `startIndex`;
+    /// both are copied to zero-based buffers first.
     public static func mac(key: Data, message: Data) throws -> Data {
+        let key = Data(key)
+        let message = Data(message)
         let (k1, k2) = try generateSubkeys(key: key)
 
         let blockSize = 16
@@ -45,7 +50,7 @@ public enum AESCMAC {
     /// Generate CMAC subkeys K1 and K2 per RFC 4493 section 2.3.
     public static func generateSubkeys(key: Data) throws -> (Data, Data) {
         let zeroBlock = Data(count: 16)
-        let l = try CryptoUtils.aesECBEncrypt(key: key, message: zeroBlock)
+        let l = try Data(CryptoUtils.aesECBEncrypt(key: Data(key), message: zeroBlock))
 
         let k1 = shiftLeft(l)
         let k1Final: Data = if l[0] & 0x80 != 0 {
@@ -72,6 +77,7 @@ public enum AESCMAC {
 
     /// Left-shift a 16-byte block by 1 bit.
     public static func shiftLeft(_ data: Data) -> Data {
+        let data = [UInt8](data)
         var output = Data(count: data.count)
         for i in 0 ..< data.count {
             output[i] = data[i] << 1
@@ -84,6 +90,8 @@ public enum AESCMAC {
 
     /// XOR two equal-length Data values.
     public static func xor(_ a: Data, _ b: Data) -> Data {
+        let a = [UInt8](a)
+        let b = [UInt8](b)
         var result = Data(count: a.count)
         for i in 0 ..< a.count {
             result[i] = a[i] ^ b[i]
