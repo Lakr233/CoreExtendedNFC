@@ -69,8 +69,12 @@ public extension CoreExtendedNFC {
     }
 
     /// Update the AFI and optionally lock it.
-    @available(*, deprecated, renamed: "configureISO15693AFI(_:permanentlyLock:transport:)",
-               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    @available(
+        *,
+        deprecated,
+        renamed: "configureISO15693AFI(_:permanentlyLock:transport:)",
+        message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly"
+    )
     static func configureISO15693AFI(
         _ afi: UInt8,
         lock: Bool,
@@ -96,8 +100,12 @@ public extension CoreExtendedNFC {
     }
 
     /// Update the DSFID and optionally lock it.
-    @available(*, deprecated, renamed: "configureISO15693DSFID(_:permanentlyLock:transport:)",
-               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    @available(
+        *,
+        deprecated,
+        renamed: "configureISO15693DSFID(_:permanentlyLock:transport:)",
+        message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly"
+    )
     static func configureISO15693DSFID(
         _ dsfid: UInt8,
         lock: Bool,

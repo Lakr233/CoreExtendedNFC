@@ -78,13 +78,22 @@ nonisolated struct PassportRecord: StoredRecord {
         // `resolved*ImageData` re-parse DG2/DG7 and only fall back to the stored
         // image, which this probe leaves empty.
         let probe = PassportModel(
-            ldsVersion: nil, unicodeVersion: nil, availableDataGroups: [],
-            mrz: nil, faceImageData: nil, signatureImageData: nil,
-            additionalPersonalDetails: nil, additionalDocumentDetails: nil,
-            securityInfos: nil, securityInfoRaw: nil,
-            activeAuthPublicKey: nil, activeAuthPublicKeyRaw: nil,
-            sod: nil, sodRaw: nil,
-            passiveAuthResult: nil, activeAuthResult: nil,
+            ldsVersion: nil,
+            unicodeVersion: nil,
+            availableDataGroups: [],
+            mrz: nil,
+            faceImageData: nil,
+            signatureImageData: nil,
+            additionalPersonalDetails: nil,
+            additionalDocumentDetails: nil,
+            securityInfos: nil,
+            securityInfoRaw: nil,
+            activeAuthPublicKey: nil,
+            activeAuthPublicKeyRaw: nil,
+            sod: nil,
+            sodRaw: nil,
+            passiveAuthResult: nil,
+            activeAuthResult: nil,
             rawDataGroups: raw
         )
         return PassportModel(

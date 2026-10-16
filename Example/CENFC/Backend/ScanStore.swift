@@ -145,7 +145,8 @@ class ScanStore: @MainActor ObjectListDataSource {
 
     func editItem(_ item: ScanRecord, from viewController: UIViewController) async -> ScanRecord? {
         viewController.navigationController?.pushViewController(
-            CardDetailViewController(record: item), animated: true
+            CardDetailViewController(record: item),
+            animated: true
         )
         return nil
     }

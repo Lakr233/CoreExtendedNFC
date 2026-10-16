@@ -163,7 +163,8 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
     private func setupDataSource() {
         dataSource = .init(tableView: tableView) { tableView, indexPath, recordID in
             let cell = tableView.dequeueReusableCell(
-                withIdentifier: PassportRecordCell.reuseIdentifier, for: indexPath
+                withIdentifier: PassportRecordCell.reuseIdentifier,
+                for: indexPath
             ) as! PassportRecordCell
             if let record = PassportStore.shared.record(for: recordID) {
                 cell.update(with: record)
@@ -401,7 +402,8 @@ extension PassportViewController: UITableViewDelegate {
               let record = PassportStore.shared.record(for: recordID)
         else { return }
         navigationController?.pushViewController(
-            PassportDetailViewController(record: record), animated: true
+            PassportDetailViewController(record: record),
+            animated: true
         )
     }
 

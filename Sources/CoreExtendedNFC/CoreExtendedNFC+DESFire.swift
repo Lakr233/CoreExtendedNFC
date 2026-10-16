@@ -128,8 +128,11 @@ public extension CoreExtendedNFC {
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await DESFireCommands(transport: transport)
             .readDataAuthenticatedISO(
-                fileID: fileID, keyNo: keyNo, key: key,
-                offset: offset, length: length
+                fileID: fileID,
+                keyNo: keyNo,
+                key: key,
+                offset: offset,
+                length: length
             )
     }
 
@@ -145,8 +148,11 @@ public extension CoreExtendedNFC {
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await DESFireCommands(transport: transport)
             .readDataAuthenticatedEV2(
-                fileID: fileID, keyNo: keyNo, key: key,
-                offset: offset, length: length,
+                fileID: fileID,
+                keyNo: keyNo,
+                key: key,
+                offset: offset,
+                length: length,
                 pcdCapabilities: pcdCapabilities
             )
     }
@@ -162,8 +168,11 @@ public extension CoreExtendedNFC {
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await DESFireCommands(transport: transport)
             .readRecordsAuthenticatedISO(
-                fileID: fileID, keyNo: keyNo, key: key,
-                offset: offset, count: count
+                fileID: fileID,
+                keyNo: keyNo,
+                key: key,
+                offset: offset,
+                count: count
             )
     }
 
@@ -179,8 +188,11 @@ public extension CoreExtendedNFC {
     ) async throws -> (session: DESFireAuthenticationSession, data: Data) {
         try await DESFireCommands(transport: transport)
             .readRecordsAuthenticatedEV2(
-                fileID: fileID, keyNo: keyNo, key: key,
-                offset: offset, count: count,
+                fileID: fileID,
+                keyNo: keyNo,
+                key: key,
+                offset: offset,
+                count: count,
                 pcdCapabilities: pcdCapabilities
             )
     }
@@ -206,7 +218,9 @@ public extension CoreExtendedNFC {
     ) async throws -> (session: DESFireAuthenticationSession, value: Int32) {
         try await DESFireCommands(transport: transport)
             .getValueAuthenticatedEV2(
-                fileID: fileID, keyNo: keyNo, key: key,
+                fileID: fileID,
+                keyNo: keyNo,
+                key: key,
                 pcdCapabilities: pcdCapabilities
             )
     }

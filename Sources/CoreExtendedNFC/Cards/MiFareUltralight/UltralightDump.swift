@@ -49,9 +49,12 @@ public struct UltralightDump: Sendable {
         }
 
         let ndefMessage = NDEFTagMapping.extractType2Message(from: pages)
-        facts.insert(contentsOf: [
-            .init(key: "Pages", value: "\(pages.count)"),
-        ], at: 0)
+        facts.insert(
+            contentsOf: [
+                .init(key: "Pages", value: "\(pages.count)"),
+            ],
+            at: 0
+        )
         if let ndefMessage {
             facts.append(.init(key: "NDEF Bytes", value: "\(ndefMessage.count)"))
         }

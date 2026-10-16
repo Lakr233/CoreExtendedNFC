@@ -212,7 +212,8 @@ class DumpViewController: ObjectListViewController<DumpStore>,
               let record = DumpStore.shared.record(for: recordID)
         else { return }
         navigationController?.pushViewController(
-            DumpDetailViewController(record: record), animated: true
+            DumpDetailViewController(record: record),
+            animated: true
         )
     }
 
@@ -373,7 +374,8 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     private func handleNewDump(_ record: DumpRecord) {
         DumpStore.shared.add(record)
         navigationController?.pushViewController(
-            DumpDetailViewController(record: record), animated: true
+            DumpDetailViewController(record: record),
+            animated: true
         )
     }
 

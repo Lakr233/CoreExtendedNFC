@@ -177,10 +177,13 @@ public enum CryptoUtils {
                             operation,
                             algorithm,
                             options,
-                            keyBytes.baseAddress, key.count,
+                            keyBytes.baseAddress,
+                            key.count,
                             iv.isEmpty ? nil : ivBytes.baseAddress,
-                            dataBytes.baseAddress, data.count,
-                            outputBytes.baseAddress, outputSize,
+                            dataBytes.baseAddress,
+                            data.count,
+                            outputBytes.baseAddress,
+                            outputSize,
                             &numBytesEncrypted
                         )
                     }

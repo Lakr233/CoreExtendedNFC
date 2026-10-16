@@ -121,8 +121,12 @@ enum SODParser {
                     }
                 } else {
                     // Second SET = signerInfos
-                    parseSignerInfos(child.value, sigAlgOID: &sigAlgOID,
-                                     signedAttrs: &signedAttrs, signature: &signatureData)
+                    parseSignerInfos(
+                        child.value,
+                        sigAlgOID: &sigAlgOID,
+                        signedAttrs: &signedAttrs,
+                        signature: &signatureData
+                    )
                 }
 
             case 0x30:

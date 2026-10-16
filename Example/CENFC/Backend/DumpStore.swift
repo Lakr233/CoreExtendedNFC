@@ -100,7 +100,8 @@ class DumpStore: @MainActor ObjectListDataSource {
 
     func editItem(_ item: DumpRecord, from viewController: UIViewController) async -> DumpRecord? {
         viewController.navigationController?.pushViewController(
-            DumpDetailViewController(record: item), animated: true
+            DumpDetailViewController(record: item),
+            animated: true
         )
         return nil
     }

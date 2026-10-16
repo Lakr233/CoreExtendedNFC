@@ -43,7 +43,10 @@ public struct TUnionReader: Sendable {
         let balance0 = try await readBalanceSlot(p1: TUnionConstants.GET_BALANCE_P1)
         let balance1 = try await readOptionalBalanceSlot(p1: TUnionConstants.GET_NEGATIVE_BALANCE_P1)
         let balanceFen = Self.displayBalance(primary: balance0, negative: balance1)
-        NFCLog.info("T-Union balance read complete balance0=\(NFCLog.cardValue(balance0)) balance1=\(NFCLog.cardValue(balance1)) final=\(NFCLog.cardValue(balanceFen))", source: "TUnion")
+        NFCLog.info(
+            "T-Union balance read complete balance0=\(NFCLog.cardValue(balance0)) balance1=\(NFCLog.cardValue(balance1)) final=\(NFCLog.cardValue(balanceFen))",
+            source: "TUnion"
+        )
 
         // 3. Read file 0x15 for serial and validity
         let fileInfo = try await readFileInfo()
@@ -136,7 +139,10 @@ public struct TUnionReader: Sendable {
             let readResponse = try await transport.sendAPDUWithChaining(
                 CommandAPDU.readBinary(offset: 0, length: 30)
             )
-            NFCLog.debug("T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(NFCLog.payload(readResponse.data))", source: "TUnion")
+            NFCLog.debug(
+                "T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(NFCLog.payload(readResponse.data))",
+                source: "TUnion"
+            )
             guard readResponse.isSuccess, readResponse.data.count >= 28 else {
                 return try await readFileInfoFromSFI()
             }

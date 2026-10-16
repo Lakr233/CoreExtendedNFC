@@ -33,8 +33,12 @@ public struct ISO15693SecurityManager: Sendable {
     }
 
     /// Update the AFI and optionally lock it.
-    @available(*, deprecated, renamed: "configureAFI(_:permanentlyLock:)",
-               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    @available(
+        *,
+        deprecated,
+        renamed: "configureAFI(_:permanentlyLock:)",
+        message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly"
+    )
     public func configureAFI(_ afi: UInt8, lock: Bool) async throws {
         try await configureAFI(afi, permanentlyLock: lock)
     }
@@ -51,8 +55,12 @@ public struct ISO15693SecurityManager: Sendable {
     }
 
     /// Update the DSFID and optionally lock it.
-    @available(*, deprecated, renamed: "configureDSFID(_:permanentlyLock:)",
-               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    @available(
+        *,
+        deprecated,
+        renamed: "configureDSFID(_:permanentlyLock:)",
+        message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly"
+    )
     public func configureDSFID(_ dsfid: UInt8, lock: Bool) async throws {
         try await configureDSFID(dsfid, permanentlyLock: lock)
     }

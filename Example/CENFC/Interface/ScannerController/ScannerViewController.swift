@@ -223,7 +223,8 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
               let record = ScanStore.shared.record(for: recordID)
         else { return }
         navigationController?.pushViewController(
-            CardDetailViewController(record: record), animated: true
+            CardDetailViewController(record: record),
+            animated: true
         )
     }
 
@@ -480,7 +481,8 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         } else {
             ScanStore.shared.add(record)
             navigationController?.pushViewController(
-                CardDetailViewController(record: record), animated: true
+                CardDetailViewController(record: record),
+                animated: true
             )
         }
     }
@@ -494,13 +496,15 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         alert.addAction(UIAlertAction(title: String(localized: "Overwrite"), style: .destructive) { [weak self] _ in
             ScanStore.shared.replace(existingID, with: record)
             self?.navigationController?.pushViewController(
-                CardDetailViewController(record: record), animated: true
+                CardDetailViewController(record: record),
+                animated: true
             )
         })
         alert.addAction(UIAlertAction(title: String(localized: "Save as New"), style: .default) { [weak self] _ in
             ScanStore.shared.add(record)
             self?.navigationController?.pushViewController(
-                CardDetailViewController(record: record), animated: true
+                CardDetailViewController(record: record),
+                animated: true
             )
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))

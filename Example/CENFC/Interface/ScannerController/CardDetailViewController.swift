@@ -146,17 +146,20 @@ class CardDetailViewController: StackScrollController {
         addSectionHeader(String(localized: "Identification"))
 
         addInfoRow(
-            icon: "rectangle.badge.checkmark", title: String(localized: "Card Type"),
+            icon: "rectangle.badge.checkmark",
+            title: String(localized: "Card Type"),
             description: String(localized: "Specific chip variant identified via ATQA/SAK and protocol probing."),
             value: record.cardInfo.type.description
         )
         addInfoRow(
-            icon: "square.stack.3d.up", title: String(localized: "Card Family"),
+            icon: "square.stack.3d.up",
+            title: String(localized: "Card Family"),
             description: String(localized: "Product family this chip belongs to, determines available commands."),
             value: String(describing: record.cardInfo.type.family)
         )
         addInfoRow(
-            icon: "number", title: String(localized: "UID"),
+            icon: "number",
+            title: String(localized: "UID"),
             description: String(localized: "Unique identifier burned into the chip at manufacturing."),
             value: record.cardInfo.uid.hexDump
         )
@@ -168,7 +171,8 @@ class CardDetailViewController: StackScrollController {
             isDestructive: !record.cardInfo.type.isOperableOnIOS
         )
         addInfoRow(
-            icon: "calendar", title: String(localized: "Scan Date"),
+            icon: "calendar",
+            title: String(localized: "Scan Date"),
             description: String(localized: "When this tag was last scanned by the reader."),
             value: dateFormatter.string(from: record.date)
         )
@@ -190,48 +194,55 @@ class CardDetailViewController: StackScrollController {
 
         if let atqa = record.cardInfo.atqa {
             addInfoRow(
-                icon: "arrow.right.arrow.left", title: String(localized: "ATQA"),
+                icon: "arrow.right.arrow.left",
+                title: String(localized: "ATQA"),
                 description: String(localized: "Answer To Request Type A, encodes anticollision and bit-frame info."),
                 value: atqa.hexDump
             )
         }
         if let sak = record.cardInfo.sak {
             addInfoRow(
-                icon: "arrow.right.arrow.left", title: String(localized: "SAK"),
+                icon: "arrow.right.arrow.left",
+                title: String(localized: "SAK"),
                 description: String(localized: "Select Acknowledge byte, indicates ISO 14443-4 compliance and chip family."),
                 value: String(format: "0x%02X", sak)
             )
         }
         if let ats = record.cardInfo.ats {
             addInfoRow(
-                icon: "doc.plaintext", title: String(localized: "ATS FSCI"),
+                icon: "doc.plaintext",
+                title: String(localized: "ATS FSCI"),
                 description: String(localized: "Frame Size for proximity Coupling device Integer, max frame the card accepts."),
                 value: "\(String(localized: "\(String(ats.fsci)) (max \(String(ats.maxFrameSize)) bytes)"))"
             )
             if let ta = ats.ta {
                 addInfoRow(
-                    icon: "gauge.medium", title: String(localized: "ATS TA"),
+                    icon: "gauge.medium",
+                    title: String(localized: "ATS TA"),
                     description: String(localized: "Interface byte encoding supported bitrates for both directions."),
                     value: String(format: "0x%02X", ta)
                 )
             }
             if let tb = ats.tb {
                 addInfoRow(
-                    icon: "timer", title: String(localized: "ATS TB"),
+                    icon: "timer",
+                    title: String(localized: "ATS TB"),
                     description: String(localized: "Interface byte encoding frame waiting time and startup guard time."),
                     value: String(format: "0x%02X", tb)
                 )
             }
             if let tc = ats.tc {
                 addInfoRow(
-                    icon: "gearshape", title: String(localized: "ATS TC"),
+                    icon: "gearshape",
+                    title: String(localized: "ATS TC"),
                     description: String(localized: "Interface byte indicating support for NAD and CID in protocol frames."),
                     value: String(format: "0x%02X", tc)
                 )
             }
             if !ats.historicalBytes.isEmpty {
                 addInfoRow(
-                    icon: "doc.text", title: String(localized: "ATS Historical Bytes"),
+                    icon: "doc.text",
+                    title: String(localized: "ATS Historical Bytes"),
                     description: String(localized: "Optional data from the card providing chip or application info."),
                     value: ats.historicalBytes.hexDump
                 )
@@ -239,20 +250,23 @@ class CardDetailViewController: StackScrollController {
         }
         if let hist = record.cardInfo.historicalBytes, !hist.isEmpty {
             addInfoRow(
-                icon: "doc.text", title: String(localized: "Historical Bytes"),
+                icon: "doc.text",
+                title: String(localized: "Historical Bytes"),
                 description: String(localized: "Manufacturer-defined data returned during anticollision or selection."),
                 value: hist.hexDump
             )
         }
         if let aid = record.cardInfo.initialSelectedAID, !aid.isEmpty {
             addInfoRow(
-                icon: "app.badge", title: String(localized: "Initial Selected AID"),
+                icon: "app.badge",
+                title: String(localized: "Initial Selected AID"),
                 description: String(localized: "Application Identifier that responded to ISO 7816 SELECT on first contact."),
                 value: aid
             )
             if let application = record.cardInfo.knownISO7816Application {
                 addInfoRow(
-                    icon: "list.bullet.rectangle", title: String(localized: "Known ISO 7816 Application"),
+                    icon: "list.bullet.rectangle",
+                    title: String(localized: "Known ISO 7816 Application"),
                     description: application.note,
                     value: application.displayName
                 )
@@ -271,21 +285,24 @@ class CardDetailViewController: StackScrollController {
 
         if let sysCode = record.cardInfo.systemCode {
             addInfoRow(
-                icon: "cpu", title: String(localized: "System Code"),
+                icon: "cpu",
+                title: String(localized: "System Code"),
                 description: String(localized: "FeliCa system code identifying the card's service configuration."),
                 value: sysCode.hexDump
             )
         }
         if let idm = record.cardInfo.idm {
             addInfoRow(
-                icon: "cpu", title: String(localized: "IDm"),
+                icon: "cpu",
+                title: String(localized: "IDm"),
                 description: String(localized: "FeliCa Manufacture ID, 8-byte unique identifier assigned at production."),
                 value: idm.hexDump
             )
         }
         if let icMfr = record.cardInfo.icManufacturer {
             addInfoRow(
-                icon: "building.2", title: String(localized: "IC Manufacturer"),
+                icon: "building.2",
+                title: String(localized: "IC Manufacturer"),
                 description: String(localized: "ISO 15693 IC manufacturer code registered with ISO/IEC 7816-6."),
                 value: String(format: "0x%02X (%d)", icMfr, icMfr)
             )
