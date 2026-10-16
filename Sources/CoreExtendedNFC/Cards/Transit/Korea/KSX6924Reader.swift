@@ -64,7 +64,7 @@ public struct KSX6924Reader: Sendable {
                 : []
         }
         NFCLog.info(
-            "KSX6924 read complete card=\(cardName) balance=\(balance) \(currencyCode) transactions=\(transactions.count)",
+            "KSX6924 read complete card=\(cardName) balance=\(NFCLog.cardValue(balance)) \(currencyCode) transactions=\(transactions.count)",
             source: "KSX6924"
         )
 
@@ -96,7 +96,8 @@ public struct KSX6924Reader: Sendable {
                 NFCLog.debug("KSX6924 SELECT AID unsupported card=\(name): \(message)", source: "KSX6924")
             }
         }
-        throw NFCError.unsupportedOperation("No supported KS X 6924 AID found on this card")
+        // None of the KS X 6924 AIDs was selectable; report the primary (T-Money) AID.
+        throw NFCError.applicationNotFound(aid: KSX6924Constants.tMoneyAID)
     }
 
     private func readRawBalance() async throws -> Int {

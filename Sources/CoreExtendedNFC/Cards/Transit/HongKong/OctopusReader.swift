@@ -28,7 +28,8 @@ public struct OctopusReader: Sendable {
         )
         NFCLog.debug("Octopus balance service versions=\(versions.map(\.hexString).joined(separator: ","))", source: "Octopus")
         guard let version = versions.first, version != Data([0xFF, 0xFF]) else {
-            throw NFCError.unsupportedOperation("Octopus balance service 0x0117 is unavailable on this card")
+            // Balance service 0x0117 is missing.
+            throw NFCError.tagNotSupported
         }
 
         let blocks = try await transport.readWithoutEncryption(
@@ -43,10 +44,10 @@ public struct OctopusReader: Sendable {
         let rawValue = Int(Data(block.prefix(4)).uint32BE)
         let balanceCents = Self.balanceCents(rawValue: rawValue, offset: balanceOffset)
         NFCLog.debug(
-            "Octopus balance block=\(NFCLog.payload(block)) raw=\(rawValue) offset=\(balanceOffset) cents=\(balanceCents)",
+            "Octopus balance block=\(NFCLog.payload(block)) raw=\(NFCLog.cardValue(rawValue)) offset=\(balanceOffset) cents=\(NFCLog.cardValue(balanceCents))",
             source: "Octopus"
         )
-        NFCLog.info("Octopus balance read complete balanceCents=\(balanceCents)", source: "Octopus")
+        NFCLog.info("Octopus balance read complete balanceCents=\(NFCLog.cardValue(balanceCents))", source: "Octopus")
 
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
@@ -63,9 +64,8 @@ public struct OctopusReader: Sendable {
     private func validateSystemCode() throws {
         NFCLog.debug("Octopus system code=\(transport.systemCode.hexString) expected=\(OctopusConstants.systemCode.hexString)", source: "Octopus")
         guard transport.systemCode == OctopusConstants.systemCode else {
-            throw NFCError.unsupportedOperation(
-                "Expected FeliCa system code 0x8008 (Octopus), got \(transport.systemCode.hexString)"
-            )
+            // Not an Octopus (0x8008) card.
+            throw NFCError.tagNotSupported
         }
     }
 }

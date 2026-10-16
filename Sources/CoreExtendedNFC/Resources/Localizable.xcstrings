@@ -1,15 +1,32 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-      "shouldTranslate" : false
-    },
     "%@ cards cannot be read on iOS." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "iOS 无法读取 %@ 卡片。"
+          }
+        }
+      }
+    },
+    "A PIN is required: %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要 PIN：%@。"
+          }
+        }
+      }
+    },
+    "An NFC scan is already in progress." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有一个 NFC 扫描正在进行。"
           }
         }
       }
@@ -94,6 +111,16 @@
         }
       }
     },
+    "Detected %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已识别：%@"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "zh-Hans" : {
@@ -134,13 +161,32 @@
         }
       }
     },
-    "Hold your iPhone near your My Number card" : {},
+    "Hold your iPhone near your My Number card" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 iPhone 靠近你的个人编号卡"
+          }
+        }
+      }
+    },
     "Hold your iPhone near your passport" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "将 iPhone 靠近您的护照"
+          }
+        }
+      }
+    },
+    "Invalid parameter: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "参数无效：%@"
           }
         }
       }
@@ -161,6 +207,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此设备不支持 NFC。"
+          }
+        }
+      }
+    },
+    "No NDEF message was found on the tag." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签上没有找到 NDEF 消息。"
           }
         }
       }
@@ -265,6 +321,16 @@
         }
       }
     },
+    "The NDEF message needs %lld bytes, but the tag holds only %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NDEF 消息需要 %lld 字节，但标签只能容纳 %lld 字节。"
+          }
+        }
+      }
+    },
     "The NFC session ended: %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -295,12 +361,42 @@
         }
       }
     },
+    "The NFC session was ended by the app." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NFC 会话已被应用结束。"
+          }
+        }
+      }
+    },
     "The PIN is blocked. No attempts remain." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "PIN 已锁定，没有剩余尝试次数。"
+          }
+        }
+      }
+    },
+    "The card data failed its checksum." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片数据校验和不匹配。"
+          }
+        }
+      }
+    },
+    "The card does not have application %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片中没有应用 %@。"
           }
         }
       }
@@ -335,12 +431,42 @@
         }
       }
     },
+    "The dump is malformed: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转储数据格式错误：%@"
+          }
+        }
+      }
+    },
     "The tag is locked." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "标签已锁定。"
+          }
+        }
+      }
+    },
+    "The tag is not NDEF formatted. Format it first." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签尚未进行 NDEF 格式化，请先格式化。"
+          }
+        }
+      }
+    },
+    "The tag reported ISO 15693 error %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签报告 ISO 15693 错误 %@。"
           }
         }
       }
@@ -401,6 +527,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "写入第 %lld 页失败。"
+          }
+        }
+      }
+    },
+    "Writing page %lld would permanently change the tag, so it was refused." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入第 %lld 页会永久改变标签，因此已拒绝。"
+          }
+        }
+      }
+    },
+    "card info input support PIN" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "券面事项输入辅助 PIN"
+          }
+        }
+      }
+    },
+    "digital signature PIN" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名用电子证书 PIN"
+          }
+        }
+      }
+    },
+    "individual number PIN" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人编号 PIN"
+          }
+        }
+      }
+    },
+    "user authentication PIN" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用户认证用电子证书 PIN"
           }
         }
       }

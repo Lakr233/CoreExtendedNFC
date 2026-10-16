@@ -23,7 +23,7 @@ public struct JapanICReader: Sendable {
         NFCLog.info("Japan IC balance read start idm=\(NFCLog.payload(transport.identifier))", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
-        NFCLog.info("Japan IC balance read complete balance=\(balance) JPY", source: "JapanIC")
+        NFCLog.info("Japan IC balance read complete balance=\(NFCLog.cardValue(balance)) JPY", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
@@ -38,7 +38,7 @@ public struct JapanICReader: Sendable {
         try validateSystemCode()
         let balance = try await readRawBalance()
         let transactions = try await readHistory()
-        NFCLog.info("Japan IC balance/history read complete balance=\(balance) JPY transactions=\(transactions.count)", source: "JapanIC")
+        NFCLog.info("Japan IC balance/history read complete balance=\(NFCLog.cardValue(balance)) JPY transactions=\(transactions.count)", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
@@ -53,9 +53,8 @@ public struct JapanICReader: Sendable {
     private func validateSystemCode() throws {
         NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString) expected=\(JapanICConstants.systemCode.hexString)", source: "JapanIC")
         guard transport.systemCode == JapanICConstants.systemCode else {
-            throw NFCError.unsupportedOperation(
-                "Expected FeliCa system code 0x0003 (CJRC), got \(transport.systemCode.hexString)"
-            )
+            // Not a CJRC (0x0003) card.
+            throw NFCError.tagNotSupported
         }
     }
 
@@ -69,7 +68,8 @@ public struct JapanICReader: Sendable {
         guard let version = versions.first,
             version != Data([0xFF, 0xFF])
         else {
-            throw NFCError.unsupportedOperation("Balance service 0x008B not available on this card")
+            // Balance service 0x008B is missing.
+            throw NFCError.tagNotSupported
         }
 
         // Read single balance block
@@ -87,7 +87,7 @@ public struct JapanICReader: Sendable {
         let balanceBytes = Data(block.dropFirst(JapanICConstants.balanceOffset).prefix(2))
         let balance = Int(balanceBytes.uint16LE)
         NFCLog.debug(
-            "Japan IC balance block=\(NFCLog.payload(block)) offset=\(JapanICConstants.balanceOffset) bytes=\(NFCLog.payload(balanceBytes)) value=\(balance)",
+            "Japan IC balance block=\(NFCLog.payload(block)) offset=\(JapanICConstants.balanceOffset) bytes=\(NFCLog.payload(balanceBytes)) value=\(NFCLog.cardValue(balance))",
             source: "JapanIC"
         )
         return balance
@@ -120,7 +120,7 @@ public struct JapanICReader: Sendable {
 
                 if let tx = parseHistoryBlock(block) {
                     NFCLog.debug(
-                        "Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter.map(String.init) ?? "unavailable") entry=\(tx.entryStation ?? "") exit=\(tx.exitStation ?? "")",
+                        "Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter.map { NFCLog.cardValue($0) } ?? "unavailable") entry=\(NFCLog.cardValue(tx.entryStation ?? "")) exit=\(NFCLog.cardValue(tx.exitStation ?? ""))",
                         source: "JapanIC")
                     transactions.append(tx)
                 } else {

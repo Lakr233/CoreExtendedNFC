@@ -14,12 +14,16 @@ public struct MyNumberCardReader: Sendable {
     }
 
     /// Read one or more fields from a My Number card.
+    ///
+    /// Throws ``NFCError/invalidParameter(_:)`` when `items` is empty or the PIN is not
+    /// 4 digits, and ``NFCError/pinRequired(_:)`` when `.individualNumber` is requested
+    /// without `cardInfoInputSupportPIN`.
     public func read(
         items: [MyNumberCardItem] = [.tokenInfo],
         cardInfoInputSupportPIN: String? = nil
     ) async throws -> MyNumberCardData {
         guard !items.isEmpty else {
-            throw NFCError.unsupportedOperation("No My Number card fields were requested")
+            throw NFCError.invalidParameter("No My Number card fields were requested")
         }
 
         var tokenInfo: String?
@@ -36,7 +40,7 @@ public struct MyNumberCardReader: Sendable {
                 tokenInfo = try await readTokenInfo()
             case .individualNumber:
                 guard let pin = cardInfoInputSupportPIN else {
-                    throw NFCError.unsupportedOperation("Reading My Number requires `cardInfoInputSupportPIN`")
+                    throw NFCError.pinRequired(.cardInfoInputSupport)
                 }
                 individualNumber = try await readIndividualNumber(cardInfoInputSupportPIN: pin)
             }
@@ -157,6 +161,9 @@ public struct MyNumberCardReader: Sendable {
             p2: 0x0C,
             data: aid
         ))
+        if response.isApplicationNotFound {
+            throw NFCError.applicationNotFound(aid: aid)
+        }
         try requireSuccess(response)
     }
 
@@ -190,7 +197,7 @@ public struct MyNumberCardReader: Sendable {
     private func validateCardInfoInputSupportPIN(_ pin: String) throws -> Data {
         let bytes = Data(pin.utf8)
         guard bytes.count == 4, bytes.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
-            throw NFCError.unsupportedOperation("`cardInfoInputSupportPIN` must be exactly 4 digits")
+            throw NFCError.invalidParameter("`cardInfoInputSupportPIN` must be exactly 4 digits")
         }
         return bytes
     }

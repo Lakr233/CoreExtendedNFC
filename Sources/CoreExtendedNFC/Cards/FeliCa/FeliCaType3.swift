@@ -15,17 +15,39 @@ public struct FeliCaType3Reader: Sendable {
     }
 
     /// Read the Attribute Information Block (block 0).
+    ///
+    /// Throws ``NFCError/tagNotNDEFFormatted`` when the card has no NDEF read service
+    /// (`0x000B`) or the attribute block is blank (all zeros), and
+    /// ``NFCError/checksumMismatch`` when the block checksum is wrong.
     public func readAttributeInfo() async throws -> FeliCaAttributeInfo {
         let blockList = [FeliCaFrame.blockListElement(blockNumber: 0)]
-        let blocks = try await transport.readWithoutEncryption(
-            serviceCode: Self.readServiceCode,
-            blockList: blockList
-        )
+        let blocks: [Data]
+        do {
+            blocks = try await transport.readWithoutEncryption(
+                serviceCode: Self.readServiceCode,
+                blockList: blockList
+            )
+        } catch let error as NFCError {
+            guard case .felicaBlockReadFailed = error else { throw error }
+            // Only the status flags come back; ask whether the NDEF service exists at all.
+            let versions = try await transport.requestService(nodeCodeList: [Self.readServiceCode])
+            if versions.first == Self.unavailableServiceVersion {
+                throw NFCError.tagNotNDEFFormatted
+            }
+            throw error
+        }
         guard let block = blocks.first, block.count >= 16 else {
             throw NFCError.invalidResponse(blocks.first ?? Data())
         }
+        // A blank attribute block (version 0, zero checksum) means no NDEF mapping.
+        if block.prefix(16).allSatisfy({ $0 == 0x00 }) {
+            throw NFCError.tagNotNDEFFormatted
+        }
         return try FeliCaAttributeInfo(data: block)
     }
+
+    /// Key version Request Service returns for a service the card does not have.
+    private static let unavailableServiceVersion = Data([0xFF, 0xFF])
 
     /// Read NDEF message from Type 3 tag.
     public func readNDEF() async throws -> Data {
@@ -78,7 +100,7 @@ public struct FeliCaType3Reader: Sendable {
 
         let maxLength = Int(attrInfo.nmaxb) * FeliCaMemory.blockSize
         guard message.count <= maxLength else {
-            throw NFCError.unsupportedOperation("NDEF message exceeds Type 3 tag capacity")
+            throw NFCError.ndefCapacityExceeded(required: message.count, capacity: maxLength)
         }
 
         let paddedMessageBlocks = stride(from: 0, to: message.count, by: FeliCaMemory.blockSize).map { offset in
@@ -228,7 +250,7 @@ public struct FeliCaAttributeInfo: Sendable {
             sum = sum &+ UInt16(d[i])
         }
         guard sum == checksum else {
-            throw NFCError.crcMismatch
+            throw NFCError.checksumMismatch
         }
     }
 

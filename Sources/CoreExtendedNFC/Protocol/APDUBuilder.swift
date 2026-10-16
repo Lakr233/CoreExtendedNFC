@@ -244,6 +244,14 @@ public struct ResponseAPDU: Sendable, Equatable {
         sw1 == 0x90 && sw2 == 0x00
     }
 
+    /// `true` when a SELECT by AID was refused because the card does not carry that
+    /// application: `6A82` (file or application not found), `6A86` (incorrect P1-P2),
+    /// `6A81` (function not supported), `6999` (applet selection failed), or
+    /// `6D00` / `6E00` (instruction or class not supported, e.g. no ISO SELECT at all).
+    public var isApplicationNotFound: Bool {
+        [0x6A82, 0x6A86, 0x6A81, 0x6999, 0x6D00, 0x6E00].contains(statusWord)
+    }
+
     /// `true` when more data is available via GET RESPONSE.
     public var needsGetResponse: Bool {
         sw1 == 0x61

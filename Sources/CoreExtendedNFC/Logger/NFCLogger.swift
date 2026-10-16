@@ -50,4 +50,13 @@ enum NFCLog {
     static func error(_ message: @autoclosure () -> String, source: String) {
         NFCLogConfiguration.logger?.log(.error, message(), source: source)
     }
+
+    /// A value read from the card (balance, station code, …) for a log line: the value
+    /// itself only when ``NFCLogConfiguration/logPayloads`` is on, `<redacted>` otherwise.
+    static func cardValue(
+        _ value: some CustomStringConvertible,
+        logPayloads: Bool = NFCLogConfiguration.logPayloads
+    ) -> String {
+        logPayloads ? value.description : "<redacted>"
+    }
 }

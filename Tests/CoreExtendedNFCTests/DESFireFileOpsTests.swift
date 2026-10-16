@@ -48,7 +48,7 @@ struct DESFireFileOpsTests {
         let mock = MockTransport()
         let commands = DESFireCommands(transport: mock)
 
-        await expectUnsupportedOperation(
+        await expectInvalidParameter(
             containing: "offset",
             while: {
                 _ = try await commands.readData(fileID: 0x01, offset: 0x0100_0000, length: 0)
@@ -63,7 +63,7 @@ struct DESFireFileOpsTests {
         let mock = MockTransport()
         let commands = DESFireCommands(transport: mock)
 
-        await expectUnsupportedOperation(
+        await expectInvalidParameter(
             containing: "count",
             while: {
                 _ = try await commands.readRecords(fileID: 0x01, offset: 0, count: 0x0100_0000)
@@ -73,15 +73,15 @@ struct DESFireFileOpsTests {
         #expect(mock.sentAPDUs.isEmpty)
     }
 
-    private func expectUnsupportedOperation(
+    private func expectInvalidParameter(
         containing fragment: String,
         while operation: () async throws -> Void
     ) async {
         do {
             try await operation()
-            #expect(Bool(false), "Expected unsupportedOperation containing \(fragment)")
+            #expect(Bool(false), "Expected invalidParameter containing \(fragment)")
         } catch let error as NFCError {
-            if case let .unsupportedOperation(message) = error {
+            if case let .invalidParameter(message) = error {
                 #expect(message.contains(fragment))
                 #expect(message.contains("0xFFFFFF"))
             } else {

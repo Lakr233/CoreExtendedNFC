@@ -90,7 +90,7 @@ public extension DESFireCommands {
     /// SELECT_APPLICATION: Select an application by 3-byte AID.
     func selectApplication(_ aid: Data) async throws {
         guard aid.count == 3 else {
-            throw NFCError.unsupportedOperation("AID must be 3 bytes")
+            throw NFCError.invalidParameter("AID must be 3 bytes")
         }
         _ = try await sendCommand(Self.SELECT_APPLICATION, data: aid)
     }

@@ -138,7 +138,7 @@ private extension DESFireCommands {
 
     func desfireUInt24(_ value: UInt32, label: String) throws -> Data {
         guard value <= 0x00FF_FFFF else {
-            throw NFCError.unsupportedOperation(
+            throw NFCError.invalidParameter(
                 "DESFire \(label) must fit in 3 bytes (0x000000...0xFFFFFF)"
             )
         }

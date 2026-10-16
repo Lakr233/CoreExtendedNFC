@@ -260,6 +260,57 @@ struct Type4Tests {
         #expect(tag.updateLengths.allSatisfy { $0 <= 1 })
         #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: tag) == .text("hi"))
     }
+
+    // MARK: - Typed errors
+
+    /// CC with MLc = 0x0002 and a 0x0032-byte (50-byte) writable NDEF file E104.
+    private static let smallCC = Data([
+        0x00, 0x0F, 0x20, 0x00, 0x3B, 0x00, 0x02,
+        0x04, 0x06, 0xE1, 0x04, 0x00, 0x32, 0x00, 0x00,
+    ])
+
+    @Test
+    func `A card without the NDEF application reports not formatted`() async {
+        for sw2: UInt8 in [0x82, 0x86] {
+            let mock = MockTransport()
+            mock.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: sw2)]
+            // before: unexpectedStatusWord(6A, 82)
+            await #expect(throws: NFCError.tagNotNDEFFormatted) {
+                _ = try await Type4Reader(transport: mock).readNDEF()
+            }
+        }
+        let other = MockTransport()
+        other.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x99)]
+        await #expect(throws: NFCError.unexpectedStatusWord(0x69, 0x99)) {
+            _ = try await Type4Reader(transport: other).readNDEF()
+        }
+    }
+
+    @Test
+    func `writeNDEF over the NDEF file size reports both sizes`() async {
+        let mock = MockTransport()
+        mock.apduResponses = [Self.ok, Self.ok, ResponseAPDU(data: Self.smallCC, sw1: 0x90, sw2: 0x00)]
+        await #expect(throws: NFCError.ndefCapacityExceeded(required: 51, capacity: 50)) {
+            try await Type4Reader(transport: mock).writeNDEF(Data(count: 49))
+        }
+        #expect(!mock.sentAPDUs.contains { $0.ins == 0xD6 })
+    }
+
+    @Test
+    func `UPDATE BINARY refused for security reasons reports a locked tag`() async {
+        for sw2: UInt8 in [0x82, 0x85] {
+            let mock = MockTransport()
+            mock.apduResponses = [
+                Self.ok, Self.ok, ResponseAPDU(data: Self.smallCC, sw1: 0x90, sw2: 0x00),
+                Self.ok, // SELECT NDEF file
+                ResponseAPDU(data: Data(), sw1: 0x69, sw2: sw2), // UPDATE BINARY NLEN = 0
+            ]
+            // before: unexpectedStatusWord(69, 82)
+            await #expect(throws: NFCError.tagLocked) {
+                try await Type4Reader(transport: mock).writeNDEF(Data([1, 2, 3]))
+            }
+        }
+    }
 }
 
 /// In-memory Type 4 tag that enforces MLc on UPDATE BINARY (6700 when Lc > MLc).

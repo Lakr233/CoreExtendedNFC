@@ -189,11 +189,12 @@ struct NFCSessionManagerTests {
         #expect(Self.describe(NFCReaderErrorMapping.map(code: 105)) == "unsupportedOperation")
         #expect(NFCReaderErrorMapping.map(code: 400) == nil)
 
-        if case let .invalidResponse(data) = NFCReaderErrorMapping.map(code: 102, iso15693ResponseCode: 0x12) {
-            #expect(data == Data([0x12]))
-        } else {
-            Issue.record("Tag response error should map to invalidResponse")
-        }
+        // ISO 15693 error codes: locked blocks are typed, others carry the code.
+        #expect(NFCReaderErrorMapping.map(code: 102, iso15693ResponseCode: 0x12) == .tagLocked)
+        #expect(NFCReaderErrorMapping.map(code: 102, iso15693ResponseCode: 0x14) == .tagLocked)
+        #expect(NFCReaderErrorMapping.map(code: 102, iso15693ResponseCode: 0x13) == .iso15693Error(code: 0x13))
+        #expect(NFCReaderErrorMapping.map(code: 102, iso15693ResponseCode: 0x10) == .iso15693Error(code: 0x10))
+        #expect(NFCReaderErrorMapping.map(code: 102) == .invalidResponse(Data()))
     }
 
     @Test

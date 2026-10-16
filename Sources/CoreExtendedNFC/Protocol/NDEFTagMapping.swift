@@ -94,12 +94,13 @@ enum NDEFTagMapping {
     /// Bytes available to the NDEF TLV area on a Type 2 tag whose page 3 holds `cc`
     /// (NFC Forum T2T 1.0 §6.1): CC2 × 8, but never more than the product's user memory,
     /// so a written message is always found again by ``extractType2Message(from:)``.
-    /// Throws when the tag is not NDEF formatted, uses an unsupported mapping major
+    /// Throws ``NFCError/tagNotNDEFFormatted`` when the tag is not NDEF formatted, uses
+    /// an unsupported mapping major
     /// version, or denies write access (CC3 b3-b0 ≠ 0h).
     static func type2WritableCapacity(cc: Data, memoryMap: UltralightMemoryMap) throws -> Int {
         let bytes = [UInt8](cc.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 else {
-            throw NFCError.unsupportedOperation("The tag is not NDEF formatted; format it first")
+            throw NFCError.tagNotNDEFFormatted
         }
         guard bytes[1] >> 4 <= 1 else {
             throw NFCError.unsupportedOperation("Unsupported Type 2 NDEF mapping version")
@@ -113,7 +114,7 @@ enum NDEFTagMapping {
     static func buildType2Area(message: Data, capacity: Int) throws -> Data {
         let tlv = encodeNDEFTLV(message)
         guard tlv.count <= capacity else {
-            throw NFCError.unsupportedOperation("NDEF message exceeds Type 2 user memory")
+            throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: capacity)
         }
         return tlv + Data(repeating: 0x00, count: capacity - tlv.count)
     }
@@ -167,7 +168,7 @@ enum NDEFTagMapping {
 
         let tlv = encodeNDEFTLV(message)
         guard tlv.count <= memoryLengthUnits * 8 else {
-            throw NFCError.unsupportedOperation("NDEF message exceeds Type 5 user memory")
+            throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: memoryLengthUnits * 8)
         }
 
         let accessByte: UInt8 = writeable ? 0x40 : 0x43
@@ -201,7 +202,7 @@ enum NDEFTagMapping {
     static func type5CCLength(firstBlock: Data) throws -> Int {
         let bytes = [UInt8](firstBlock.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else {
-            throw NFCError.unsupportedOperation("The tag is not NDEF formatted; format it first")
+            throw NFCError.tagNotNDEFFormatted
         }
         guard bytes[1] >> 6 <= 1 else {
             throw NFCError.unsupportedOperation("Unsupported Type 5 NDEF mapping version")
@@ -239,7 +240,7 @@ enum NDEFTagMapping {
         let capacity = min(areaLength, max(0, addressableBytes - ccLength))
         let tlv = encodeNDEFTLV(message)
         guard tlv.count <= capacity else {
-            throw NFCError.unsupportedOperation("NDEF message exceeds Type 5 user memory")
+            throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: capacity)
         }
 
         var area = Data(cc) + tlv

@@ -236,7 +236,7 @@ extension DESFireCommands {
         rndA: Data?
     ) async throws -> DESFireAuthenticationSession {
         guard key.count == 16 else {
-            throw NFCError.unsupportedOperation(
+            throw NFCError.invalidParameter(
                 "AuthenticateISO currently supports 16-byte 2K3DES keys"
             )
         }
@@ -295,12 +295,12 @@ extension DESFireCommands {
         rndA: Data?
     ) async throws -> DESFireAuthenticationSession {
         guard key.count == 16 else {
-            throw NFCError.unsupportedOperation(
+            throw NFCError.invalidParameter(
                 "AuthenticateEV2First currently supports 16-byte AES keys"
             )
         }
         guard pcdCapabilities.count == 6 else {
-            throw NFCError.unsupportedOperation("PCD capabilities must be 6 bytes")
+            throw NFCError.invalidParameter("PCD capabilities must be 6 bytes")
         }
 
         let startResponse = try await sendAuthenticationStart(

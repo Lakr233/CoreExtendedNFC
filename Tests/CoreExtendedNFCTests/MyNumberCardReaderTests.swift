@@ -244,7 +244,7 @@ struct MyNumberCardReaderTests {
             _ = try await reader.readIndividualNumber(cardInfoInputSupportPIN: "12A4")
             #expect(Bool(false), "Expected invalid PIN format to throw")
         } catch let error as NFCError {
-            if case let .unsupportedOperation(message) = error {
+            if case let .invalidParameter(message) = error {
                 #expect(message.contains("4 digits"))
             } else {
                 #expect(Bool(false), "Unexpected error type: \(error)")
@@ -308,6 +308,32 @@ struct MyNumberCardReaderTests {
     }
 
     /// `.some(count)` for `.pinVerificationFailed(count)`, `nil` for any other error.
+    @Test
+    func `Reading the individual number without a PIN reports pinRequired before any APDU`() async {
+        let transport = MockTransport()
+        // before: unsupportedOperation("Reading My Number requires `cardInfoInputSupportPIN`")
+        await #expect(throws: NFCError.pinRequired(.cardInfoInputSupport)) {
+            _ = try await MyNumberCardReader(transport: transport).read(items: [.individualNumber])
+        }
+        #expect(transport.sentAPDUs.isEmpty)
+    }
+
+    @Test
+    func `Reading no fields is an invalid parameter`() async {
+        await #expect(throws: NFCError.invalidParameter("No My Number card fields were requested")) {
+            _ = try await MyNumberCardReader(transport: MockTransport()).read(items: [])
+        }
+    }
+
+    @Test
+    func `A card without the JPKI application reports applicationNotFound`() async {
+        let transport = MockTransport()
+        transport.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82)]
+        await #expect(throws: NFCError.applicationNotFound(aid: MyNumberCardConstants.jpkiAID)) {
+            _ = try await MyNumberCardReader(transport: transport).readTokenInfo()
+        }
+    }
+
     private static func remainingAttempts(_ error: NFCError?) -> Int?? {
         guard case let .pinVerificationFailed(remaining)? = error else { return nil }
         return .some(remaining)

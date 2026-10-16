@@ -31,22 +31,22 @@ public struct NDEFMessage: Sendable, Equatable {
         NDEFRecord.serializeMessage(records)
     }
 
-    /// Serialised message bytes, throwing ``NFCError/unsupportedOperation(_:)`` when a
+    /// Serialised message bytes, throwing ``NFCError/invalidParameter(_:)`` when a
     /// record cannot be encoded (type or ID longer than 255 bytes, payload longer than
     /// 2³² − 1 bytes, or no records at all).
     public func validatedData() throws -> Data {
         guard !records.isEmpty else {
-            throw NFCError.unsupportedOperation("An NDEF message needs at least one record")
+            throw NFCError.invalidParameter("An NDEF message needs at least one record")
         }
         for record in records {
             guard record.type.count <= 0xFF else {
-                throw NFCError.unsupportedOperation("NDEF record type is \(record.type.count) bytes; the limit is 255")
+                throw NFCError.invalidParameter("NDEF record type is \(record.type.count) bytes; the limit is 255")
             }
             guard record.identifier.count <= 0xFF else {
-                throw NFCError.unsupportedOperation("NDEF record ID is \(record.identifier.count) bytes; the limit is 255")
+                throw NFCError.invalidParameter("NDEF record ID is \(record.identifier.count) bytes; the limit is 255")
             }
             guard UInt64(record.payload.count) <= UInt64(UInt32.max) else {
-                throw NFCError.unsupportedOperation("NDEF record payload is too large")
+                throw NFCError.invalidParameter("NDEF record payload is too large")
             }
         }
         return data

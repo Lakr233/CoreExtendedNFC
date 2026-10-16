@@ -9,6 +9,10 @@ public enum CoreExtendedNFC {
     ///
     /// The returned ``NFCSessionManager`` keeps the NFC session alive.
     /// Call ``NFCSessionManager/invalidate()`` when you are done with the transport.
+    ///
+    /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
+    ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
+    ///   usually stay silent then.
     public static func scan(
         message: String? = nil
     ) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager) {
@@ -17,7 +21,7 @@ public enum CoreExtendedNFC {
 
         do {
             let refinedInfo = try await refineCardInfo(info, transport: transport)
-            manager.setAlertMessage("\(refinedInfo.type.description)")
+            manager.setAlertMessage(String(localized: "Detected \(refinedInfo.type.description)", bundle: .module))
             return (refinedInfo, transport, manager)
         } catch {
             // Never leave the system NFC sheet open when the caller gets no manager back.
@@ -86,9 +90,8 @@ public enum CoreExtendedNFC {
             )
 
         default:
-            throw NFCError.unsupportedOperation(
-                "Automatic dump not yet supported for \(info.type.description)"
-            )
+            // No dump flow exists for this card type.
+            throw NFCError.tagNotSupported
         }
     }
 
@@ -118,19 +121,23 @@ public enum CoreExtendedNFC {
         case .ntag, .mifareUltralight:
             let dump = try await dumpCard(info: info, transport: transport)
             guard let parsed = dump.parsedNDEFMessage else {
-                throw NFCError.unsupportedOperation("No NDEF message detected for \(info.type.description)")
+                // NFC Forum T2T 1.0 §6.4.1: without the E1h CC magic the tag is not NDEF formatted.
+                let ccPage = dump.pages.first(where: { $0.number == 3 })
+                guard ccPage?.data.first == 0xE1 else { throw NFCError.tagNotNDEFFormatted }
+                throw NFCError.ndefMessageNotFound
             }
             return parsed
         default:
-            throw NFCError.unsupportedOperation("Unified NDEF reading is not supported for \(info.type.description)")
+            throw NFCError.tagNotSupported
         }
     }
 
     /// Write an NDEF message using the best available family-specific path.
     ///
     /// Type 2 and Type 5 tags must already be NDEF formatted: the CC is read first
-    /// and the write is refused with ``NFCError/unsupportedOperation(_:)`` when it is
-    /// missing, or ``NFCError/tagLocked`` when it denies write access. Only the
+    /// and the write is refused with ``NFCError/tagNotNDEFFormatted`` when it is
+    /// missing, ``NFCError/ndefCapacityExceeded(required:capacity:)`` when the message
+    /// does not fit, or ``NFCError/tagLocked`` when it denies write access. Only the
     /// blocks holding the NDEF TLV are written on Type 5 tags; use
     /// ``formatNDEF(info:transport:)`` to format a blank tag.
     public static func writeNDEF(
@@ -159,7 +166,7 @@ public enum CoreExtendedNFC {
             }
             try await writeType5NDEF(payload, transport: iso15693Transport)
         default:
-            throw NFCError.unsupportedOperation("Unified NDEF writing is not yet supported for \(info.type.description)")
+            throw NFCError.tagNotSupported
         }
     }
 
@@ -183,9 +190,8 @@ public enum CoreExtendedNFC {
             }
             try await formatType5NDEF(transport: iso15693Transport)
         default:
-            throw NFCError.unsupportedOperation(
-                "NDEF formatting is not supported for \(info.type.description)"
-            )
+            // Type 3 / Type 4 CCs are managed by the tag firmware.
+            throw NFCError.tagNotSupported
         }
     }
 
@@ -213,6 +219,9 @@ public enum CoreExtendedNFC {
     ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
     ///   - message: The alert message shown during NFC scanning.
     /// - Returns: A ``PassportModel`` with all parsed data.
+    /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
+    ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
+    ///   usually stay silent then.
     public static func readPassport(
         mrzKey: String,
         dataGroups: [DataGroupId] = [.com, .dg1, .dg2, .sod],
@@ -504,7 +513,7 @@ public enum CoreExtendedNFC {
             try Task.checkCancellation()
             let number = blocks.count
             guard number < addressableBlocks, let address = UInt8(exactly: number) else {
-                throw NFCError.unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+                throw NFCError.ndefMessageNotFound
             }
             let data = try await Data(transport.readBlock(address).prefix(blockSize))
             blocks.append(.init(number: number, data: data))
@@ -513,7 +522,7 @@ public enum CoreExtendedNFC {
 
         try await readNextBlock()
         guard let ccLength = NDEFTagMapping.type5FormattedCCLength(leadingBytes: leadingBytes) else {
-            throw NFCError.unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+            throw NFCError.tagNotNDEFFormatted
         }
         while leadingBytes.count < ccLength {
             try await readNextBlock()
@@ -526,7 +535,7 @@ public enum CoreExtendedNFC {
         }
 
         guard let payload = NDEFTagMapping.extractType5Message(from: blocks) else {
-            throw NFCError.unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+            throw NFCError.ndefMessageNotFound
         }
         return payload
     }

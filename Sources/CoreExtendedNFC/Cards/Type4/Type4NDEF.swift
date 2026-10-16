@@ -187,10 +187,16 @@ public struct Type4Reader: Sendable {
     }
 
     /// Read and parse the Capability Container.
+    ///
+    /// Throws ``NFCError/tagNotNDEFFormatted`` when the card has no NDEF Tag
+    /// Application (SELECT answered `6A82` file not found or `6A86` incorrect P1-P2).
     public func readCapabilityContainer() async throws -> Type4CC {
         let selectAID = CommandAPDU.select(aid: Type4Constants.ndefAID)
         let aidResp = try await transport.sendAPDU(selectAID)
         guard aidResp.isSuccess else {
+            if aidResp.sw1 == 0x6A, aidResp.sw2 == 0x82 || aidResp.sw2 == 0x86 {
+                throw NFCError.tagNotNDEFFormatted
+            }
             throw NFCError.unexpectedStatusWord(aidResp.sw1, aidResp.sw2)
         }
 
@@ -226,7 +232,10 @@ public struct Type4Reader: Sendable {
         }
         let headerLength = cc.ndefLengthFieldSize
         guard message.count + headerLength <= Int(cc.maxNDEFFileSize) else {
-            throw NFCError.unsupportedOperation("NDEF message too large for tag")
+            throw NFCError.ndefCapacityExceeded(
+                required: message.count + headerLength,
+                capacity: Int(cc.maxNDEFFileSize)
+            )
         }
         guard message.count + headerLength <= Self.maxShortFileOffset + 1 else {
             throw NFCError.unsupportedOperation("Type 4 NDEF files larger than 32 KB are not supported")
@@ -276,6 +285,11 @@ public struct Type4Reader: Sendable {
         }
         let response = try await transport.sendAPDU(CommandAPDU.updateBinary(offset: fileOffset, data: data))
         guard response.isSuccess else {
+            // 6982 security status not satisfied / 6985 conditions of use not satisfied:
+            // the NDEF file is write-protected even though the CC said otherwise.
+            if response.sw1 == 0x69, response.sw2 == 0x82 || response.sw2 == 0x85 {
+                throw NFCError.tagLocked
+            }
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
     }

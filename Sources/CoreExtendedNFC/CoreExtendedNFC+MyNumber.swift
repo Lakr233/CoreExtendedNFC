@@ -3,7 +3,11 @@ import Foundation
 public extension CoreExtendedNFC {
     /// Scan a Japanese My Number card and read the requested fields.
     ///
-    /// - Note: Reading `.individualNumber` requires `cardInfoInputSupportPIN`.
+    /// - Note: Reading `.individualNumber` requires `cardInfoInputSupportPIN`; without it
+    ///   ``NFCError/pinRequired(_:)`` is thrown.
+    /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
+    ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
+    ///   usually stay silent then.
     static func readMyNumberCard(
         items: [MyNumberCardItem] = [.tokenInfo],
         cardInfoInputSupportPIN: String? = nil,

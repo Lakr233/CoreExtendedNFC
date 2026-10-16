@@ -30,9 +30,12 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
     /// manager invalidates its session, so keep a reference for as long as you use it.
     ///
     /// Only one scan may be pending per manager; a concurrent call throws
-    /// ``NFCError/unsupportedOperation(_:)``. Cancelling the calling task — while
+    /// ``NFCError/scanInProgress``. Cancelling the calling task — while
     /// waiting for a tag or while the detected tag is being connected — invalidates
-    /// the session and throws `CancellationError`.
+    /// the session and throws `CancellationError`. Ending a pending scan with
+    /// ``invalidate()`` or ``invalidate(errorMessage:)`` throws
+    /// ``NFCError/sessionInvalidatedByCaller``. All three report
+    /// ``Swift/Error/isNFCCancellation`` as `true`.
     public func scan(
         for targets: [PollingTarget] = [.all],
         message: String? = nil
@@ -47,7 +50,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
                     return
                 }
                 guard !scanState.hasPendingScan else {
-                    continuation.resume(throwing: Self.scanInProgressError)
+                    continuation.resume(throwing: NFCError.scanInProgress)
                     return
                 }
                 let pollingOptions = Self.pollingOptions(from: targets)
@@ -55,16 +58,14 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
                     pollingOption: pollingOptions,
                     delegate: self
                 ) else {
-                    continuation.resume(throwing: NFCError.unsupportedOperation(
-                        "NFC tag reading is not available on this device"
-                    ))
+                    continuation.resume(throwing: NFCError.nfcNotAvailable)
                     return
                 }
 
                 let monitor = SessionTerminationMonitor()
                 switch scanState.begin(scanID: scanID, session: session, monitor: monitor, continuation: continuation) {
                 case .busy:
-                    continuation.resume(throwing: Self.scanInProgressError)
+                    continuation.resume(throwing: NFCError.scanInProgress)
                 case .cancelled:
                     continuation.resume(throwing: CancellationError())
                 case let .started(replacedSession):
@@ -103,14 +104,14 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
     public func invalidate() {
         let (session, continuation) = scanState.detach()
         session?.invalidate()
-        continuation?.resume(throwing: NFCError.sessionInvalidated("Session invalidated by the caller"))
+        continuation?.resume(throwing: NFCError.sessionInvalidatedByCaller)
     }
 
     /// Invalidate the session showing an error message.
     public func invalidate(errorMessage: String) {
         let (session, continuation) = scanState.detach()
         session?.invalidate(errorMessage: errorMessage)
-        continuation?.resume(throwing: NFCError.sessionInvalidated(errorMessage))
+        continuation?.resume(throwing: NFCError.sessionInvalidatedByCaller)
     }
 
     /// End the session after a failed operation and return the error to rethrow.
@@ -218,10 +219,6 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
             return mapped
         }
         return NFCError.sessionInvalidated(error.localizedDescription)
-    }
-
-    private static var scanInProgressError: NFCError {
-        .unsupportedOperation("A scan is already in progress on this NFCSessionManager")
     }
 
     // MARK: - Private

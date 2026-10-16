@@ -31,7 +31,10 @@ public struct TUnionReader: Sendable {
             CommandAPDU.select(aid: TUnionConstants.tUnionAID)
         )
         guard selectResponse.isSuccess else {
-            throw NFCError.unsupportedOperation("T-Union AID not found on this card")
+            if selectResponse.isApplicationNotFound {
+                throw NFCError.applicationNotFound(aid: TUnionConstants.tUnionAID)
+            }
+            throw NFCError.unexpectedStatusWord(selectResponse.sw1, selectResponse.sw2)
         }
         NFCLog.debug("T-Union SELECT AID ok data=\(NFCLog.payload(selectResponse.data))", source: "TUnion")
 
@@ -40,7 +43,7 @@ public struct TUnionReader: Sendable {
         let balance0 = try await readBalanceSlot(p1: TUnionConstants.GET_BALANCE_P1)
         let balance1 = try await readOptionalBalanceSlot(p1: TUnionConstants.GET_NEGATIVE_BALANCE_P1)
         let balanceFen = Self.displayBalance(primary: balance0, negative: balance1)
-        NFCLog.info("T-Union balance read complete balance0=\(balance0) balance1=\(balance1) final=\(balanceFen)", source: "TUnion")
+        NFCLog.info("T-Union balance read complete balance0=\(NFCLog.cardValue(balance0)) balance1=\(NFCLog.cardValue(balance1)) final=\(NFCLog.cardValue(balanceFen))", source: "TUnion")
 
         // 3. Read file 0x15 for serial and validity
         let fileInfo = try await readFileInfo()

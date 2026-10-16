@@ -89,8 +89,16 @@ enum NFCReaderErrorMapping {
             return .tagConnectionLost
         // NFCReaderTransceiveErrorTagResponseError: the tag answered with an error.
         case 102:
+            // ISO 15693 tags report an ISO/IEC 15693-3 §7.4 error code with the response.
             if let iso15693ResponseCode, let byte = UInt8(exactly: iso15693ResponseCode) {
-                return .invalidResponse(Data([byte]))
+                switch byte {
+                // 0x12: block already locked, cannot change content.
+                // 0x14: block could not be locked (already locked or lock failed).
+                case 0x12, 0x14:
+                    return .tagLocked
+                default:
+                    return .iso15693Error(code: byte)
+                }
             }
             return .invalidResponse(Data())
         // NFCReaderTransceiveErrorSessionInvalidated
@@ -126,7 +134,8 @@ extension NFCError {
     /// commands in the same session cannot succeed.
     var isSessionLoss: Bool {
         switch self {
-        case .sessionInvalidated, .sessionTimeout, .tagConnectionLost, .nfcNotAvailable, .userCanceled, .systemBusy:
+        case .sessionInvalidated, .sessionInvalidatedByCaller, .sessionTimeout, .tagConnectionLost, .nfcNotAvailable,
+             .userCanceled, .systemBusy:
             true
         default:
             false

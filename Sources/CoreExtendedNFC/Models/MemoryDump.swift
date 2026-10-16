@@ -396,7 +396,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
 
         let data = try encoder.encode(snapshot)
         guard let string = String(data: data, encoding: .utf8) else {
-            throw NFCError.invalidResponse(data)
+            throw NFCError.malformedDump("JSON export is not valid UTF-8")
         }
         return string
     }
@@ -595,7 +595,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             throw NFCError.unsupportedOperation(message)
         }
         if let malformed = pages.first(where: { $0.data.count != 4 }) {
-            throw NFCError.invalidResponse(malformed.data)
+            throw NFCError.malformedDump("Page \(malformed.number) has \(malformed.data.count) bytes; Type 2 pages have 4")
         }
         return pages.sorted(by: { $0.number < $1.number })
     }
@@ -672,7 +672,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
 
         func validatedPage() throws -> Page {
             guard let pageNumber = UInt8(exactly: number) else {
-                throw NFCError.invalidResponse(Data("Page \(number)".utf8))
+                throw NFCError.malformedDump("Page \(number) is outside the Type 2 page range 0-255")
             }
             return Page(number: pageNumber, data: data)
         }
@@ -703,13 +703,13 @@ public struct MemoryDump: Sendable, Codable, Equatable {
 
                 if key.hasPrefix("Page "), let pageNumber = Int(key.dropFirst(5)) {
                     guard let pageData = Data(hexString: value), pageData.count == 4 else {
-                        throw NFCError.invalidResponse(Data(value.utf8))
+                        throw NFCError.malformedDump("Page \(pageNumber) is not 4 bytes of hex")
                     }
                     // Type 2 page addresses are one byte (0...255), and each page appears once.
                     guard UInt8(exactly: pageNumber) != nil,
                           !pageRecords.contains(where: { $0.number == pageNumber })
                     else {
-                        throw NFCError.invalidResponse(Data(line.utf8))
+                        throw NFCError.malformedDump("Page \(pageNumber) is out of range or repeated")
                     }
                     pageRecords.append(.init(number: pageNumber, data: pageData))
                 } else {
@@ -725,7 +725,7 @@ public struct MemoryDump: Sendable, Codable, Equatable {
                   let totalPages = Int(totalPagesValue),
                   totalPages > 0
             else {
-                throw NFCError.unsupportedOperation("Unsupported Flipper NFC file format")
+                throw NFCError.malformedDump("Unsupported Flipper NFC file format")
             }
 
             self.uid = uid
@@ -828,18 +828,18 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             } else if Self.looksLikeHeader(data) {
                 // A header whose page count disagrees with the file (truncated or
                 // concatenated dump): importing it as plain pages would shift every page.
-                throw NFCError.invalidResponse(Data(data.prefix(Self.headerLength)))
+                throw NFCError.malformedDump("Proxmark3 header page count does not match the file length")
             } else if data.count.isMultiple(of: 4) {
                 version = nil
                 payload = data
             } else {
-                throw NFCError.invalidResponse(data)
+                throw NFCError.malformedDump("Dump length \(data.count) is not a multiple of 4 bytes")
             }
 
             let pageCount = payload.count / 4
             // Type 2 page addresses are one byte, so at most 256 pages.
             guard pageCount > 0, pageCount <= 256 else {
-                throw NFCError.invalidResponse(data)
+                throw NFCError.malformedDump("Dump holds \(pageCount) pages; Type 2 tags have 1-256")
             }
 
             pages = stride(from: 0, to: pageCount, by: 1).map { pageNumber in

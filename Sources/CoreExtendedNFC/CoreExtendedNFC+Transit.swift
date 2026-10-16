@@ -12,6 +12,10 @@ extension CoreExtendedNFC {
     /// 2. ISO 7816 → probe Singapore CEPAS purse
     /// 3. ISO 7816 → try KS X 6924 AIDs (T-Money / Snapper, Cashbee, MOIBA, K-Cash)
     /// 4. ISO 7816 → try T-Union AID
+    ///
+    /// Only ``NFCError/applicationNotFound(aid:)`` (or ``NFCError/tagNotSupported``)
+    /// from a reader moves on to the next one; any other error is rethrown. When no
+    /// reader recognizes the card, ``NFCError/tagNotSupported`` is thrown.
     public static func readTransitBalance(
         info: CardInfo,
         transport: any NFCTagTransport
@@ -26,7 +30,7 @@ extension CoreExtendedNFC {
             if felicaTransport.systemCode == OctopusConstants.systemCode {
                 return try await readOctopusBalance(transport: felicaTransport)
             }
-            throw NFCError.unsupportedOperation("Unsupported FeliCa transit system code \(felicaTransport.systemCode.hexString)")
+            throw NFCError.tagNotSupported
         }
 
         if let iso7816Transport = transport as? any ISO7816TagTransporting {
@@ -39,19 +43,19 @@ extension CoreExtendedNFC {
             // is selected, a rejected GET BALANCE or other failure surfaces to the caller.
             do {
                 return try await readKoreaTransitBalance(transport: iso7816Transport)
-            } catch NFCError.unsupportedOperation {
+            } catch NFCError.applicationNotFound, NFCError.tagNotSupported {
                 // No KS X 6924 AID was selectable; try next
             }
 
             // Try China T-Union, with the same rule.
             do {
                 return try await readChinaTransitBalance(transport: iso7816Transport)
-            } catch NFCError.unsupportedOperation {
+            } catch NFCError.applicationNotFound, NFCError.tagNotSupported {
                 // T-Union AID not selectable either
             }
         }
 
-        throw NFCError.unsupportedOperation("No supported transit card detected")
+        throw NFCError.tagNotSupported
     }
 
     /// Read Japan FeliCa IC card balance + history.

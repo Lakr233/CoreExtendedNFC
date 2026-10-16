@@ -215,7 +215,7 @@ struct DumpInteropTests {
     @Test
     func `Flipper import rejects duplicate page lines`() {
         let text = "Filetype: Flipper NFC device\nDevice type: NTAG/Ultralight\nUID: 04 01 02 03 04 05 06\nPages total: 2\nPage 0: 00 00 00 00\nPage 0: 11 11 11 11"
-        #expect(throws: NFCError.self) {
+        #expect(throws: NFCError.malformedDump("Page 0 is out of range or repeated")) {
             _ = try MemoryDump.importFlipperNFC(text)
         }
     }
@@ -252,7 +252,7 @@ struct DumpInteropTests {
 
     @Test
     func `Proxmark import rejects more than 256 pages`() {
-        #expect(throws: NFCError.self) { // before: traps
+        #expect(throws: NFCError.malformedDump("Dump holds 257 pages; Type 2 tags have 1-256")) { // before: traps
             _ = try MemoryDump.importProxmark3MFU(Data(count: 257 * 4))
         }
     }
@@ -361,9 +361,10 @@ struct DumpInteropTests {
             if let binary = try? dump.exportProxmark3MFU() {
                 #expect(binary.count == 56 + 45 * 4)
             }
-            #expect(throws: NFCError.self) { _ = try dump.exportProxmark3MFU() }
-            #expect(throws: NFCError.self) { _ = try dump.exportFlipperNFC() }
-            #expect(throws: NFCError.self) { _ = try dump.exportLibNFCMFD() }
+            let expected = NFCError.malformedDump("Page 0 has \(size) bytes; Type 2 pages have 4")
+            #expect(throws: expected) { _ = try dump.exportProxmark3MFU() }
+            #expect(throws: expected) { _ = try dump.exportFlipperNFC() }
+            #expect(throws: expected) { _ = try dump.exportLibNFCMFD() }
         }
     }
 
@@ -397,7 +398,8 @@ struct DumpInteropTests {
         header[11] = 45 // claims 46 pages, but 45 follow
         let pages = Data(count: 45 * 4)
 
-        #expect(throws: NFCError.self) { // before: imported as 59 plain pages
+        // before: imported as 59 plain pages
+        #expect(throws: NFCError.malformedDump("Proxmark3 header page count does not match the file length")) {
             _ = try MemoryDump.importProxmark3MFU(header + pages)
         }
         #expect(throws: NFCError.self) { // truncated mid-page

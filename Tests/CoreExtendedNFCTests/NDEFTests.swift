@@ -141,7 +141,7 @@ struct NDEFTests {
         let message = NDEFMessage(records: [.mime(type: "a/b", data: Data(count: 489))])
         #expect(message.data.count == 498)
 
-        await #expect(throws: NFCError.self) {
+        await #expect(throws: NFCError.ndefCapacityExceeded(required: 503, capacity: 496)) {
             try await CoreExtendedNFC.writeNDEF(
                 message,
                 info: CardInfo(type: .ntag215, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
@@ -156,7 +156,7 @@ struct NDEFTests {
         let transport = MockTransport()
         transport.responses = [Data(count: 16)] + Array(repeating: Data([0x0A]), count: 12)
 
-        await #expect(throws: NFCError.self) {
+        await #expect(throws: NFCError.tagNotNDEFFormatted) {
             try await CoreExtendedNFC.writeNDEF(
                 .text("Hi"),
                 info: CardInfo(type: .mifareUltralight, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])),
@@ -252,7 +252,7 @@ struct NDEFTests {
     @Test
     func `Format NDEF throws for unsupported card families`() async throws {
         let transport = MockTransport()
-        await #expect(throws: NFCError.self) {
+        await #expect(throws: NFCError.tagNotSupported) {
             try await CoreExtendedNFC.formatNDEF(
                 info: CardInfo(type: .type4NDEF, uid: Data([0x01, 0x02, 0x03, 0x04])),
                 transport: transport
@@ -366,8 +366,8 @@ struct NDEFTests {
                 transport: transport
             )
             Issue.record("Expected an unformatted tag to be refused")
-        } catch let NFCError.unsupportedOperation(message) {
-            #expect(message.contains("not NDEF formatted"))
+        } catch NFCError.tagNotNDEFFormatted {
+            // expected
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -410,7 +410,8 @@ struct NDEFTests {
             storedBlocks: [0: Data([0xE1, 0x40, 0x01, 0x00])]
         )
 
-        await #expect(throws: NFCError.self) {
+        // TLV 03 08 + 8-byte URI record + FE = 11 bytes; MLEN area = 8 bytes.
+        await #expect(throws: NFCError.ndefCapacityExceeded(required: 11, capacity: 8)) {
             try await CoreExtendedNFC.writeNDEF(
                 .uri("https://a.b"),
                 info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
@@ -569,7 +570,7 @@ struct NDEFTests {
             storedBlocks: [0: Data([0xE1, 0x40, 0x01, 0x00]), 3: Data([0x03, 0x01, 0xD0, 0xFE])]
         )
         let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
-        await #expect(throws: NFCError.self) {
+        await #expect(throws: NFCError.ndefMessageNotFound) {
             _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
         }
         #expect(transport.readBlockNumbers == [0, 1, 2])
@@ -612,6 +613,109 @@ struct NDEFTests {
         // before: CC byte 2 = 00h, which readers take as an 8-byte CC
         #expect(throws: NFCError.self) {
             _ = try NDEFTagMapping.buildType5Blocks(message: Data(), blockSize: 4, blockCount: 2)
+        }
+    }
+
+    // MARK: - Typed NDEF errors
+
+    @Test
+    func `Type 5 NDEF read of a blank tag reports not formatted`() async {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 8, icReference: 0x01
+            )
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        // before: unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+        await #expect(throws: NFCError.tagNotNDEFFormatted) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        }
+    }
+
+    @Test
+    func `Type 2 NDEF read tells a blank tag from an empty NDEF area`() async {
+        let info = CardInfo(type: .mifareUltralight, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+        let header = Data([0x04, 0x01, 0x02, 0x8F, 0x03, 0x04, 0x05, 0x06, 0x04, 0x48, 0x00, 0x00])
+
+        let blank = MockTransport()
+        blank.responses = [header + Data(count: 4)] + Array(repeating: Data(count: 16), count: 3)
+        await #expect(throws: NFCError.tagNotNDEFFormatted) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: blank)
+        }
+
+        let formatted = MockTransport()
+        formatted.responses = [header + Data([0xE1, 0x10, 0x06, 0x00])] + Array(repeating: Data(count: 16), count: 3)
+        await #expect(throws: NFCError.ndefMessageNotFound) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: formatted)
+        }
+    }
+
+    @Test
+    func `Type 3 NDEF read reports a blank attribute block as not formatted`() async {
+        let transport = MockFeliCaWriteTransport()
+        transport.readResponses = [Data(count: 16)]
+        // before: unsupportedOperation("Unsupported Type 3 mapping version 0.0")
+        await #expect(throws: NFCError.tagNotNDEFFormatted) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 NDEF read reports a card without the NDEF service as not formatted`() async {
+        // No 0x000B service: the read fails and Request Service answers FFFF.
+        let transport = MockFeliCaServiceTransport(serviceVersions: [:])
+        await #expect(throws: NFCError.tagNotNDEFFormatted) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 read failure on an existing NDEF service is not reported as unformatted`() async {
+        let transport = MockFeliCaServiceTransport(serviceVersions: [FeliCaType3Reader.readServiceCode: Data([0x00, 0x00])])
+        await #expect(throws: NFCError.felicaBlockReadFailed(statusFlag: 0xA1)) {
+            _ = try await FeliCaType3Reader(transport: transport).readNDEF()
+        }
+    }
+
+    @Test
+    func `Type 3 NDEF write over capacity reports both sizes`() async {
+        let transport = MockFeliCaWriteTransport()
+        transport.readResponses = [makeAttributeInfoBlock(nbr: 4, nbw: 1, nmaxb: 1, rwFlag: 0x01, ndefLength: 0)]
+        await #expect(throws: NFCError.ndefCapacityExceeded(required: 17, capacity: 16)) {
+            try await FeliCaType3Reader(transport: transport).writeNDEF(Data(count: 17))
+        }
+        #expect(transport.writeCalls.isEmpty)
+    }
+
+    @Test
+    func `Type 3 attribute checksum mismatch is not reported as a CRC error`() {
+        var block = makeAttributeInfoBlock(nbr: 4, nbw: 1, nmaxb: 4, rwFlag: 0x01, ndefLength: 0)
+        block[15] ^= 0x01
+        #expect(throws: NFCError.checksumMismatch) {
+            _ = try FeliCaAttributeInfo(data: block)
+        }
+    }
+
+    @Test
+    func `Unsupported families are reported as tagNotSupported`() async {
+        let info = CardInfo(type: .mifareClassic1K, uid: Data([0x01, 0x02, 0x03, 0x04]))
+        await #expect(throws: NFCError.tagNotSupported) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: MockTransport())
+        }
+        await #expect(throws: NFCError.tagNotSupported) {
+            try await CoreExtendedNFC.writeNDEF(.text("x"), info: info, transport: MockTransport())
+        }
+    }
+
+    @Test
+    func `Unencodable NDEF records are an invalid parameter`() {
+        let record = NDEFRecord(typeNameFormat: .external, type: Data(count: 256), payload: Data())
+        #expect(throws: NFCError.invalidParameter("NDEF record type is 256 bytes; the limit is 255")) {
+            _ = try NDEFMessage(records: [record]).validatedData()
+        }
+        #expect(throws: NFCError.invalidParameter("An NDEF message needs at least one record")) {
+            _ = try NDEFMessage(records: []).validatedData()
         }
     }
 

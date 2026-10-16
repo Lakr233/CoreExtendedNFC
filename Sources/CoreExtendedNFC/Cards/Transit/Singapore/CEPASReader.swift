@@ -59,7 +59,8 @@ public struct CEPASReader: Sendable {
             throw NFCError.invalidResponse(purse)
         }
         guard purse[0] == 2 else {
-            throw NFCError.unsupportedOperation("Unsupported CEPAS purse version \(purse[0])")
+            // Only purse format version 2 is decoded.
+            throw NFCError.tagNotSupported
         }
 
         let serial = Data(purse[8 ..< 16]).hexString
