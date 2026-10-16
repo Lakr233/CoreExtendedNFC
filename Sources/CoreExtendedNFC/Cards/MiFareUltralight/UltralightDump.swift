@@ -101,9 +101,11 @@ open class UltralightDump: @unchecked Sendable {
     ///   - map: The target tag's memory map.
     ///   - target: The target tag, when known. Its type must match
     ///     `dump.cardInfo.type`, so a dump is never written onto a different product.
-    /// - Throws: ``NFCError/invalidParameter(_:)`` when a page to restore is not
-    ///   4 bytes or the card types differ. Nothing is written in that case.
+    /// - Throws: ``NFCError/invalidParameter(_:)`` when `map` is not
+    ///   ``UltralightMemoryMap/isValid``, a page to restore is not 4 bytes or
+    ///   the card types differ. Nothing is written in that case.
     open func restore(dump: MemoryDump, map: UltralightMemoryMap, target: CardInfo? = nil) async throws {
+        try map.validate()
         if let target, target.type != dump.cardInfo.type {
             throw NFCError.invalidParameter(
                 "The dump is from a \(dump.cardInfo.type.description) but the tag is a \(target.type.description)"

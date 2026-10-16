@@ -246,6 +246,14 @@ open class Type4Reader: @unchecked Sendable {
     }
 
     /// Write NDEF message to Type 4 tag.
+    ///
+    /// Follows the T4T NDEF write procedure: NLEN / ENLEN is written as zero, then
+    /// the message, then the real length, each UPDATE BINARY carrying at most MLc
+    /// bytes. The final length update is atomic only when MLc covers the whole
+    /// length field (MLc ≥ 2 for NLEN, ≥ 4 for ENLEN). A card announcing a smaller
+    /// MLc gets the length in several UPDATE BINARY commands, so a write interrupted
+    /// between them can leave a length mixing old and new bytes; such cards are
+    /// still written, without that guarantee.
     open func writeNDEF(_ message: Data) async throws {
         NFCLog.info("Type 4 NDEF write: \(message.count) bytes", source: "Type4")
         let cc = try await readCapabilityContainer()

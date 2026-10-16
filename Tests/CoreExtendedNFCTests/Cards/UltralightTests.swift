@@ -402,6 +402,63 @@ struct UltralightTests {
 
     // MARK: - PWD_AUTH
 
+    // MARK: - Caller-supplied memory maps never trap
+
+    @Test
+    func `Memory map with a full 0-255 user range counts bytes in Int`() {
+        let map = UltralightMemoryMap(totalPages: 255, userDataStart: 0, userDataEnd: 255, configStart: nil, dynamicLockStart: nil)
+        #expect(map.userDataByteCount == 1024)
+        #expect(map.isUserDataPage(0xFF))
+        #expect(!map.isValid)
+    }
+
+    @Test
+    func `Memory map with a reversed user range is empty`() {
+        let map = UltralightMemoryMap(totalPages: 16, userDataStart: 10, userDataEnd: 4, configStart: nil, dynamicLockStart: nil)
+        #expect(!map.isUserDataPage(5))
+        #expect(!map.isUserDataPage(10))
+        #expect(map.userDataByteCount == 0)
+        #expect(!map.isValid)
+    }
+
+    @Test(arguments: [CardType.mifareUltralight, .mifareUltralightC, .mifareUltralightEV1_MF0UL11,
+                      .mifareUltralightEV1_MF0UL21, .ntag210, .ntag212, .ntag213, .ntag215, .ntag216])
+    func `Built-in memory maps are valid`(type: CardType) {
+        #expect(UltralightMemoryMap.forType(type).isValid)
+    }
+
+    @Test
+    func `WRITE and restore refuse an invalid memory map without writing`() async {
+        let reversed = UltralightMemoryMap(totalPages: 16, userDataStart: 10, userDataEnd: 4, configStart: nil, dynamicLockStart: nil)
+        let overlapsHeader = UltralightMemoryMap(totalPages: 16, userDataStart: 0, userDataEnd: 15, configStart: nil, dynamicLockStart: nil)
+        for map in [reversed, overlapsHeader] {
+            let mock = MockTransport()
+            mock.responses = [Data([0x0A]), Data([0x0A])]
+            let commands = UltralightCommands(transport: mock)
+            for allowIrreversible in [false, true] {
+                do {
+                    try await commands.writePage(5, data: Data(count: 4), memoryMap: map, allowIrreversible: allowIrreversible)
+                    Issue.record("expected invalidParameter")
+                } catch NFCError.invalidParameter {
+                } catch {
+                    Issue.record("unexpected error \(error)")
+                }
+            }
+            let dump = MemoryDump(
+                cardInfo: CardInfo(type: .mifareUltralight, uid: mock.identifier),
+                pages: [MemoryDump.Page(number: 5, data: Data(count: 4))]
+            )
+            do {
+                try await UltralightDump(commands: commands).restore(dump: dump, map: map)
+                Issue.record("expected invalidParameter")
+            } catch NFCError.invalidParameter {
+            } catch {
+                Issue.record("unexpected error \(error)")
+            }
+            #expect(mock.sentCommands.isEmpty)
+        }
+    }
+
     @Test
     func `PWD_AUTH sends correct bytes`() async throws {
         let mock = MockTransport()
@@ -561,8 +618,25 @@ struct UltralightTests {
         #expect(mock.sentCommands == [Data([0x60]), Data([0x30, 0x2B])])
     }
 
+    /// CoreNFC reports a NAKed optional command as `tagConnectionLost`
+    /// (``NFCReaderErrorMapping/isMissingTagResponse(_:)``), so a GET_VERSION NAK
+    /// can arrive that way too; the READ 2Bh probe must still run.
     @Test
-    func `Refiner does not probe after a transport error`() async throws {
+    func `Refiner probes Ultralight C when the GET_VERSION NAK surfaces as tagConnectionLost`() async throws {
+        let transport = ScriptedUltralightTransport(results: [
+            .failure(NFCError.tagConnectionLost), // GET_VERSION NAK, as CoreNFC reports it
+            .success(Data(repeating: 0x00, count: 16)), // READ 2Bh answered: Ultralight C
+        ])
+        let refined = try await CardInfoRefiner.refine(
+            CardInfo(type: .mifareUltralight, uid: transport.identifier),
+            transport: transport
+        )
+        #expect(refined.type == .mifareUltralightC)
+        #expect(transport.sentCommands == [Data([0x60]), Data([0x30, 0x2B])])
+    }
+
+    @Test
+    func `Refiner keeps plain Ultralight when the tag stays silent after GET_VERSION`() async throws {
         let mock = MockTransport()
         mock.responses = []
         let refined = try await CoreExtendedNFC.refineCardInfo(
@@ -570,7 +644,46 @@ struct UltralightTests {
             transport: mock
         )
         #expect(refined.type == .mifareUltralight)
-        #expect(mock.sentCommands == [Data([0x60])])
+        #expect(mock.sentCommands == [Data([0x60]), Data([0x30, 0x2B])])
+    }
+
+    @Test(arguments: [
+        NFCError.sessionInvalidated("Session invalidated"),
+        NFCError.userCanceled,
+        NFCError.sessionTimeout,
+    ])
+    func `Refiner rethrows real session loss from GET_VERSION without probing`(loss: NFCError) async {
+        let transport = ScriptedUltralightTransport(results: [
+            .failure(loss),
+            .success(Data(repeating: 0x00, count: 16)),
+        ])
+        await #expect(throws: NFCError.self) {
+            _ = try await CardInfoRefiner.refine(
+                CardInfo(type: .mifareUltralight, uid: transport.identifier),
+                transport: transport
+            )
+        }
+        #expect(transport.sentCommands == [Data([0x60])])
+    }
+
+    @Test
+    func `Refiner rethrows cancellation from GET_VERSION`() async {
+        let transport = ScriptedUltralightTransport(results: [.failure(CancellationError())])
+        await #expect(throws: CancellationError.self) {
+            _ = try await CardInfoRefiner.refine(
+                CardInfo(type: .mifareUltralight, uid: transport.identifier),
+                transport: transport
+            )
+        }
+    }
+
+    @Test
+    func `GET_VERSION NAK classification`() {
+        #expect(CardInfoRefiner.isGetVersionNAK(NFCError.invalidResponse(Data([0x00]))))
+        #expect(CardInfoRefiner.isGetVersionNAK(NFCError.tagConnectionLost))
+        #expect(!CardInfoRefiner.isGetVersionNAK(NFCError.userCanceled))
+        #expect(!CardInfoRefiner.isGetVersionNAK(NFCError.sessionInvalidated("x")))
+        #expect(!CardInfoRefiner.isGetVersionNAK(CancellationError()))
     }
 
     @Test
@@ -723,12 +836,14 @@ private final class UltralightCTagModel: NFCTagTransport, @unchecked Sendable {
 private final class ScriptedUltralightTransport: NFCTagTransport, @unchecked Sendable {
     let identifier = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
     private var results: [Result<Data, any Error>]
+    private(set) var sentCommands: [Data] = []
 
     init(results: [Result<Data, any Error>]) {
         self.results = results
     }
 
-    func send(_: Data) async throws -> Data {
+    func send(_ data: Data) async throws -> Data {
+        sentCommands.append(data)
         guard !results.isEmpty else { throw NFCError.tagConnectionLost }
         return try results.removeFirst().get()
     }

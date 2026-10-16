@@ -37,6 +37,10 @@ public extension UltralightCommands {
         // MIRROR, RFU, MIRROR_PAGE, AUTH0 — AUTH0 is byte 3 on both):
         // configStart + 1: ACCESS, RFUI, RFUI, RFUI
         let data = try await readPages(startPage: configStartPage)
+        // `readPages` is open; a subclass may return fewer than 16 bytes.
+        guard data.count >= 5 else {
+            throw NFCError.invalidResponse(data)
+        }
         let auth0 = data[data.startIndex + 3] // 4th byte of first config page
         let access = data[data.startIndex + 4] // 1st byte of second config page
         return (auth0, access)
@@ -57,6 +61,12 @@ public extension UltralightCommands {
 }
 
 public extension UltralightCommands {
+    /// ``authenticateUltralightC(key:)`` with an explicit 8-byte RndA (`nil`
+    /// generates one).
+    ///
+    /// - Important: `randomA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use ``authenticateUltralightC(key:)``).
     func authenticateUltralightC(
         key: Data,
         randomA: Data?
@@ -99,6 +109,10 @@ public extension UltralightCommands {
         return UltralightCAuthenticationSession(randomA: randomAValue, randomB: rndB)
     }
 
+    /// Return `candidate` when it is 8 bytes, or 8 fresh random bytes when it is `nil`.
+    ///
+    /// - Important: For tests and protocol traces only. Passing a fixed
+    ///   challenge weakens authentication; production callers should omit it.
     func validateOrGenerateRandom(_ candidate: Data?) throws -> Data {
         if let candidate {
             guard candidate.count == 8 else {

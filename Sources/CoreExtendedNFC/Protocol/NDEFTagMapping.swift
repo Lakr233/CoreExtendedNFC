@@ -124,39 +124,85 @@ public enum NDEFTagMapping {
     /// message nor its padding touches lock or reserved bytes. `endsDataArea` is
     /// `false` when it was shortened that way.
     ///
-    /// Returns `nil` when a control TLV runs past `leadingBytes`, so the caller can
-    /// read more bytes and try again. Throws ``NFCError/unsupportedOperation(_:)``
-    /// when a control TLV reserves bytes in a page the control TLVs occupy. A data area
-    /// without control TLVs yields an empty prefix and the full capacity.
+    /// Leading bytes are only taken for control TLVs when every one of them is well
+    /// formed (a 1-byte length of 3) and they are followed, after optional NULL TLVs,
+    /// by an NDEF TLV (03h) or a Terminator TLV (FEh). Anything else, such as earlier
+    /// non-NDEF data that happens to start with 01h or 02h, is not kept: the layout
+    /// then has an empty prefix and the full capacity, so the NDEF TLV is written from
+    /// the first byte of the data area.
+    ///
+    /// Returns `nil` when well-formed control TLVs run to the end of `leadingBytes`
+    /// (a TLV is cut off, or only NULL TLVs follow), so the caller can read more bytes
+    /// and try again. Throws ``NFCError/unsupportedOperation(_:)`` when a control TLV
+    /// reserves bytes in a page the control TLVs occupy. A data area without control
+    /// TLVs yields an empty prefix and the full capacity.
     public static func type2WriteLayout(
         leadingBytes: Data,
         dataAreaOffset: Int,
         capacity: Int
     ) throws -> (preservedPrefix: Data, capacity: Int, endsDataArea: Bool)? {
+        try type2WriteLayout(
+            leadingBytes: leadingBytes,
+            dataAreaOffset: dataAreaOffset,
+            capacity: capacity,
+            keepingControlTLVsBeforeNULLs: false
+        )
+    }
+
+    /// ``type2WriteLayout(leadingBytes:dataAreaOffset:capacity:)``; with
+    /// `keepingControlTLVsBeforeNULLs`, well-formed control TLVs followed only by NULL
+    /// TLVs up to the end of `leadingBytes` are kept too. The write path passes it
+    /// once no more pages will be read: such TLVs are not stray data, and dropping
+    /// them could let the message overwrite the one-time-programmable lock bytes
+    /// they declare.
+    static func type2WriteLayout(
+        leadingBytes: Data,
+        dataAreaOffset: Int,
+        capacity: Int,
+        keepingControlTLVsBeforeNULLs: Bool
+    ) throws -> (preservedPrefix: Data, capacity: Int, endsDataArea: Bool)? {
         let bytes = [UInt8](leadingBytes)
+        let plainLayout = (preservedPrefix: Data(), capacity: capacity, endsDataArea: true)
         var index = 0
         var prefixLength = 0
         var reserved: [Range<Int>] = []
-        scan: while index < bytes.count {
+        var sawControlTLV = false
+        scan: while true {
+            guard index < bytes.count else {
+                // Only NULL TLVs so far, or control TLVs not yet followed by an NDEF or
+                // Terminator TLV: more bytes are needed to decide.
+                guard sawControlTLV else { return plainLayout }
+                guard keepingControlTLVsBeforeNULLs else { return nil }
+                break scan
+            }
+            // Lock and reserved bytes declared by an earlier control TLV are not TLVs.
+            if reserved.contains(where: { $0.contains(dataAreaOffset + index) }) {
+                index += 1
+                continue
+            }
             switch bytes[index] {
             case 0x00:
                 index += 1
             case lockControlTLV, memoryControlTLV:
-                guard let (length, headerBytes) = parseTLVLength(leadingBytes, offset: index + 1) else {
-                    return nil
-                }
-                let valueStart = index + 1 + headerBytes
-                guard valueStart + length <= bytes.count else { return nil }
-                let value = Data(bytes[valueStart ..< valueStart + length])
+                guard index + 1 < bytes.count else { return nil }
+                // T2T 1.0 §2.3.4 / §2.3.5: the value is exactly 3 bytes (1-byte length).
+                guard bytes[index + 1] == 0x03 else { return plainLayout }
+                let valueStart = index + 2
+                guard valueStart + 3 <= bytes.count else { return nil }
+                let value = Data(bytes[valueStart ..< valueStart + 3])
                 if let area = type2ControlArea(tag: bytes[index], value: value) {
                     reserved.append(area)
                 }
-                index = valueStart + length
+                index = valueStart + 3
                 prefixLength = index
-            default:
+                sawControlTLV = true
+            case 0x03, 0xFE:
                 break scan
+            default:
+                return plainLayout
             }
         }
+        guard sawControlTLV else { return plainLayout }
 
         let prefixEnd = dataAreaOffset + prefixLength
         var end = dataAreaOffset + capacity
@@ -177,7 +223,9 @@ public enum NDEFTagMapping {
     /// NFC Forum T5T 1.0 §4.3.1: when CC byte 2 (MLEN) is 00h the CC is 8 bytes
     /// long (bytes 6-7 carry the 16-bit MLEN) and the TLV area starts at byte 8;
     /// otherwise the CC is 4 bytes. The TLV scan is limited to the T5T_Area of
-    /// MLEN × 8 bytes, like the Type 2 data area.
+    /// MLEN × 8 bytes, like the Type 2 data area. A CC with an unsupported major
+    /// version or without read access yields `nil` (see
+    /// ``type5FormattedCCLength(leadingBytes:)``).
     public static func extractType5Message(from blocks: [MemoryDump.Block]) -> Data? {
         let contiguous = blocks
             .sorted(by: { $0.number < $1.number })
@@ -194,8 +242,41 @@ public enum NDEFTagMapping {
     }
 
     /// CC length (4 or 8 bytes) when `leadingBytes` (block 0 onwards) starts with a
-    /// Type 5 CC magic (E1h / E2h, NFC Forum T5T 1.0 §4.3.1), otherwise `nil`.
+    /// readable Type 5 CC, otherwise `nil`.
+    ///
+    /// NFC Forum T5T 1.0 §4.3.1 / §7.3 (NDEF detection): byte 0 must be the magic E1h
+    /// or E2h, byte 1 b7-b6 the major mapping version 1 (or lower), and byte 1 b3-b2
+    /// read access 00b (granted). ``type5ReadableCCLength(leadingBytes:)`` reports
+    /// which check failed.
     public static func type5FormattedCCLength(leadingBytes: Data) -> Int? {
+        try? type5ReadableCCLength(leadingBytes: leadingBytes)
+    }
+
+    /// CC length (4 or 8 bytes) of a Type 5 tag whose CC allows reading the NDEF
+    /// message (see ``type5FormattedCCLength(leadingBytes:)``).
+    ///
+    /// Throws ``NFCError/tagNotNDEFFormatted`` when the CC magic is not E1h / E2h or
+    /// the major mapping version is above 1, and ``NFCError/tagLocked`` when the CC
+    /// denies read access (CC byte 1 b3-b2 ≠ 00b). The same checks as ST's RFAL NDEF
+    /// library (`ndefT5TPollerNdefDetect`, "Check version - 7.5.1.2" / "Check read
+    /// access - 7.5.1.2"); neard `nfctype5.c` (`t5_cc_is_valid`) also treats another
+    /// major version as not NDEF formatted.
+    public static func type5ReadableCCLength(leadingBytes: Data) throws -> Int {
+        guard let ccLength = type5CCLengthFromMagic(leadingBytes) else {
+            throw NFCError.tagNotNDEFFormatted
+        }
+        let access = leadingBytes[leadingBytes.startIndex + 1]
+        guard access >> 6 <= 1 else {
+            throw NFCError.tagNotNDEFFormatted
+        }
+        guard access & 0x0C == 0x00 else {
+            throw NFCError.tagLocked
+        }
+        return ccLength
+    }
+
+    /// CC length from the magic and MLEN byte alone, without version or access checks.
+    static func type5CCLengthFromMagic(_ leadingBytes: Data) -> Int? {
         let bytes = [UInt8](leadingBytes.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else { return nil }
         return bytes[2] == 0x00 ? 8 : 4
@@ -204,7 +285,7 @@ public enum NDEFTagMapping {
     /// Size in bytes of the T5T_Area announced by the CC (MLEN × 8, NFC Forum T5T 1.0
     /// §4.3.1), or `nil` when `leadingBytes` does not hold a complete CC.
     public static func type5DataAreaLength(leadingBytes: Data) -> Int? {
-        guard let ccLength = type5FormattedCCLength(leadingBytes: leadingBytes) else { return nil }
+        guard let ccLength = type5CCLengthFromMagic(leadingBytes) else { return nil }
         let cc = [UInt8](leadingBytes.prefix(ccLength))
         guard cc.count == ccLength else { return nil }
         let memoryLengthUnits = ccLength == 8
@@ -277,16 +358,22 @@ public enum NDEFTagMapping {
         preservedPrefix: Data = Data(),
         endsDataArea: Bool = true
     ) throws -> Data {
-        var tlv = preservedPrefix + encodeNDEFTLV(message)
+        let preservedPrefix = Data(preservedPrefix) // Rebase a slice to index from zero.
+        let available = max(0, capacity - preservedPrefix.count)
+        let tlvSize = ndefTLVSize(messageLength: message.count)
         // The Terminator TLV is optional when the NDEF TLV ends the data area.
-        if endsDataArea, tlv.count - 1 == capacity {
-            tlv.removeLast()
-        }
-        guard tlv.count <= capacity else {
+        let dropsTerminator = endsDataArea && tlvSize - 1 == available
+        guard message.count <= maximumNDEFTLVValueLength,
+              tlvSize - (dropsTerminator ? 1 : 0) <= available
+        else {
             throw NFCError.ndefCapacityExceeded(
-                required: tlv.count - preservedPrefix.count - 1,
-                capacity: max(0, capacity - preservedPrefix.count)
+                required: tlvSize - 1,
+                capacity: min(available, maximumNDEFTLVSize - 1)
             )
+        }
+        var tlv = try preservedPrefix + encodeNDEFTLV(message)
+        if dropsTerminator {
+            tlv.removeLast()
         }
         return tlv + Data(repeating: 0x00, count: capacity - tlv.count)
     }
@@ -302,6 +389,13 @@ public enum NDEFTagMapping {
     /// `blockSize` is the size of one block (4 bytes for a Type 2 page). Length
     /// blocks whose content does not change (an empty message, `03 00`) are not
     /// written twice.
+    ///
+    /// When a 3-byte length (`FF hi lo`) spans two blocks, the final length blocks
+    /// are written in descending block order: the block holding the first length
+    /// byte (still 00h, so the message reads as empty) goes last, which makes the
+    /// switch to the real length a single block write. Written in ascending order,
+    /// a write interrupted between them would leave `FF` with a stale low byte, a
+    /// wrong non-zero length.
     public static func lengthLastWriteOrder(
         _ writes: [(block: Int, data: Data)],
         blockSize: Int,
@@ -328,9 +422,8 @@ public enum NDEFTagMapping {
                 body.append(write)
                 continue
             }
-            let overlap = lower ..< upper
             var zeroed = write.data
-            for offset in overlap {
+            for offset in lower ..< upper {
                 zeroed[zeroed.startIndex + offset - start] = 0x00
             }
             interim.append((write.block, zeroed))
@@ -338,7 +431,7 @@ public enum NDEFTagMapping {
                 final.append(write)
             }
         }
-        return interim + body + final
+        return interim + body + final.reversed()
     }
 
     /// Highest block count reachable with single-byte block addresses
@@ -373,6 +466,10 @@ public enum NDEFTagMapping {
     /// larger; pass ``type5ExtendedAddressableBlocks`` for a tag that accepts them.
     /// When the memory exceeds the largest MLEN (FFFFh units) only the blocks
     /// covering that area are returned.
+    ///
+    /// The NDEF TLV starts right after the CC (byte 4 or 8 of block 0 onwards),
+    /// whatever the block size, which is where readers start the TLV scan. A message
+    /// longer than FFFEh bytes throws ``NFCError/ndefCapacityExceeded(required:capacity:)``.
     public static func buildType5Blocks(
         message: Data,
         blockSize: Int,
@@ -388,50 +485,45 @@ public enum NDEFTagMapping {
         }
 
         let addressableBlocks = min(blockCount, addressableBlockCount)
-        let shortCCBlocks = 1
-        let shortCapacity = (addressableBlocks - shortCCBlocks) * blockSize
-        let usesLongCC = shortCapacity / 8 > 0xFF
+        let addressableBytes = addressableBlocks * blockSize
+        let usesLongCC = (addressableBytes - 4) / 8 > 0xFF
         let ccLength = usesLongCC ? 8 : 4
-        let ccBlocks = (ccLength + blockSize - 1) / blockSize
-        guard addressableBlocks > ccBlocks else {
-            throw NFCError.unsupportedOperation("Type 5 tag reports too few blocks for NDEF")
-        }
-        var dataBlocks = addressableBlocks - ccBlocks
-        // MLEN counts whole 8-byte units, so the advertised T5T_Area can be a few bytes
-        // smaller than the user memory; readers stop at MLEN × 8.
-        let fullMemoryLengthUnits = dataBlocks * blockSize / 8
+        // MLEN counts whole 8-byte units after the CC, so the advertised T5T_Area can be
+        // a few bytes smaller than the user memory; readers stop at MLEN × 8.
+        let fullMemoryLengthUnits = max(0, addressableBytes - ccLength) / 8
         let memoryLengthUnits = min(fullMemoryLengthUnits, type5MaximumMemoryLengthUnits)
-        if fullMemoryLengthUnits > memoryLengthUnits {
-            // Blocks past the largest announceable area are left alone.
-            dataBlocks = (memoryLengthUnits * 8 + blockSize - 1) / blockSize
-        }
-        let userCapacity = dataBlocks * blockSize
         guard memoryLengthUnits > 0 else {
             // A 4-byte CC with MLEN 00h would mean "8-byte CC" to readers.
             throw NFCError.unsupportedOperation("Type 5 tag has less than 8 bytes of NDEF memory")
         }
+        // Blocks past the largest announceable area are left alone.
+        let usedBlocks = fullMemoryLengthUnits > memoryLengthUnits
+            ? (ccLength + memoryLengthUnits * 8 + blockSize - 1) / blockSize
+            : addressableBlocks
 
-        let tlv = encodeNDEFTLV(message)
-        guard tlv.count <= memoryLengthUnits * 8 else {
-            throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: memoryLengthUnits * 8)
+        let capacity = min(memoryLengthUnits * 8, maximumNDEFTLVSize)
+        let required = ndefTLVSize(messageLength: message.count)
+        guard required <= capacity else {
+            throw NFCError.ndefCapacityExceeded(required: required, capacity: capacity)
         }
+        let tlv = try encodeNDEFTLV(message)
 
-        let magic: UInt8 = ccBlocks + dataBlocks > type5SingleByteAddressableBlocks ? 0xE2 : 0xE1
+        let magic: UInt8 = usedBlocks > type5SingleByteAddressableBlocks ? 0xE2 : 0xE1
         let accessByte: UInt8 = writeable ? 0x40 : 0x43
-        var cc: Data
-        if usesLongCC {
-            cc = Data([
+        let cc = if usesLongCC {
+            Data([
                 magic, accessByte, 0x00, 0x00,
                 0x00, 0x00,
                 UInt8((memoryLengthUnits >> 8) & 0xFF), UInt8(memoryLengthUnits & 0xFF),
             ])
         } else {
-            cc = Data([magic, accessByte, UInt8(memoryLengthUnits), 0x00])
+            Data([magic, accessByte, UInt8(memoryLengthUnits), 0x00])
         }
-        cc.append(Data(repeating: 0x00, count: ccBlocks * blockSize - cc.count))
 
-        let userBytes = tlv + Data(repeating: 0x00, count: userCapacity - tlv.count)
-        let area = cc + userBytes
+        // NFC Forum T5T 1.0 §4.4: the TLV area starts right after the CC (byte 4 or 8),
+        // whatever the block size; readers scan from there.
+        let used = cc + tlv
+        let area = used + Data(repeating: 0x00, count: usedBlocks * blockSize - used.count)
         return stride(from: 0, to: area.count, by: blockSize).map { offset in
             Data(area[offset ..< offset + blockSize])
         }
@@ -475,7 +567,9 @@ public enum NDEFTagMapping {
     /// The data area is bounded by MLEN and by the first `addressableBlockCount`
     /// blocks: the default, ``type5SingleByteAddressableBlocks``, keeps every write
     /// in blocks 0-255; pass ``type5ExtendedAddressableBlocks`` to plan writes past
-    /// block 255 for a tag that accepts EXTENDED WRITE SINGLE BLOCK.
+    /// block 255 for a tag that accepts EXTENDED WRITE SINGLE BLOCK. A message
+    /// longer than FFFEh bytes, the largest 3-byte TLV length, throws
+    /// ``NFCError/ndefCapacityExceeded(required:capacity:)``.
     public static func type5NDEFWrites(
         message: Data,
         leadingBytes: Data,
@@ -494,11 +588,13 @@ public enum NDEFTagMapping {
         let areaLength = type5DataAreaLength(leadingBytes: leadingBytes) ?? 0
 
         let addressableBytes = min(blockCount, addressableBlockCount) * blockSize
-        let capacity = min(areaLength, max(0, addressableBytes - ccLength))
-        let tlv = encodeNDEFTLV(message)
-        guard tlv.count <= capacity else {
-            throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: capacity)
+        // A 3-byte TLV length cannot exceed FFFEh (T5T 1.0 §4.4).
+        let capacity = min(areaLength, max(0, addressableBytes - ccLength), maximumNDEFTLVSize)
+        let required = ndefTLVSize(messageLength: message.count)
+        guard required <= capacity else {
+            throw NFCError.ndefCapacityExceeded(required: required, capacity: capacity)
         }
+        let tlv = try encodeNDEFTLV(message)
 
         var area = Data(cc) + tlv
         let padding = (blockSize - area.count % blockSize) % blockSize
@@ -513,7 +609,11 @@ public enum NDEFTagMapping {
         }
     }
 
+    /// Find the NDEF TLV (03h) in a Type 5 (or plain) TLV area and return its value.
+    /// NULL TLVs are skipped, other TLVs are stepped over, and a Terminator TLV or a
+    /// truncated TLV ends the scan with `nil`.
     public static func extractTLVNDEF(from data: Data) -> Data? {
+        let data = Data(data) // Rebase a slice so integer offsets index from zero.
         var offset = 0
         while offset < data.count {
             let tag = data[offset]
@@ -543,18 +643,46 @@ public enum NDEFTagMapping {
         return nil
     }
 
+    /// Parse the TLV length field at `offset` (counted from the first byte of `data`,
+    /// also for a slice): a 1-byte length, or `FF` and a 2-byte big-endian length.
+    /// Returns the length and the size of the length field, or `nil` when `data`
+    /// ends inside the field.
     public static func parseTLVLength(_ data: Data, offset: Int) -> (Int, Int)? {
-        guard offset < data.count else { return nil }
-        let first = data[offset]
+        guard offset >= 0, offset < data.count else { return nil }
+        let base = data.startIndex + offset
+        let first = data[base]
         if first == 0xFF {
             guard offset + 2 < data.count else { return nil }
-            let length = Int(UInt16(data[offset + 1]) << 8 | UInt16(data[offset + 2]))
+            let length = Int(data[base + 1]) << 8 | Int(data[base + 2])
             return (length, 3)
         }
         return (Int(first), 1)
     }
 
-    public static func encodeNDEFTLV(_ message: Data) -> Data {
+    /// Largest NDEF TLV value a 3-byte length field can announce: lengths run from
+    /// 00FFh to FFFEh, FFFFh is reserved (NFC Forum T2T 1.0 §2.3, T5T 1.0 §4.4).
+    public static let maximumNDEFTLVValueLength = 0xFFFE
+
+    /// Bytes an NDEF TLV holding `messageLength` bytes takes, Terminator TLV included.
+    static func ndefTLVSize(messageLength: Int) -> Int {
+        1 + (messageLength > 0xFE ? 3 : 1) + messageLength + 1
+    }
+
+    /// Size of the largest NDEF TLV, Terminator TLV included.
+    static let maximumNDEFTLVSize = ndefTLVSize(messageLength: maximumNDEFTLVValueLength)
+
+    /// Encode `message` as an NDEF TLV (03h) followed by a Terminator TLV (FEh).
+    ///
+    /// Throws ``NFCError/ndefCapacityExceeded(required:capacity:)`` when the message
+    /// is longer than ``maximumNDEFTLVValueLength`` (FFFEh) bytes, which no TLV
+    /// length can express.
+    public static func encodeNDEFTLV(_ message: Data) throws -> Data {
+        guard message.count <= maximumNDEFTLVValueLength else {
+            throw NFCError.ndefCapacityExceeded(
+                required: ndefTLVSize(messageLength: message.count),
+                capacity: maximumNDEFTLVSize
+            )
+        }
         var tlv = Data([0x03])
         if message.count > 0xFE {
             tlv.append(0xFF)

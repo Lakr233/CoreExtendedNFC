@@ -381,13 +381,17 @@ public enum DG14Parser {
                 // PACEDomainParameterInfo names only the key agreement and mapping (10
                 // arcs, e.g. id-PACE-ECDH-GM) followed by an AlgorithmIdentifier.
                 let arcCount = oid.split(separator: ".").count
+                // An INTEGER that is negative or too wide drops the entry rather than
+                // wrapping into some other parameter ID or version.
                 let parameterID = children.count > 2 && children[2].tag == 0x02
                     ? decodeInteger(children[2].value) : nil
+                if children.count > 2, children[2].tag == 0x02, parameterID == nil { continue }
                 if arcCount == 11, children.count > 1, children[1].tag == 0x02 {
+                    guard let version = decodeInteger(children[1].value) else { continue }
                     paceInfos.append(PACEInfo(
                         protocolOID: oid,
                         securityProtocol: protocol_,
-                        version: decodeInteger(children[1].value),
+                        version: version,
                         parameterID: parameterID
                     ))
                 } else if arcCount == 10, children.count > 1, children[1].tag == 0x30 {
@@ -401,6 +405,7 @@ public enum DG14Parser {
                 // Chip Authentication (id-CA: 0.4.0.127.0.7.2.2.3.*)
                 let version = children.count > 1 ? decodeInteger(children[1].value) : 1
                 let keyID = children.count > 2 ? decodeInteger(children[2].value) : nil
+                guard let version, children.count <= 2 || keyID != nil else { continue }
                 chipAuthInfos.append(ChipAuthenticationInfo(
                     protocolOID: oid,
                     securityProtocol: protocol_,
@@ -421,6 +426,7 @@ public enum DG14Parser {
                     Data()
                 }
                 let keyID = children.count > 2 ? decodeInteger(children[2].value) : nil
+                guard children.count <= 2 || keyID != nil else { continue }
                 chipAuthPublicKeyInfos.append(ChipAuthenticationPublicKeyInfo(
                     protocolOID: oid,
                     subjectPublicKey: subjectPublicKeyDER,
@@ -428,7 +434,7 @@ public enum DG14Parser {
                 ))
             } else if oid == "2.23.136.1.1.5" {
                 // Active Authentication (id-AA) — ONLY this exact OID
-                let version = children.count > 1 ? decodeInteger(children[1].value) : 1
+                guard let version = children.count > 1 ? decodeInteger(children[1].value) : 1 else { continue }
                 let sigAlgOID = children.count > 2 && children[2].tag == 0x06
                     ? decodeOID(children[2].value) : nil
                 activeAuthInfos.append(ActiveAuthenticationInfo(
@@ -440,7 +446,7 @@ public enum DG14Parser {
             } else if oid.hasPrefix("0.4.0.127.0.7.2.2.2") {
                 // Terminal Authentication (id-TA: 0.4.0.127.0.7.2.2.2.*)
                 // These are NOT Active Authentication — do not mix them
-                let version = children.count > 1 ? decodeInteger(children[1].value) : 1
+                guard let version = children.count > 1 ? decodeInteger(children[1].value) : 1 else { continue }
                 terminalAuthInfos.append(TerminalAuthenticationInfo(
                     protocolOID: oid,
                     securityProtocol: protocol_,
@@ -502,10 +508,20 @@ public enum DG14Parser {
         return components.map(String.init).joined(separator: ".")
     }
 
-    /// Decode a DER-encoded INTEGER value.
-    public static func decodeInteger(_ data: Data) -> Int {
+    /// Decode the content octets of a DER INTEGER as a non-negative `Int`.
+    ///
+    /// Returns `nil` for an empty encoding, a negative value (first content octet
+    /// has bit 8 set, X.690 §8.3.3) or a value that does not fit in `Int`, instead of
+    /// wrapping around. Leading zero octets are accepted.
+    public static func decodeInteger(_ data: Data) -> Int? {
+        guard let first = data.first, first & 0x80 == 0 else { return nil }
+        let significant = data.drop(while: { $0 == 0x00 })
+        guard significant.count <= MemoryLayout<Int>.size else { return nil }
+        if significant.count == MemoryLayout<Int>.size, let top = significant.first, top & 0x80 != 0 {
+            return nil
+        }
         var result = 0
-        for byte in data {
+        for byte in significant {
             result = (result << 8) | Int(byte)
         }
         return result

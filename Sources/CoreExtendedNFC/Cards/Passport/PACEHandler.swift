@@ -267,6 +267,7 @@ public enum PACEHandler {
 
             // Parse encrypted nonce from response: 7C { 80 <nonce> }
             let encryptedNonce = try parseTag80FromDynamicAuth(step1Response.data)
+            try validateEncryptedNonce(encryptedNonce, mode: smMode)
 
             // Step 3: Decrypt nonce using password-derived key
             let decryptedNonce: Data
@@ -276,6 +277,14 @@ public enum PACEHandler {
             case .aes128, .aes192, .aes256:
                 let iv = Data(count: 16) // Zero IV for nonce decryption
                 decryptedNonce = try CryptoUtils.aesDecrypt(key: passwordKey, message: encryptedNonce, iv: iv)
+            }
+            // Generic Mapping computes G^ = s·G + H. With s ≡ 0 (mod n) the mapped
+            // generator is H, which the chip derives without knowing the password, so
+            // the password would not be bound into the session keys.
+            guard try !curve.isZeroModuloOrder(decryptedNonce) else {
+                throw NFCError.secureMessagingError(
+                    "PACE: chip nonce s is 0 modulo the group order, so the password would not be bound"
+                )
             }
 
             // Step 4: exchange mapping public keys over the standardized generator G.
@@ -381,6 +390,32 @@ public enum PACEHandler {
                 "PACE ECDH key agreement requires OpenSSL-backed elliptic-curve point operations."
             )
         #endif
+    }
+
+    // MARK: - Nonce Checks
+
+    /// Check the shape of the encrypted nonce `z` the chip sends in PACE step 1.
+    ///
+    /// ICAO 9303-11 §4.4.3.3: "The eMRTD chip SHALL randomly and uniformly select the
+    /// nonce s as a binary bit string of length l, where l is a multiple of the block
+    /// size in bits of the respective block cipher E() chosen by the eMRTD chip", and
+    /// "The nonce s SHALL be encrypted in CBC mode […] using the key Kπ = KDFπ(π) […]
+    /// and IV set to the all-0 string." `z` therefore has the length of `s`: a non-zero
+    /// whole number of cipher blocks (16 bytes for AES, 8 for 3DES). An empty `z`
+    /// decrypts to an empty `s`, which maps to G^ = H and does not bind the password.
+    ///
+    /// No minimum beyond one block is enforced: the specification sets none, and the
+    /// Appendix G.1 worked example uses a 16-byte nonce on a 256-bit curve.
+    ///
+    /// - Throws: `NFCError.secureMessagingError` for an empty or misaligned nonce.
+    public static func validateEncryptedNonce(_ encryptedNonce: Data, mode: SMEncryptionMode) throws {
+        let blockSize = mode.blockSize
+        guard !encryptedNonce.isEmpty, encryptedNonce.count % blockSize == 0 else {
+            throw NFCError.secureMessagingError(
+                "PACE: encrypted nonce of \(encryptedNonce.count) bytes is not a non-empty "
+                    + "multiple of the \(blockSize)-byte cipher block (ICAO 9303-11 §4.4.3.3)"
+            )
+        }
     }
 
     // MARK: - Key Derivation

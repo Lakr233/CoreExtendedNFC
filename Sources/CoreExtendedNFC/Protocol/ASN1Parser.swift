@@ -16,17 +16,34 @@ public struct TLVNode: Sendable, Equatable {
 
     /// Whether the first tag byte marks this as a constructed node.
     public var isConstructed: Bool {
-        var firstTagByte = tag
-        while firstTagByte > 0xFF {
-            firstTagByte >>= 8
-        }
-        return (firstTagByte & 0x20) != 0
+        ASN1Parser.isConstructedTag(tag)
     }
 
     /// Parse the value as a sequence of child TLV nodes.
     /// Only valid for constructed nodes.
     public func children() throws -> [TLVNode] {
         try ASN1Parser.parseTLV(value)
+    }
+}
+
+/// Tag, length and value position of one BER-TLV node, without a copy of the value.
+///
+/// Returned by ``ASN1Parser/parseTLVHeaders(_:)``; `valueRange` indexes into the
+/// `Data` that was parsed.
+public struct TLVHeader: Sendable, Equatable {
+    public let tag: UInt
+    public let length: Int
+    public let valueRange: Range<Data.Index>
+
+    public init(tag: UInt, length: Int, valueRange: Range<Data.Index>) {
+        self.tag = tag
+        self.length = length
+        self.valueRange = valueRange
+    }
+
+    /// Whether the first tag byte marks this as a constructed node.
+    public var isConstructed: Bool {
+        ASN1Parser.isConstructedTag(tag)
     }
 }
 
@@ -50,14 +67,28 @@ public enum ASN1Parser {
     public static let maxLengthBytes = 4
 
     /// Parse all TLV nodes from the given data.
+    ///
+    /// Each node's `value` is a copy indexed from zero. To walk large nested input
+    /// without copying every level, use ``parseTLVHeaders(_:)``.
     public static func parseTLV(_ data: Data) throws -> [TLVNode] {
-        let data = Data(data) // Rebase so integer offsets index from zero.
-        var nodes: [TLVNode] = []
+        try parseTLVHeaders(data).map { header in
+            TLVNode(tag: header.tag, length: header.length, value: Data(data[header.valueRange]))
+        }
+    }
+
+    /// Parse the TLV nodes of one nesting level without copying their values.
+    ///
+    /// Same rules and errors as ``parseTLV(_:)``; each header's
+    /// ``TLVHeader/valueRange`` indexes into `data` itself, so `data[header.valueRange]`
+    /// is a slice of the same storage that can be parsed again for the next level.
+    public static func parseTLVHeaders(_ data: Data) throws -> [TLVHeader] {
+        let base = data.startIndex
+        var headers: [TLVHeader] = []
         var offset = 0
 
         while offset < data.count {
             // Skip zero padding.
-            if data[offset] == 0x00 {
+            if data[base + offset] == 0x00 {
                 offset += 1
                 continue
             }
@@ -79,13 +110,20 @@ public enum ASN1Parser {
                 )
             }
 
-            let value = Data(data[offset ..< offset + length])
+            headers.append(TLVHeader(tag: tag, length: length, valueRange: (base + offset) ..< (base + offset + length)))
             offset += length
-
-            nodes.append(TLVNode(tag: tag, length: length, value: value))
         }
 
-        return nodes
+        return headers
+    }
+
+    /// Whether the first octet of `tag` has the constructed bit (X.690 §8.1.2.5).
+    public static func isConstructedTag(_ tag: UInt) -> Bool {
+        var firstTagByte = tag
+        while firstTagByte > 0xFF {
+            firstTagByte >>= 8
+        }
+        return (firstTagByte & 0x20) != 0
     }
 
     /// Parse a tag at the given offset (relative to `data.startIndex`). Returns (tag, bytesConsumed).
@@ -207,10 +245,28 @@ public enum ASN1Parser {
             if node.tag == tag {
                 return node
             }
-            if depth < maxSearchDepth, node.isConstructed, let children = try? node.children() {
-                if let found = findTag(tag, in: children, depth: depth + 1) {
-                    return found
-                }
+            if depth < maxSearchDepth, node.isConstructed,
+               let found = findTag(tag, inValueOf: node.value, depth: depth + 1)
+            {
+                return found
+            }
+        }
+        return nil
+    }
+
+    /// ``findTag(_:in:depth:)`` over the encoded children in `data`, walking slices so
+    /// only the node that is found gets its value copied. A level that does not parse
+    /// is skipped, as `try? node.children()` would.
+    private static func findTag(_ tag: UInt, inValueOf data: Data, depth: Int) -> TLVNode? {
+        guard let headers = try? parseTLVHeaders(data) else { return nil }
+        for header in headers {
+            if header.tag == tag {
+                return TLVNode(tag: header.tag, length: header.length, value: Data(data[header.valueRange]))
+            }
+            if depth < maxSearchDepth, header.isConstructed,
+               let found = findTag(tag, inValueOf: data[header.valueRange], depth: depth + 1)
+            {
+                return found
             }
         }
         return nil

@@ -303,8 +303,9 @@ public enum SODParser {
             let subChildren = (try? child.children()) ?? []
             // A DataGroupHash has INTEGER + OCTET STRING
             if subChildren.count == 2, subChildren[0].tag == 0x02, subChildren[1].tag == 0x04 {
-                let dgNumber = DG14Parser.decodeInteger(subChildren[0].value)
-                if let dgId = Self.dgTagMap[dgNumber] {
+                if let dgNumber = DG14Parser.decodeInteger(subChildren[0].value),
+                   let dgId = Self.dgTagMap[dgNumber]
+                {
                     dgHashes[dgId] = subChildren[1].value
                 }
             }
@@ -321,8 +322,9 @@ public enum SODParser {
                     for dgHashNode in dgChildren {
                         let parts = (try? dgHashNode.children()) ?? []
                         if parts.count == 2, parts[0].tag == 0x02, parts[1].tag == 0x04 {
-                            let dgNumber = DG14Parser.decodeInteger(parts[0].value)
-                            if let dgId = Self.dgTagMap[dgNumber] {
+                            if let dgNumber = DG14Parser.decodeInteger(parts[0].value),
+                               let dgId = Self.dgTagMap[dgNumber]
+                            {
                                 dgHashes[dgId] = parts[1].value
                             }
                         }

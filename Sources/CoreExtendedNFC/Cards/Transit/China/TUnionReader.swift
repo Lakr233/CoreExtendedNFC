@@ -189,6 +189,9 @@ open class TUnionReader: @unchecked Sendable {
     open class func parseFileInfo(_ fileData: Data, source: String) -> FileInfo {
         // Serial: bytes 10-19, skip first nibble (convention from Metrodroid)
         let fileData = Data(fileData)
+        guard fileData.count >= TUnionConstants.validUntilOffset + TUnionConstants.validUntilLength else {
+            return FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable")
+        }
         let serialData = Data(fileData[TUnionConstants.serialOffset ..< TUnionConstants.serialOffset + TUnionConstants.serialLength])
         let serialHex = serialData.hexString
         let serial = String(serialHex.dropFirst()) // skip first nibble
@@ -353,8 +356,11 @@ open class TUnionReader: @unchecked Sendable {
 
     open class func parseBCDDateTime(_ data: Data) -> Date? {
         guard data.count >= TUnionConstants.transactionDateTimeLength else { return nil }
-        let values = data.prefix(7).map { byte -> Int in
-            Int((byte >> 4) & 0x0F) * 10 + Int(byte & 0x0F)
+        let bytes = Array(data.prefix(7))
+        // Packed BCD: a nibble above 9 is not a decimal digit.
+        guard bytes.allSatisfy({ $0 >> 4 <= 9 && $0 & 0x0F <= 9 }) else { return nil }
+        let values = bytes.map { byte -> Int in
+            Int(byte >> 4) * 10 + Int(byte & 0x0F)
         }
         let year = values[0] * 100 + values[1]
         let month = values[2]

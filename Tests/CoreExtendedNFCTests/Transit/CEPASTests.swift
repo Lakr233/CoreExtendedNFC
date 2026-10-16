@@ -333,6 +333,31 @@ struct CEPASTests {
         #expect(charge.metadata["transactionType"] == "04")
     }
 
+    @Test
+    func `Transaction parser tolerates short and sliced records`() {
+        let short = CEPASReader.transaction(Data([0x30, 0x00, 0x00, 0x01]), recordNumber: 1) // before: traps
+        #expect(short.type == .unknown)
+        #expect(short.amount == nil)
+        #expect(short.date == nil)
+        #expect(short.rawData == Data([0x30, 0x00, 0x00, 0x01]))
+
+        let record = Data([0x30, 0xFF, 0xFF, 0x06, 0x00, 0x01, 0x51, 0x80] + Array("BFT-CGA ".utf8))
+        let sliced = (Data([0xEE]) + record).dropFirst()
+        let tx = CEPASReader.transaction(sliced, recordNumber: 1) // before: traps
+        #expect(tx == CEPASReader.transaction(record, recordNumber: 1))
+        #expect(tx.entryStation == "BFT")
+    }
+
+    @Test
+    func `Purse parser accepts a Data slice`() async throws {
+        let whole = purse(recordCount: 0)
+        let sliced = (Data([0xFF]) + whole).dropFirst()
+        let fromSlice = try await CEPASReader(transport: MockTransport()).readBalanceAndHistory(purse: sliced) // before: traps
+        let fromWhole = try await CEPASReader(transport: MockTransport()).readBalanceAndHistory(purse: whole)
+        #expect(fromSlice == fromWhole)
+        #expect(fromSlice.balanceRaw == 1250)
+    }
+
     private func purse(recordCount: UInt8) -> Data {
         var data = Data(repeating: 0, count: 65)
         data[0] = 2

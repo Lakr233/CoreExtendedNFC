@@ -29,9 +29,9 @@ public enum CardInfoRefiner {
         do {
             let version = try await commands.getVersion()
             return updated(info, type: version.cardType)
-        } catch NFCError.invalidResponse {
-            // The tag answered GET_VERSION with a NAK (short frame), so it is
-            // MF0ICU1 (Ultralight) or MF0ICU2 (Ultralight C). Tell them apart by
+        } catch where isGetVersionNAK(error) {
+            // The tag answered GET_VERSION with a NAK, so it is MF0ICU1
+            // (Ultralight) or MF0ICU2 (Ultralight C). Tell them apart by
             // memory size with a plain READ instead of an AUTHENTICATE probe:
             // a `1A 00` probe leaves an Ultralight C mid-authentication, and the
             // MF0ICU2 datasheet ("Authentication" section) aborts that state with
@@ -41,11 +41,27 @@ public enum CardInfoRefiner {
                 return updated(info, type: .mifareUltralightC)
             }
             return info
-        } catch where isSessionTerminating(error) && !isMissingTagResponse(error) {
+        } catch where isSessionTerminating(error) {
             throw error
         } catch {
             return info
         }
+    }
+
+    /// Whether a GET_VERSION failure is the tag's NAK rather than a lost session.
+    ///
+    /// A NAK reaches the library either as a short frame
+    /// (``NFCError/invalidResponse(_:)``) or, because CoreNFC reports a NAKed or
+    /// unanswered optional command the same way as a tag that left the field,
+    /// as ``NFCError/tagConnectionLost`` (see
+    /// ``NFCReaderErrorMapping/isMissingTagResponse(_:)``). Both lead to the
+    /// Ultralight C memory probe, whose READ fails if the tag really is gone.
+    /// Real session loss — ``NFCError/userCanceled``,
+    /// ``NFCError/sessionInvalidated(_:)``, timeouts, `CancellationError` — is
+    /// not a NAK and propagates.
+    public static func isGetVersionNAK(_ error: any Error) -> Bool {
+        if case NFCError.invalidResponse = error { return true }
+        return isMissingTagResponse(error)
     }
 
     public static func refinePossibleUltralight(

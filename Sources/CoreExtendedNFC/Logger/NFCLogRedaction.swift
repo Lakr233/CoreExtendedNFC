@@ -36,7 +36,8 @@ public enum NFCLogRedaction {
     public enum RawFamily: Sendable {
         /// NFC-A native commands (MIFARE Ultralight / NTAG).
         case mifare
-        /// FeliCa frames (`LEN CMD IDm ...`); never carry secrets but carry the IDm.
+        /// FeliCa frames (`LEN CMD IDm ...`); carry the IDm, and a Write Without
+        /// Encryption to the FeliCa Lite / Lite-S CK block carries the card key.
         case felica
         /// ISO 15693 requests; never carry secrets in this library but carry block data.
         case iso15693
@@ -62,8 +63,9 @@ public enum NFCLogRedaction {
 
     /// DESFire native commands carrying key material: the authentication commands
     /// (`AuthenticateLegacy`, `AuthenticateISO`, `AuthenticateAES`,
-    /// `AuthenticateEV2First`, `AuthenticateEV2NonFirst`) and `ChangeKey` (0xC4).
-    public static let desfireSensitiveCommands: Set<UInt8> = [0x0A, 0x1A, 0xAA, 0x71, 0x77, 0xC4]
+    /// `AuthenticateEV2First`, `AuthenticateEV2NonFirst`), `ChangeKey` (0xC4) and
+    /// `ChangeKeyEV2` (0xC6, EV2+: KeySetNo ‖ KeyNo ‖ key cryptogram).
+    public static let desfireSensitiveCommands: Set<UInt8> = [0x0A, 0x1A, 0xAA, 0x71, 0x77, 0xC4, 0xC6]
 
     /// DESFire `ADDITIONAL FRAME`.
     public static let desfireAdditionalFrame: UInt8 = 0xAF
@@ -85,8 +87,12 @@ public enum NFCLogRedaction {
     /// - MF0ICU2 (Ultralight C): 3DES key 2Ch-2Fh
     /// - NTAG215: PWD 85h, PACK 86h
     /// - NTAG216: PWD E5h, PACK E6h
+    /// - MF0AES(H)20 (Ultralight AES) data sheet Rev. 3.3, Table 6 / §8.6.3:
+    ///   AES_KEY0 [DataProtKey] 30h-33h, AES_KEY1 [UIDRetrKey] 34h-37h
     public static let mifareSecretPages: Set<UInt8> = [
-        0x12, 0x13, 0x27, 0x28, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x85, 0x86, 0xE5, 0xE6,
+        0x12, 0x13, 0x27, 0x28, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F,
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+        0x85, 0x86, 0xE5, 0xE6,
     ]
 
     /// NXP ICODE custom commands (ICODE SLIX2 datasheet, "Custom commands") that
@@ -94,6 +100,56 @@ public enum NFCLogRedaction {
     /// GET RANDOM NUMBER (B2h), SET PASSWORD (B3h), WRITE PASSWORD (B4h),
     /// DESTROY (B9h) and ENABLE PRIVACY (BAh).
     public static let sensitiveISO15693Commands: Set<UInt8> = [0xB2, 0xB3, 0xB4, 0xB9, 0xBA]
+
+    /// FeliCa Write Without Encryption command code.
+    public static let felicaWriteWithoutEncryption: UInt8 = 0x08
+
+    /// FeliCa Lite / Lite-S blocks whose written value is a secret: CK (87h, Card
+    /// Key: CK1 ‖ CK2, the MAC session-key source; FeliCa Lite-S User's Manual
+    /// v1.4 §3.1.11 and Table 3-1, "Values read from a card are ALL_00h").
+    public static let felicaSecretBlocks: Set<UInt16> = [0x87]
+
+    /// Whether `frame` is a FeliCa Write Without Encryption (08h) whose block list
+    /// names a ``felicaSecretBlocks`` block.
+    ///
+    /// Accepts the frame with or without the leading LEN byte. A Write Without
+    /// Encryption frame whose block list cannot be parsed is treated as secret.
+    public static func isSecretFeliCaWrite(_ frame: Data) -> Bool {
+        let bytes = [UInt8](frame)
+        let commandIndex: Int
+        if bytes.count > 1, Int(bytes[0]) == bytes.count, bytes[1] == felicaWriteWithoutEncryption {
+            commandIndex = 1
+        } else if bytes.first == felicaWriteWithoutEncryption {
+            commandIndex = 0
+        } else {
+            return false
+        }
+        // CMD ‖ IDm (8) ‖ number of services ‖ service codes (2 each) ‖
+        // number of blocks ‖ block list ‖ block data.
+        var index = commandIndex + 1 + 8
+        guard index < bytes.count else { return true }
+        index += 1 + Int(bytes[index]) * 2
+        guard index < bytes.count else { return true }
+        let blockCount = Int(bytes[index])
+        index += 1
+        for _ in 0 ..< blockCount {
+            guard index < bytes.count else { return true }
+            let block: UInt16
+            if bytes[index] & 0x80 != 0 {
+                // 2-byte element: [1 len access svcIdx] ‖ block number.
+                guard index + 1 < bytes.count else { return true }
+                block = UInt16(bytes[index + 1])
+                index += 2
+            } else {
+                // 3-byte element: [0 len access svcIdx] ‖ block number (little-endian).
+                guard index + 2 < bytes.count else { return true }
+                block = UInt16(bytes[index + 1]) | UInt16(bytes[index + 2]) << 8
+                index += 3
+            }
+            if felicaSecretBlocks.contains(block) { return true }
+        }
+        return false
+    }
 
     /// Whether a WRITE / COMPATIBILITY_WRITE to `page` must not be logged.
     public static func isSecretMiFarePage(_ page: UInt8) -> Bool {
@@ -169,7 +225,7 @@ public enum NFCLogRedaction {
         case .iso15693:
             return sensitiveISO15693Commands.contains(command)
         case .felica:
-            return false
+            return isSecretFeliCaWrite(frame)
         }
     }
 
@@ -230,6 +286,10 @@ public enum NFCLogRedaction {
         let commandHex = String(format: "%02X", command)
         let parameterCount = frame.count - 1
         if isSensitiveRaw(frame, family: family) {
+            if family == .felica {
+                // Keep the command code visible; the length byte alone says nothing.
+                return "→ SEND cmd=\(String(format: "%02X", felicaWriteWithoutEncryption)) \(redacted(frame.count))"
+            }
             return parameterCount > 0 ? "→ SEND \(commandHex) \(redacted(parameterCount))" : "→ SEND \(commandHex)"
         }
         if logPayloads {

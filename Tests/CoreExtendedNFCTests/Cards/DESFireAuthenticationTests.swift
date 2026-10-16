@@ -131,20 +131,43 @@ struct DESFireAuthenticationTests {
         let rndB = Self.rndB
         let singleDES = try #require(Data(hexString: "0123456789ABCDEF0123456789ABCDEF"))
         #expect(
-            DESFireCommands.deriveISOSessionKey(key: singleDES, rndA: Self.rndA, rndB: rndB)
+            try DESFireCommands.deriveISOSessionKey(key: singleDES, rndA: Self.rndA, rndB: rndB)
                 == Data(hexString: "01020304112233440102030411223344")
         )
         let twoKey = try #require(Data(hexString: "0123456789ABCDEFFEDCBA9876543210"))
         #expect(
-            DESFireCommands.deriveISOSessionKey(key: twoKey, rndA: Self.rndA, rndB: rndB)
+            try DESFireCommands.deriveISOSessionKey(key: twoKey, rndA: Self.rndA, rndB: rndB)
                 == Data(hexString: "01020304112233440506070855667788")
         )
         // Slices with a non-zero start index derive the same key.
         let padded = Data([0xFF]) + singleDES
         #expect(
-            DESFireCommands.deriveISOSessionKey(key: padded.dropFirst(), rndA: Self.rndA, rndB: rndB)
+            try DESFireCommands.deriveISOSessionKey(key: padded.dropFirst(), rndA: Self.rndA, rndB: rndB)
                 == Data(hexString: "01020304112233440102030411223344")
         )
+    }
+
+    @Test
+    func `ISO session key derivation rejects short challenges and wrong key sizes`() {
+        let key = Data(count: 16)
+        let rnd8 = Data(repeating: 0x11, count: 8)
+        let cases: [(Data, Data, Data)] = [
+            (key, Data([0x01]), rnd8),
+            (key, rnd8, Data([0x02])),
+            (key, Data(), Data()),
+            (Data(count: 8), rnd8, rnd8),
+            (Data(count: 24), rnd8, rnd8),
+            (Data(), rnd8, rnd8),
+        ]
+        for (key, rndA, rndB) in cases {
+            do {
+                _ = try DESFireCommands.deriveISOSessionKey(key: key, rndA: rndA, rndB: rndB)
+                Issue.record("expected invalidParameter for key \(key.count), rndA \(rndA.count), rndB \(rndB.count)")
+            } catch NFCError.invalidParameter {
+            } catch {
+                Issue.record("unexpected error \(error)")
+            }
+        }
     }
 
     // MARK: - AuthenticateEV2First framing

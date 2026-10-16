@@ -57,6 +57,8 @@ open class CEPASReader: @unchecked Sendable {
     }
 
     open func readBalanceAndHistory(purse: Data) async throws -> TransitBalance {
+        // Rebase a slice so the absolute purse offsets below index from 0.
+        let purse = Data(purse)
         guard purse.count >= 63, purse.count >= 63 + Int(purse[41]) else {
             throw NFCError.invalidResponse(purse)
         }
@@ -126,6 +128,19 @@ open class CEPASReader: @unchecked Sendable {
     }
 
     open class func transaction(_ record: Data, recordNumber: Int) -> TransitTransaction {
+        // Rebase a slice so the record offsets below index from 0.
+        let record = Data(record)
+        guard record.count >= 16 else {
+            // A CEPAS log record is 16 bytes; a shorter one carries no decodable fields.
+            return TransitTransaction(
+                type: .unknown,
+                amount: nil,
+                date: nil,
+                recordNumber: recordNumber,
+                rawData: record,
+                metadata: [:]
+            )
+        }
         let type: TransactionType
         // Type codes follow Metrodroid CEPASTransaction.getType.
         switch record[0] {

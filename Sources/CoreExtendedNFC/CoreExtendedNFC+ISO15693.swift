@@ -192,6 +192,10 @@ public extension CoreExtendedNFC {
         return NSRange(location: range.lowerBound, length: range.count)
     }
 
+    /// `transport` as an ISO 15693 transport.
+    ///
+    /// - Throws: ``NFCError/unsupportedOperation(_:)`` when `transport` does not
+    ///   conform to ``ISO15693TagTransporting``.
     static func iso15693Transport(
         from transport: any NFCTagTransport
     ) throws -> any ISO15693TagTransporting {

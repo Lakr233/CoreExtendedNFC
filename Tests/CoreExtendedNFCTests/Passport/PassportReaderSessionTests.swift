@@ -427,7 +427,7 @@ struct PassportReaderSessionTests {
     }
 
     @Test
-    func `Active Authentication runs before EAC data groups and a dead session skips it instead of failing`() async throws {
+    func `Active Authentication runs before EAC data groups and a session dropped at INTERNAL AUTHENTICATE fails it`() async throws {
         let dg1 = Self.makeDG1()
         let dg15 = Self.makeDG15()
         let dg3 = ASN1Parser.encodeTLV(tag: 0x63, value: Data(repeating: 0x02, count: 40))
@@ -449,7 +449,10 @@ struct PassportReaderSessionTests {
 
         #expect(model.rawDataGroups[.dg1] == dg1)
         #expect(model.rawDataGroups[.dg15] == dg15)
-        #expect(model.securityReport.activeAuthentication.status == .skipped)
+        // DG15 is present, so a chip that does not sign the challenge fails AA: a clone
+        // without the AA private key could drop the session the same way.
+        #expect(model.securityReport.activeAuthentication.status == .failed)
+        #expect(model.activeAuthResult?.status == .commandFailed)
         #expect(model.dataGroupReadStatus?[.dg3]?.state == .notRead)
         // AA is the last command: DG3 is not selected once the session is known to be over.
         #expect(chip.protectedINS.last == 0x88)

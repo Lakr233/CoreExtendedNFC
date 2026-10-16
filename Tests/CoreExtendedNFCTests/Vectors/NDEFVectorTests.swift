@@ -645,7 +645,8 @@ struct NDEFVectorTests {
                 + " 00000000 5a5a0000 00000000 00000000 00000000"
         )
         let transport = MockTransport()
-        transport.responses = [Self.hex("E1100600 000103c0 10220203 a0040200")]
+        // Only NULL TLVs follow the control TLVs in pages 4-6, so pages 7-10 are read too.
+        transport.responses = [Self.hex("E1100600 000103c0 10220203 a0040200"), Self.hex("00000000 00000000 00000000 a5a5a5a5")]
             + Array(repeating: Data([0x0A]), count: 7)
         let message = NDEFMessage.text("Hi")
         try await CoreExtendedNFC.writeNDEF(
@@ -654,7 +655,7 @@ struct NDEFVectorTests {
             transport: transport
         )
 
-        let written = Set(transport.sentCommands.dropFirst().map { $0[$0.startIndex + 1] })
+        let written = Set(transport.sentCommands.filter { $0.first == 0xA2 }.map { $0[$0.startIndex + 1] })
         #expect(written == Set(4 ... 9))
         let after = Self.applyingWrites(transport.sentCommands, to: before)
         #expect(after.first { $0.number == 4 }?.data == Self.hex("000103c0"))
@@ -688,10 +689,11 @@ struct NDEFVectorTests {
 
     @Test
     func `Type 2 write is refused when reserved bytes share a page with the control TLVs`() {
-        // Memory Control 02 03 510402 reserves bytes 21-24, inside page 5 next to the TLV.
+        // Memory Control 02 03 510402 reserves bytes 21-24, inside page 5 next to the TLV;
+        // the NDEF TLV 03 00 after the reserved bytes confirms it is a control TLV.
         #expect(throws: NFCError.self) {
             try NDEFTagMapping.type2WriteLayout(
-                leadingBytes: Self.hex("02035104 02000000 00000000"),
+                leadingBytes: Self.hex("02035104 02000000 000300fe"),
                 dataAreaOffset: 16,
                 capacity: 48
             )
@@ -977,7 +979,7 @@ struct NDEFVectorTests {
         let message = try #require(NDEFTagMapping.extractType5Message(from: Self.type5Blocks(cc + Self.sparkFunTLV)))
         #expect(message == NDEFMessage.uri("https://www.sparkfun.com").data)
         #expect(try NDEFMessage(data: message).records.map(\.parsedPayload) == [.uri("https://www.sparkfun.com")])
-        #expect(NDEFTagMapping.encodeNDEFTLV(message) == Self.sparkFunTLV)
+        #expect(try NDEFTagMapping.encodeNDEFTLV(message) == Self.sparkFunTLV)
 
         // Formatting the same 8 KiB tag (2048 blocks of 4 bytes) reproduces the CC except
         // byte 3: the library advertises no MBREAD feature (00h instead of 01h).

@@ -31,13 +31,47 @@ public struct UltralightMemoryMap: Sendable, Equatable {
 
     /// Whether `page` lies in the user data area. Every other page is a
     /// manufacturer, lock, OTP, configuration, password or key page.
+    ///
+    /// Returns `false` for every page when the map's user data range is empty
+    /// (`userDataStart > userDataEnd`).
     public func isUserDataPage(_ page: UInt8) -> Bool {
-        (userDataStart ... userDataEnd).contains(page)
+        userDataStart <= userDataEnd && page >= userDataStart && page <= userDataEnd
     }
 
     /// Number of user data bytes (4 bytes per page, inclusive range).
+    ///
+    /// Computed in `Int`, so a full 0...255 range gives 1024; an empty range
+    /// (`userDataStart > userDataEnd`) gives 0.
     public var userDataByteCount: Int {
-        Int(userDataEnd - userDataStart + 1) * 4
+        guard userDataStart <= userDataEnd else { return 0 }
+        return (Int(userDataEnd) - Int(userDataStart) + 1) * 4
+    }
+
+    /// Whether the map describes a usable Type 2 layout: the user data area
+    /// starts at or after page 4 (after the UID, lock and OTP pages), is not
+    /// empty, and ends inside the tag; the configuration and dynamic lock
+    /// pages, when present, are inside the tag too.
+    public var isValid: Bool {
+        guard userDataStart >= 4, userDataStart <= userDataEnd, userDataEnd < totalPages else {
+            return false
+        }
+        if let configStart, configStart >= totalPages { return false }
+        if let dynamicLockStart, dynamicLockStart >= totalPages { return false }
+        return true
+    }
+
+    /// Throw ``NFCError/invalidParameter(_:)`` unless ``isValid``.
+    ///
+    /// Write and restore paths call this before using a caller-supplied map,
+    /// so a malformed map is refused instead of misclassifying pages.
+    public func validate() throws {
+        guard isValid else {
+            throw NFCError.invalidParameter(
+                "Invalid Ultralight memory map: user data \(userDataStart)...\(userDataEnd), "
+                    + "\(totalPages) pages, config \(configStart.map(String.init) ?? "none"), "
+                    + "dynamic lock \(dynamicLockStart.map(String.init) ?? "none")"
+            )
+        }
     }
 
     /// Build memory map for a specific card type.

@@ -120,9 +120,11 @@ open class JapanICReader: @unchecked Sendable {
                     continue
                 }
 
-                // Unused slots are not always all zeros (e.g. `00 00 00 80 00…` on PASMO);
-                // like Metrodroid SuicaTransitData, drop records without a valid date.
-                if let tx = Self.parseHistoryBlock(block), tx.date != nil {
+                // Unused slots are not always all zeros (e.g. `00 00 00 80 00…` on PASMO).
+                // Like Metrodroid (SuicaUtil.extractDate returns null only for a raw date of 0,
+                // and SuicaTransitData skips only those), drop slots whose date field is 0 and
+                // keep records whose date fields are out of range, with a nil date.
+                if Self.hasDateField(block), let tx = Self.parseHistoryBlock(block) {
                     NFCLog.debug(
                         "Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter.map { NFCLog.cardValue($0) } ?? "unavailable") entry=\(NFCLog.cardValue(tx.entryStation ?? "")) exit=\(NFCLog.cardValue(tx.exitStation ?? ""))",
                         source: "JapanIC")
@@ -173,7 +175,7 @@ open class JapanICReader: @unchecked Sendable {
         let exitCode = Data(bytes[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
         var entryStation: String?
         var exitStation: String?
-        if date != nil, !isProductSale, processType != JapanICConstants.chargeProcessType {
+        if hasDateField(block), !isProductSale, processType != JapanICConstants.chargeProcessType {
             if consoleType == JapanICConstants.busConsoleType {
                 metadata["busLineCode"] = entryCode
                 metadata["busStopCode"] = exitCode
@@ -198,6 +200,15 @@ open class JapanICReader: @unchecked Sendable {
             exitStation: exitStation,
             metadata: metadata
         )
+    }
+
+    /// Whether the history block's 2-byte date field is non-zero. Metrodroid
+    /// (SuicaUtil.extractDate) treats a zero date as an unused slot.
+    open class func hasDateField(_ block: Data) -> Bool {
+        let offset = JapanICConstants.historyDateOffset
+        let bytes = [UInt8](block)
+        guard bytes.count > offset + 1 else { return false }
+        return bytes[offset] != 0 || bytes[offset + 1] != 0
     }
 
     /// Parse the packed date field from a history block.

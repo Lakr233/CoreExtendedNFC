@@ -156,6 +156,13 @@ public extension DESFireCommands {
 }
 
 public extension DESFireCommands {
+    /// ``getValueAuthenticatedEV2(fileID:keyNo:key:pcdCapabilities:)`` with an
+    /// explicit 16-byte RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func getValueAuthenticatedEV2(
         fileID: UInt8,
         keyNo: UInt8,
@@ -173,6 +180,13 @@ public extension DESFireCommands {
         return (session, value)
     }
 
+    /// ``readDataAuthenticatedISO(fileID:keyNo:key:offset:length:)`` with an
+    /// explicit 8-byte RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func readDataAuthenticatedISO(
         fileID: UInt8,
         keyNo: UInt8,
@@ -190,6 +204,13 @@ public extension DESFireCommands {
         return try (session, Self.stripEV1ResponseMAC(data))
     }
 
+    /// ``readDataAuthenticatedEV2(fileID:keyNo:key:offset:length:pcdCapabilities:)``
+    /// with an explicit 16-byte RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func readDataAuthenticatedEV2(
         fileID: UInt8,
         keyNo: UInt8,
@@ -209,6 +230,13 @@ public extension DESFireCommands {
         return (session, data)
     }
 
+    /// ``readRecordsAuthenticatedISO(fileID:keyNo:key:offset:count:)`` with an
+    /// explicit 8-byte RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func readRecordsAuthenticatedISO(
         fileID: UInt8,
         keyNo: UInt8,
@@ -222,6 +250,13 @@ public extension DESFireCommands {
         return try (session, Self.stripEV1ResponseMAC(data))
     }
 
+    /// ``readRecordsAuthenticatedEV2(fileID:keyNo:key:offset:count:pcdCapabilities:)``
+    /// with an explicit 16-byte RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func readRecordsAuthenticatedEV2(
         fileID: UInt8,
         keyNo: UInt8,
@@ -241,6 +276,13 @@ public extension DESFireCommands {
         return (session, data)
     }
 
+    /// ``getValueAuthenticatedISO(fileID:keyNo:key:)`` with an explicit 8-byte
+    /// RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func getValueAuthenticatedISO(
         fileID: UInt8,
         keyNo: UInt8,
@@ -253,6 +295,13 @@ public extension DESFireCommands {
         return (session, value)
     }
 
+    /// ``authenticateISO(keyNo:key:)`` with an explicit 8-byte RndA (`nil`
+    /// generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func authenticateISO(
         keyNo: UInt8,
         key: Data,
@@ -298,7 +347,7 @@ public extension DESFireCommands {
             throw NFCError.authenticationFailed
         }
 
-        let sessionKey = Self.deriveISOSessionKey(key: key, rndA: rndAValue, rndB: rndB)
+        let sessionKey = try Self.deriveISOSessionKey(key: key, rndA: rndAValue, rndB: rndB)
 
         return DESFireAuthenticationSession(
             scheme: .authenticateISO,
@@ -308,6 +357,13 @@ public extension DESFireCommands {
         )
     }
 
+    /// ``authenticateEV2First(keyNo:key:pcdCapabilities:)`` with an explicit
+    /// 16-byte RndA (`nil` generates one).
+    ///
+    /// - Important: `rndA` is for tests and protocol traces only. Passing a
+    ///   fixed challenge weakens authentication; production callers should
+    ///   omit it (use the overload without `rndA`, which draws a fresh random
+    ///   challenge).
     func authenticateEV2First(
         keyNo: UInt8,
         key: Data,
@@ -398,12 +454,21 @@ public extension DESFireCommands {
     /// (proxmark3 `DesfireGenSessionKeyEV1`, `desfirecore.c`):
     /// `RndA[0..3] ‖ RndB[0..3] ‖ RndA[4..7] ‖ RndB[4..7]`, or, when both key
     /// halves are equal (single DES), `RndA[0..3] ‖ RndB[0..3]` twice.
-    static func deriveISOSessionKey(key: Data, rndA: Data, rndB: Data) -> Data {
+    ///
+    /// - Throws: ``NFCError/invalidParameter(_:)`` unless `key` is 16 bytes and
+    ///   `rndA` / `rndB` are at least 8 bytes each.
+    static func deriveISOSessionKey(key: Data, rndA: Data, rndB: Data) throws -> Data {
+        guard key.count == 16 else {
+            throw NFCError.invalidParameter("AuthenticateISO session key derivation requires a 16-byte key")
+        }
+        guard rndA.count >= 8, rndB.count >= 8 else {
+            throw NFCError.invalidParameter("AuthenticateISO session key derivation requires 8-byte RndA and RndB")
+        }
         let a = [UInt8](rndA)
         let b = [UInt8](rndB)
         let k = [UInt8](key)
         let first = Data(a[0 ..< 4]) + Data(b[0 ..< 4])
-        if k.count == 16, k[0 ..< 8] == k[8 ..< 16] {
+        if k[0 ..< 8] == k[8 ..< 16] {
             return first + first
         }
         return first + Data(a[4 ..< 8]) + Data(b[4 ..< 8])
@@ -476,6 +541,11 @@ public extension DESFireCommands {
         }
     }
 
+    /// Return `candidate` when it is `count` bytes, or `count` fresh random bytes
+    /// when it is `nil`.
+    ///
+    /// - Important: For tests and protocol traces only. Passing a fixed
+    ///   challenge weakens authentication; production callers should omit it.
     func validateOrGenerateRandom(_ candidate: Data?, count: Int) throws -> Data {
         if let candidate {
             guard candidate.count == count else {

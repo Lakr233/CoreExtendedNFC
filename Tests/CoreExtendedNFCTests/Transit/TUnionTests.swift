@@ -533,4 +533,24 @@ struct TUnionTests {
         }
         return data
     }
+
+    @Test
+    func `File info parser tolerates short and sliced input`() {
+        let short = TUnionReader.parseFileInfo(Data(count: 12), source: "x") // before: traps
+        #expect(short == TUnionReader.FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable"))
+
+        var file = Data(count: 30)
+        file.replaceSubrange(10 ..< 20, with: Data([0x01, 0x23, 0x45, 0x67, 0x89, 0x01, 0x23, 0x45, 0x67, 0x89]))
+        file.replaceSubrange(20 ..< 28, with: Data([0x20, 0x24, 0x01, 0x01, 0x20, 0x34, 0x12, 0x31]))
+        let sliced = (Data([0xAA, 0xBB]) + file).dropFirst(2)
+        #expect(TUnionReader.parseFileInfo(sliced, source: "x") == TUnionReader.parseFileInfo(file, source: "x"))
+    }
+
+    @Test
+    func `BCD date-time parser rejects non-decimal nibbles`() {
+        // 0x0A would read as month 10 and 0x1A as day 20.
+        #expect(TUnionReader.parseBCDDateTime(Data([0x20, 0x24, 0x0A, 0x1A, 0x0B, 0x00, 0x00])) == nil)
+        #expect(TUnionReader.parseBCDDateTime(Data([0x20, 0x24, 0x10, 0x15, 0x0B, 0x00, 0x00])) == nil) // hour 0B
+        #expect(TUnionReader.parseBCDDateTime(Data([0x20, 0x24, 0x10, 0x15, 0x11, 0x00, 0x00])) != nil)
+    }
 }

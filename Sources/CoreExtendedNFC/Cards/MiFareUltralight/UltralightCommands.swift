@@ -206,6 +206,7 @@ open class UltralightCommands: @unchecked Sendable {
         memoryMap: UltralightMemoryMap?,
         allowIrreversible: Bool
     ) throws {
+        try memoryMap?.validate()
         guard !allowIrreversible else { return }
         switch page {
         case 0x00 ... 0x02:

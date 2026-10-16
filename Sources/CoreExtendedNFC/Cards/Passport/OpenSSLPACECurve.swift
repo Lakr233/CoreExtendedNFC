@@ -120,6 +120,14 @@ import Foundation
             return try exportPoint(result)
         }
 
+        /// Whether the big-endian integer `value` is 0 modulo the curve order `n`
+        /// (an empty value counts as 0).
+        public func isZeroModuloOrder(_ value: Data) throws -> Bool {
+            let reduced = try makeReducedScalar(value)
+            defer { BN_free(reduced) }
+            return BN_num_bits(reduced) == 0
+        }
+
         public func mappedGenerator(nonce: Data, sharedPoint: Data) throws -> Data {
             let nonceScalar = try makeReducedScalar(nonce)
             defer { BN_free(nonceScalar) }

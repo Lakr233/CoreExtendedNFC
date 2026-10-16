@@ -488,11 +488,13 @@ struct NDEFTests {
             (2, Data([0xAA, 0xAA, 0xAA, 0xAA])),
         ]
         let ordered = NDEFTagMapping.lengthLastWriteOrder(writes, blockSize: 4, tlvOffset: 2)
-        #expect(ordered.map(\.block) == [0, 1, 2, 0, 1])
+        // The block holding the first length byte is finalised last, so the switch
+        // from length 0 to the real length is a single block write.
+        #expect(ordered.map(\.block) == [0, 1, 2, 1, 0])
         #expect(ordered[0].data == Data([0xE1, 0x40, 0x03, 0x00]))
         #expect(ordered[1].data == Data([0x00, 0x00, 0xAA, 0xAA]))
-        #expect(ordered[3].data == writes[0].data)
-        #expect(ordered[4].data == writes[1].data)
+        #expect(ordered[3].data == writes[1].data)
+        #expect(ordered[4].data == writes[0].data)
     }
 
     @Test
@@ -639,7 +641,9 @@ struct NDEFTests {
         // 256 blocks × 32 bytes: 255 × 32 / 8 = 1020 units, too large for one MLEN byte.
         let blocks = try NDEFTagMapping.buildType5Blocks(message: Data([0xD0, 0x00, 0x00]), blockSize: 32, blockCount: 256)
         #expect(blocks.count == 256)
-        #expect(blocks[0].prefix(8) == Data([0xE1, 0x40, 0x00, 0x00, 0x00, 0x00, 0x03, 0xFC]))
+        // The T5T_Area runs from byte 8: (8192 - 8) / 8 = 1023 units (was 1020 when the
+        // TLV started at the next block).
+        #expect(blocks[0].prefix(8) == Data([0xE1, 0x40, 0x00, 0x00, 0x00, 0x00, 0x03, 0xFF]))
         let extracted = NDEFTagMapping.extractType5Message(
             from: blocks.enumerated().map { MemoryDump.Block(number: $0.offset, data: $0.element) }
         )
@@ -827,8 +831,8 @@ struct NDEFTests {
             addressableBlockCount: NDEFTagMapping.type5ExtendedAddressableBlocks
         )
         #expect(blocks[0].prefix(8) == Data([0xE2, 0x40, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF]))
-        // 1 CC block + ceil(FFFFh × 8 / 32) data blocks.
-        #expect(blocks.count == 1 + 16384)
+        // ceil((8-byte CC + FFFFh × 8) / 32) blocks.
+        #expect(blocks.count == 16384)
     }
 
     @Test

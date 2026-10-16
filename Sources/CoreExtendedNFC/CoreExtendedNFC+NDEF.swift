@@ -59,7 +59,10 @@ public extension CoreExtendedNFC {
     /// so an interrupted write leaves an empty message rather than a truncated one.
     /// On Type 2 tags the NDEF TLV is written at the start of the user area (page 4),
     /// after any Lock Control and Memory Control TLVs found there (NFC Forum T2T 1.0
-    /// §2.3.4 / §2.3.5), which are kept unchanged. When such a TLV declares lock or
+    /// §2.3.4 / §2.3.5), which are kept unchanged. They are only kept when each has a
+    /// length of 3 and they are followed by an NDEF or Terminator TLV, or only by NULL
+    /// TLVs, within the pages read (pages 4-10); other leading bytes, such as earlier
+    /// non-NDEF data, are overwritten from page 4. When such a TLV declares lock or
     /// reserved bytes inside the data area, the message and its padding stop before
     /// the page holding the first of them, and a tag whose reserved bytes share a page
     /// with the control TLVs is refused with ``NFCError/unsupportedOperation(_:)``.
@@ -142,7 +145,9 @@ public extension CoreExtendedNFC {
     /// Read the NDEF message of a Type 5 tag without dumping the whole tag.
     ///
     /// Reads the CC from block 0, then only the blocks covering the T5T_Area announced
-    /// by MLEN (NFC Forum T5T 1.0 §4.3.1 / §7.3). Blocks from 256 on are read with
+    /// by MLEN (NFC Forum T5T 1.0 §4.3.1 / §7.3). A CC without the E1h / E2h magic or
+    /// with a major version above 1 throws ``NFCError/tagNotNDEFFormatted``, and one
+    /// that denies read access throws ``NFCError/tagLocked``. Blocks from 256 on are read with
     /// EXTENDED READ SINGLE BLOCK; when the tag rejects it the read stops there, so a
     /// message that ends past block 255 is then reported as not found.
     static func readType5NDEF(
@@ -179,9 +184,8 @@ public extension CoreExtendedNFC {
         guard try await readNextBlock() else {
             throw NFCError.ndefMessageNotFound
         }
-        guard let ccLength = NDEFTagMapping.type5FormattedCCLength(leadingBytes: leadingBytes) else {
-            throw NFCError.tagNotNDEFFormatted
-        }
+        // T5T 1.0 §7.3: magic, major version and read access are checked first.
+        let ccLength = try NDEFTagMapping.type5ReadableCCLength(leadingBytes: leadingBytes)
         while leadingBytes.count < ccLength {
             guard try await readNextBlock() else { break }
         }
@@ -233,21 +237,23 @@ public extension CoreExtendedNFC {
             if let page = UInt8(exactly: nextPage) {
                 leadingBytes.append(try await commands.readPages(startPage: page).prefix(16))
                 leadingBytes = Data(leadingBytes.prefix(capacity))
+                // No more pages are read: control TLVs followed only by NULL TLVs are kept.
                 layout = try NDEFTagMapping.type2WriteLayout(
                     leadingBytes: leadingBytes,
                     dataAreaOffset: dataAreaOffset,
-                    capacity: capacity
+                    capacity: capacity,
+                    keepingControlTLVsBeforeNULLs: true
                 )
             }
         }
-        guard let layout else {
+        guard let plan = layout else {
             throw NFCError.unsupportedOperation("Type 2 control TLVs are too long; NDEF writing is not supported")
         }
         try await writeType2Area(
             message,
-            capacity: layout.capacity,
-            preservedPrefix: layout.preservedPrefix,
-            endsDataArea: layout.endsDataArea,
+            capacity: plan.capacity,
+            preservedPrefix: plan.preservedPrefix,
+            endsDataArea: plan.endsDataArea,
             memory: memory,
             commands: commands
         )

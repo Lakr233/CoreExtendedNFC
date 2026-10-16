@@ -232,6 +232,18 @@ struct LogRedactionTests {
         #expect(Self.contains(readSpy.messages, fileData))
     }
 
+    @Test(arguments: [UInt8(0xC4), 0xC6])
+    func `DESFire ChangeKey and ChangeKeyEV2 cryptograms are redacted`(command: UInt8) {
+        let cryptogram = Data(repeating: 0x5E, count: 24)
+        let data = Data([0x00, 0x01]) + cryptogram
+        let apdu = CommandAPDU.desfireWrap(command: command, data: data)
+        let spy = SpyNFCLogger()
+        NFCLog.apduCommand(apdu, source: "Test", logger: spy, logPayloads: true)
+        NFCLog.desfireCommand(command, data: data, source: "Test", logger: spy, logPayloads: true)
+        #expect(!Self.contains(spy.messages, cryptogram))
+        #expect(spy.messages.contains("DESFire CMD \(String(format: "0x%02X", command)) data=<redacted 26 bytes>"))
+    }
+
     // MARK: - Identifiers
 
     @Test
@@ -267,6 +279,19 @@ struct LogRedactionTests {
         #expect(Self.contains(messages, userData))
     }
 
+    /// MF0AES(H)20 data sheet Rev. 3.3, §8.6.3: DataProtKey 30h-33h, UIDRetrKey 34h-37h.
+    @Test(arguments: Array(UInt8(0x30) ... 0x37))
+    func `Ultralight AES key page writes are redacted`(page: UInt8) {
+        let keyBytes = Data([0x0F, 0x0E, 0x0D, 0x0C])
+        let messages = Self.replayRaw(
+            commands: [Data([0xA2, page]) + keyBytes],
+            responses: [Data([0x0A])],
+            logPayloads: true
+        )
+        #expect(!Self.contains(messages, keyBytes))
+        #expect(messages.contains("→ SEND A2 <redacted 5 bytes>"))
+    }
+
     @Test
     func `Ultralight COMPATIBILITY_WRITE data frame to a key page is redacted`() async throws {
         let spy = SpyNFCLogger()
@@ -278,6 +303,54 @@ struct LogRedactionTests {
         try await commands.compatibilityWrite(0x05, data: userData)
         #expect(!Self.contains(spy.messages, key))
         #expect(Self.contains(spy.messages, userData))
+    }
+
+    // MARK: - FeliCa Lite-S card key
+
+    private static let felicaIDm = Data([0x01, 0x2E, 0x4C, 0x55, 0x66, 0x77, 0x88, 0x99])
+
+    /// Write Without Encryption (08h) frame with the LEN byte, one service, one block.
+    private static func felicaWrite(blockListElement: Data, data: Data) -> Data {
+        let body = Data([0x08]) + felicaIDm + Data([0x01, 0x09, 0x00, 0x01]) + blockListElement + data
+        return Data([UInt8(body.count + 1)]) + body
+    }
+
+    /// FeliCa Lite-S User's Manual v1.4 §3.1.11: CK is block 87h.
+    @Test
+    func `FeliCa Lite-S card key write is redacted`() {
+        let cardKey = Data((0 ..< 16).map { UInt8(0xA0 + $0) })
+        let frames = [
+            Self.felicaWrite(blockListElement: FeliCaFrame.blockListElement(blockNumber: 0x87), data: cardKey),
+            Self.felicaWrite(blockListElement: Data([0x00, 0x87, 0x00]), data: cardKey), // 3-byte element
+            Data(Self.felicaWrite(blockListElement: FeliCaFrame.blockListElement(blockNumber: 0x87), data: cardKey).dropFirst()),
+        ]
+        for frame in frames {
+            #expect(NFCLogRedaction.isSecretFeliCaWrite(frame))
+            let spy = SpyNFCLogger()
+            NFCLog.rawCommand(frame, family: .felica, source: "Test", logger: spy, logPayloads: true)
+            NFCLog.rawResponse(Data([0x0C, 0x09]) + Self.felicaIDm + Data([0x00, 0x00]), command: frame, family: .felica, source: "Test", logger: spy, logPayloads: true)
+            #expect(!Self.contains(spy.messages, cardKey))
+            #expect(spy.messages.first == "→ SEND cmd=08 <redacted \(frame.count) bytes>")
+        }
+    }
+
+    @Test
+    func `FeliCa user block writes still follow the payload flag`() {
+        let userData = Data((0 ..< 16).map { UInt8(0x10 + $0) })
+        let frame = Self.felicaWrite(blockListElement: FeliCaFrame.blockListElement(blockNumber: 0x00), data: userData)
+        #expect(!NFCLogRedaction.isSecretFeliCaWrite(frame))
+        // A read of block 87h carries no key (it reads as all zeros).
+        let read = Data([0x10, 0x06]) + Self.felicaIDm + Data([0x01, 0x0B, 0x00, 0x01, 0x80, 0x87])
+        #expect(!NFCLogRedaction.isSecretFeliCaWrite(read))
+        let spy = SpyNFCLogger()
+        NFCLog.rawCommand(frame, family: .felica, source: "Test", logger: spy, logPayloads: true)
+        #expect(Self.contains(spy.messages, userData))
+    }
+
+    @Test
+    func `A truncated FeliCa write frame is redacted`() {
+        let truncated = Data([0x08]) + Self.felicaIDm + Data([0x01, 0x09])
+        #expect(NFCLogRedaction.isSecretFeliCaWrite(truncated))
     }
 
     // MARK: - ISO 7816 verification requirement

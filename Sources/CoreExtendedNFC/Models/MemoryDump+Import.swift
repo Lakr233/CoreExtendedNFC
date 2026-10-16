@@ -163,9 +163,12 @@ public extension MemoryDump {
         ///
         /// When the file length is also exactly a known plain page dump (for example 64
         /// bytes = 16 Ultralight pages, which could also read as a header plus 2 pages),
-        /// the plain reading wins unless the header is plausible on its own: the version
-        /// field is a GET_VERSION response or all zero, and the first page after the header
-        /// carries a consistent BCC0 (ISO/IEC 14443-3: `0x88 ^ UID0 ^ UID1 ^ UID2`).
+        /// the plain reading wins unless the version field is a GET_VERSION response or all
+        /// zero, as ``MemoryDump/exportProxmark3MFU()`` writes it. A plain dump starts with
+        /// UID0..2 and BCC0 (`0x88 ^ UID0 ^ UID1 ^ UID2`, ISO/IEC 14443-3), so its first 8
+        /// bytes are never all zero and do not form a GET_VERSION response for an NXP UID.
+        /// The pages after the header are not required to carry a consistent BCC0: a partial
+        /// or edited dump exported by this library does not always have one.
         public static func hasHeader(_ data: Data) -> Bool {
             guard data.count >= headerLength + 4,
                   (data.count - headerLength).isMultiple(of: 4)
@@ -176,7 +179,7 @@ public extension MemoryDump {
             let isAmbiguousWithPlainDump = data.count.isMultiple(of: 4)
                 && knownPageTotals.contains(data.count / 4)
             guard isAmbiguousWithPlainDump else { return true }
-            return hasPlausibleVersion(data) && hasConsistentBCC0(afterHeaderIn: data)
+            return hasPlausibleVersion(data)
         }
 
         public static func hasPlausibleVersion(_ data: Data) -> Bool {
@@ -204,6 +207,8 @@ public extension MemoryDump {
         public let pages: [PageRecord]
 
         public init(data: Data) throws {
+            // Rebase a slice so the page offsets below index from 0.
+            let data = Data(data)
             let version: Data?
             let payload: Data
 

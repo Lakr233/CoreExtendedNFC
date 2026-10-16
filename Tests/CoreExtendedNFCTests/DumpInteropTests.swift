@@ -406,4 +406,42 @@ struct DumpInteropTests {
             _ = try MemoryDump.importProxmark3MFU(header + pages.prefix(45 * 4 - 2))
         }
     }
+
+    @Test
+    func `Proxmark import accepts a Data slice`() throws {
+        var header = Data(count: 56)
+        header.replaceSubrange(0 ..< 8, with: Data([0x00, 0x04, 0x04, 0x02, 0x01, 0x00, 0x0F, 0x03]))
+        header[11] = 44
+        let file = header + Data((0 ..< 45 * 4).map { UInt8(truncatingIfNeeded: $0) })
+        let sliced = (Data([0xAA]) + file).dropFirst()
+        #expect(sliced.startIndex == 1)
+
+        let dump = try MemoryDump.importProxmark3MFU(sliced) // before: traps
+        #expect(dump.pages.count == 45)
+        #expect(dump.pages[0].data == Data([0, 1, 2, 3]))
+        #expect(try MemoryDump.importProxmark3MFU(Data(count: 65).dropFirst()).pages.count == 16) // plain, sliced
+    }
+
+    @Test(arguments: [
+        (CardType.unknown(atqa: Data([0x00, 0x44]), sak: 0), 2),
+        (.unknown(atqa: Data([0x00, 0x44]), sak: 0), 6),
+        (.mifareUltralight, 27),
+        (.mifareUltralight, 31),
+        (.mifareUltralight, 34),
+        (.ntag213, 121),
+        (.mifareUltralight, 217),
+    ])
+    func `Proxmark export round-trips page counts whose file size matches a plain dump`(
+        type: CardType,
+        pageCount: Int
+    ) throws {
+        // 56 + 4n bytes equals a known plain dump size for these n; page 0 has no valid BCC0.
+        let pages = (0 ..< pageCount).map { MemoryDump.Page(number: UInt8($0), data: Data([0x04, UInt8($0), 0x11, 0x22])) }
+        let dump = MemoryDump(cardInfo: CardInfo(type: type, uid: Data([4, 1, 2, 3, 4, 5, 6])), pages: pages)
+        let file = try dump.exportProxmark3MFU()
+        #expect(file.count == 56 + pageCount * 4)
+
+        let back = try MemoryDump.importProxmark3MFU(file) // before: header read as pages, or throws
+        #expect(back.pages.map(\.data) == pages.map(\.data))
+    }
 }

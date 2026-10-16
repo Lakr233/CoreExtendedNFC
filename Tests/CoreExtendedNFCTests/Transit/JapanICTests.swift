@@ -393,6 +393,42 @@ struct JapanICTests {
         #expect(result.balanceRaw == 0)
     }
 
+    @Test
+    func `History keeps records whose date fields are out of range`() async throws {
+        // Metrodroid SuicaUtil.extractDate returns null only for a raw date of 0, and
+        // SuicaTransitData skips only those slots.
+        let raw = 24 << 9 | 0 << 5 | 15 // month 0
+        let rail = Data([0x16, 0x01, 0x00, 0x02, UInt8(raw >> 8), UInt8(raw & 0xFF), 0x01, 0x02, 0x03, 0x04, 0xE8, 0x03, 0, 0, 0x01, 0x00])
+        let raw2 = 24 << 9 | 5 << 5 | 15
+        let time = 24 << 11 | 10 << 5 // POS hour 24
+        let pos = Data([0xC7, 0x46, 0x00, 0x00, UInt8(raw2 >> 8), UInt8(raw2 & 0xFF), UInt8(time >> 8), UInt8(time & 0xFF), 0, 0, 0xD0, 0x07, 0, 0, 0x02, 0x00])
+        let good = Data([0x16, 0x01, 0x00, 0x02, UInt8(raw2 >> 8), UInt8(raw2 & 0xFF), 0x01, 0x02, 0x03, 0x04, 0x10, 0x27, 0, 0, 0x03, 0x00])
+        let unused = Data([0x00, 0x00, 0x00, 0x80] + [UInt8](repeating: 0, count: 12)) // PASMO unused slot
+
+        var balance = Data(count: 16)
+        balance[0x0B] = 0xE8
+        balance[0x0C] = 0x03
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [
+                JapanICConstants.balanceServiceCode: Data([0x00, 0x00]),
+                JapanICConstants.historyServiceCode: Data([0x00, 0x00]),
+            ],
+            serviceBlocks: [
+                JapanICConstants.balanceServiceCode: [balance],
+                JapanICConstants.historyServiceCode: [good, rail, pos, unused],
+            ],
+            systemCode: JapanICConstants.systemCode
+        )
+        let result = try await JapanICReader(transport: transport).readBalanceAndHistory()
+
+        try #require(result.transactions.count == 3) // before: 1
+        #expect(result.transactions.map(\.balanceAfter) == [10000, 1000, 2000])
+        #expect(result.transactions[1].date == nil)
+        #expect(result.transactions[1].entryStation == "0102") // like SuicaTrip: stations kept when the raw date is set
+        #expect(result.transactions[2].type == .purchase)
+        #expect(result.transactions[2].date == nil)
+    }
+
     private func loggedJapanICTransport(
         identifier: String,
         balanceBlock: String,

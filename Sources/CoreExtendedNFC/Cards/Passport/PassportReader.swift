@@ -201,12 +201,17 @@ open class PassportReader: @unchecked Sendable {
         }
 
         // Step 5: Active Authentication, before any EAC data group can end the session.
+        //
+        // Once DG15 is present, anything short of a valid signature is a failed stage,
+        // never a skipped one: a clone without the AA private key can refuse INTERNAL
+        // AUTHENTICATE (or drop secure messaging) at will.
         var activeAuthResult: ActiveAuthenticationResult?
-        var activeAuthSkipReason: String?
+        var activeAuthFailure: String?
         let activeAuthPublicKey = session.rawDataGroups[.dg15].flatMap { try? DG15Parser.parse($0) }
         if performActiveAuth, let publicKey = activeAuthPublicKey {
             if let reason = session.secureMessagingEnded {
-                activeAuthSkipReason = "Active Authentication was not attempted because secure messaging ended: \(reason)"
+                activeAuthFailure = "Active Authentication could not run although DG15 is present: secure messaging "
+                    + "ended before INTERNAL AUTHENTICATE (\(reason)), so the chip's authenticity is unproven."
             } else {
                 try Task.checkCancellation()
                 onProgress?(String(localized: "Verifying chip authenticity…", bundle: .module))
@@ -220,13 +225,21 @@ open class PassportReader: @unchecked Sendable {
                 } catch {
                     if isSessionTerminating(error) { throw error }
                     if case let NFCError.unexpectedStatusWord(sw1, sw2) = error {
-                        // An unprotected reply says nothing about the chip's AA key: the
-                        // chip has most likely dropped secure messaging (ICAO 9303-11 §9.8).
-                        activeAuthSkipReason = "Active Authentication could not run: the chip answered "
-                            + "INTERNAL AUTHENTICATE with an unprotected SW=\(String(format: "%02X%02X", sw1, sw2)), "
-                            + "so secure messaging has most likely ended."
+                        // A plain status word to INTERNAL AUTHENTICATE is a refusal: a genuine
+                        // chip with DG15 signs the challenge.
+                        activeAuthResult = ActiveAuthenticationResult(
+                            success: false,
+                            details: "The chip refused INTERNAL AUTHENTICATE although DG15 is present "
+                                + "(unprotected SW=\(String(format: "%02X%02X", sw1, sw2)))",
+                            status: .commandFailed
+                        )
                     } else if let reason = await smTransport.sessionEndedReason {
-                        activeAuthSkipReason = "Active Authentication could not run because secure messaging ended: \(reason)"
+                        activeAuthResult = ActiveAuthenticationResult(
+                            success: false,
+                            details: "The chip refused INTERNAL AUTHENTICATE although DG15 is present: "
+                                + "secure messaging ended (\(reason))",
+                            status: .commandFailed
+                        )
                     } else {
                         activeAuthResult = ActiveAuthenticationResult(
                             success: false,
@@ -274,22 +287,30 @@ open class PassportReader: @unchecked Sendable {
             dataGroupReadStatus: session.status
         )
 
-        let activeAuthenticationStage: PassportSecurityStageResult = if let activeAuthSkipReason {
-            PassportSecurityStageResult(status: .skipped, detail: activeAuthSkipReason)
+        let activeAuthenticationStage: PassportSecurityStageResult = if performActiveAuth, let activeAuthFailure {
+            PassportSecurityStageResult(status: .failed, detail: activeAuthFailure)
         } else {
             Self.activeAuthenticationStage(
                 requested: performActiveAuth,
                 publicKeyPresent: parsed.activeAuthPublicKey != nil,
+                dg15Evidence: Self.dg15Evidence(rawDataGroups: rawDataGroups, sod: parsed.sod, com: parsed.availableDataGroups),
                 result: activeAuthResult,
                 passiveAuthResult: parsed.passiveAuthResult
             )
         }
+        let paceCompleted = paceStage.status == .succeeded
+        let checkedPACEStage = Self.paceStage(
+            paceStage,
+            paceCompleted: paceCompleted,
+            dg14SecurityInfos: rawDataGroups[.dg14] != nil ? parsed.securityInfos : nil,
+            passiveAuthResult: parsed.passiveAuthResult
+        )
 
         return parsed.replacing(
             activeAuthResult: activeAuthResult?.classified(by: parsed.passiveAuthResult),
             securityReport: PassportSecurityReport(
                 cardAccess: cardAccessStage,
-                pace: paceStage,
+                pace: checkedPACEStage,
                 bac: bacStage,
                 chipAuthentication: buildChipAuthenticationStage(parsed.securityInfos),
                 passiveAuthentication: .passiveAuthentication(
@@ -531,9 +552,14 @@ open class PassportReader: @unchecked Sendable {
     /// ``PassportSecurityStageResult/activeAuthentication(_:passiveAuthentication:)``:
     /// `.succeeded` only when Passive Authentication is fully verified (Document Signer
     /// certificate validated to a trusted CSCA) and the DG15 hash matched.
+    ///
+    /// `.skipped` means AA was disabled, `.notAdvertised` that the chip has no DG15
+    /// (`dg15Evidence` is `nil`). Without a usable DG15 key while `dg15Evidence` says
+    /// DG15 exists, the stage is `.failed`: a clone can hide DG15 to avoid AA.
     open class func activeAuthenticationStage(
         requested: Bool,
         publicKeyPresent: Bool,
+        dg15Evidence: String? = nil,
         result: ActiveAuthenticationResult?,
         passiveAuthResult: PassiveAuthenticationResult?
     ) -> PassportSecurityStageResult {
@@ -545,6 +571,13 @@ open class PassportReader: @unchecked Sendable {
         }
 
         guard publicKeyPresent else {
+            if let dg15Evidence {
+                return PassportSecurityStageResult(
+                    status: .failed,
+                    detail: "Active Authentication could not run: \(dg15Evidence), but no usable Active "
+                        + "Authentication public key was read from it, so the chip's authenticity is unproven."
+                )
+            }
             return PassportSecurityStageResult(
                 status: .notAdvertised,
                 detail: "DG15 did not provide an Active Authentication public key."
@@ -559,6 +592,54 @@ open class PassportReader: @unchecked Sendable {
         }
 
         return .activeAuthentication(result, passiveAuthentication: passiveAuthResult)
+    }
+
+    /// Why DG15 is known to exist on the chip, or `nil` when nothing says it does: DG15
+    /// was read, the SOD has a hash for it, or EF.COM lists it.
+    public static func dg15Evidence(
+        rawDataGroups: [DataGroupId: Data],
+        sod: SODContent?,
+        com: [DataGroupId]
+    ) -> String? {
+        if rawDataGroups[.dg15] != nil { return "DG15 was read" }
+        if sod?.dataGroupHashes[.dg15] != nil { return "EF.SOD lists DG15" }
+        if com.contains(.dg15) { return "EF.COM lists DG15" }
+        return nil
+    }
+
+    // MARK: - PACE downgrade
+
+    /// PACE stage after the DG14 cross-check.
+    ///
+    /// ICAO 9303-11 §9.2.11: "The full set of SecurityInfos (including SecurityInfos
+    /// contained in EF.CardAccess not specified in Doc 9303) SHALL additionally be
+    /// stored in EF.DG14 of the eMRTD Application" and "While the authenticity of
+    /// SecurityInfos stored in EF.DG14 and EF.CardSecurity is protected by Passive
+    /// Authentication, the file EF.CardAccess is unprotected." So when DG14 lists a
+    /// PACEInfo this reader supports but PACE did not complete (EF.CardAccess missing,
+    /// stripped or altered, or PACE failed and BAC was used), the session may have been
+    /// downgraded and the stage is `.failed`. BAC still ran and the data is returned;
+    /// the stage records the downgrade. DG14 PACEInfos the reader does not support
+    /// leave `negotiated` unchanged.
+    open class func paceStage(
+        _ negotiated: PassportSecurityStageResult,
+        paceCompleted: Bool,
+        dg14SecurityInfos: SecurityInfos?,
+        passiveAuthResult: PassiveAuthenticationResult?
+    ) -> PassportSecurityStageResult {
+        guard !paceCompleted, let dg14SecurityInfos else { return negotiated }
+        let supported = dg14SecurityInfos.paceInfos.filter(PACEHandler.isSupported)
+        guard !supported.isEmpty else { return negotiated }
+
+        let protocols = supported.map(\.protocolOID).joined(separator: ", ")
+        let dg14Authenticity = passiveAuthResult?.dataGroupHashResults[.dg14] == true
+            ? "DG14 matches its hash in EF.SOD"
+            : "DG14 is not verified by Passive Authentication"
+        return PassportSecurityStageResult(
+            status: .failed,
+            detail: "Possible PACE-to-BAC downgrade: DG14 advertises PACE (\(protocols)) that this reader "
+                + "supports, but PACE was not completed (\(negotiated.detail)) (\(dg14Authenticity))."
+        )
     }
 
     // MARK: - Active Authentication
@@ -597,7 +678,8 @@ open class PassportReader: @unchecked Sendable {
         guard response.isSuccess else {
             return ActiveAuthenticationResult(
                 success: false,
-                details: "INTERNAL AUTHENTICATE failed: SW=\(String(format: "%04X", response.statusWord))",
+                details: "The chip refused INTERNAL AUTHENTICATE although DG15 is present "
+                    + "(SW=\(String(format: "%04X", response.statusWord)))",
                 status: .commandFailed
             )
         }

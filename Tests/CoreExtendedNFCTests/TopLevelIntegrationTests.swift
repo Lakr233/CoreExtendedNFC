@@ -288,7 +288,8 @@ struct TopLevelIntegrationTests {
         let refined = try await CardInfoRefiner.refine(info, transport: transport)
 
         #expect(refined.type == .mifareUltralight)
-        #expect(transport.sentCommands == [Data([0x30, 0x00]), Data([0x60])])
+        // GET_VERSION and the READ 2Bh Ultralight C probe both go unanswered.
+        #expect(transport.sentCommands == [Data([0x30, 0x00]), Data([0x60]), Data([0x30, 0x2B])])
     }
 
     @Test
