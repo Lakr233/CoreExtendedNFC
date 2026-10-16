@@ -95,6 +95,17 @@ struct CardIdentifierATQAOrderTests {
     }
 
     @Test
+    func `DESFire with 4-byte random UID (ATQA 0x0304, SAK 0x20) is DESFire, not smartMX`() {
+        // NXP AN10833: DESFire answers ATQA 0344h with its 7-byte UID and 0304h when
+        // random ID is enabled (single-size UID, ISO/IEC 14443-3 ATQA b8b7 = 00).
+        #expect(CardIdentifier.identify(atqaValue: 0x0304, sak: 0x20) == .mifareDesfire)
+        #expect(CardIdentifier.identify(atqa: Data([0x03, 0x04]), sak: 0x20) == .mifareDesfire)
+        #expect(CardIdentifier.identify(atqaValue: 0x0344, sak: 0x20) == .mifareDesfire)
+        // Same ATQA without the ISO 14443-4 SAK is not DESFire.
+        #expect(CardIdentifier.identify(atqaValue: 0x0304, sak: 0x00) != .mifareDesfire)
+    }
+
+    @Test
     func `Wire-order ATQA converts to the AN10833 value`() {
         #expect(CardIdentifier.atqaValue(wireOrder: Data([0x44, 0x00])) == 0x0044)
         #expect(CardIdentifier.atqaValue(wireOrder: Data([0x44, 0x03])) == 0x0344)

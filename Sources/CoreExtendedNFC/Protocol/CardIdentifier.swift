@@ -37,8 +37,13 @@ public enum CardIdentifier {
         // Match the most specific ATQA+SAK combinations first.
         // Reference: NXP AN10833 "MIFARE Type Identification Procedure"
 
-        // MIFARE DESFire: ATQA 0x0344, SAK 0x20
-        if atqaValue == 0x0344, sak == 0x20 {
+        // MIFARE DESFire: ATQA 0x0344 (7-byte UID) or 0x0304 (4-byte random
+        // UID, DESFire EV1 and later with random ID enabled), SAK 0x20.
+        // AN10833 lists both; ATQA b8b7 encode the UID size (01 = double,
+        // 00 = single, ISO/IEC 14443-3 §6.5.2.1), so 0x0304 is the same
+        // product code 0x03 with a single-size UID. Match before the SAK 0x20
+        // smartMX fallback below.
+        if atqaValue == 0x0344 || atqaValue == 0x0304, sak == 0x20 {
             return .mifareDesfire
         }
 
@@ -111,7 +116,7 @@ public enum CardIdentifier {
             return .mifareClassic4K
         case 0x20:
             // SAK 0x20 only says "ISO/IEC 14443-4 compliant" (AN10833 SAK decoding).
-            // DESFire is the exact ATQA 0x0344 match above; any other ATQA is a
+            // DESFire is the exact ATQA 0x0344 / 0x0304 match above; any other ATQA is a
             // generic ISO 7816 card (passport, JCOP, bank card ...), which the
             // refiner probes for DESFire / Type 4 / eMRTD.
             return .smartMX
