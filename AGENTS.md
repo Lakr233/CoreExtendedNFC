@@ -130,7 +130,8 @@ AF chaining: keep sending `[0x90, 0xAF, 0x00, 0x00, 0x00]` until SW2 != 0xAF.
 
 ```
 MRZ input → MRZKeyGenerator (ICAO 9303 Part 3, weights 7,3,1)
-         → EF.CardAccess → PACE (ECDH Generic Mapping, NIST P-256/384/521, OpenSSL)
+         → EF.CardAccess → PACE (ECDH Generic Mapping, NIST P-256/384/521 and
+           Brainpool P-224/256/320/384/512, OpenSSL; first supported PACEInfo)
            or BAC key derivation (ICAO 9303 Part 11 Appendix D) as fallback
          → Secure Messaging (DO'87/DO'99/DO'8E, ISO 9797-1 MAC or AES-CMAC)
          → Read EF.COM + EF.SOD (index), DG1 (MRZ, mandatory), DG2 (face), DG14, DG15 (AA key), EAC DG3/DG4 last
@@ -139,7 +140,7 @@ MRZ input → MRZKeyGenerator (ICAO 9303 Part 3, weights 7,3,1)
            succeeded only with fully verified PA and a matching DG15 hash
 ```
 
-PACE supports ECDH Generic Mapping on NIST curves only; other mappings fall back to BAC. Chip Authentication is parsed from DG14 but not performed (its ECDH key agreement is not implemented).
+PACE supports ECDH Generic Mapping on NIST P-256/384/521 and Brainpool P-224/256/320/384/512 curves (standardized domain parameter IDs 11–18). The reader picks the first supported PACEInfo in EF.CardAccess; when none is supported (other mappings, DH, 192-bit curves, secp224r1, explicit domain parameters) it falls back to BAC without sending any PACE APDU. Chip Authentication is parsed from DG14 but not performed (its ECDH key agreement is not implemented).
 
 ## Standards Referenced in Code
 
@@ -153,6 +154,8 @@ PACE supports ECDH Generic Mapping on NIST curves only; other mappings fall back
 | ITU-T X.690             | BER/DER TLV encoding                      |
 | RFC 4493                | AES-CMAC                                  |
 | RFC 5652                | CMS SignedData (SOD)                      |
+| RFC 5280                | DSC certification path validation         |
+| RFC 5639                | Brainpool curves (PACE parameter IDs)     |
 | NIST FIPS 197/180-4     | AES, SHA-1/256                            |
 | NXP datasheets          | NTAG, Ultralight, DESFire, Classic, ICODE |
 
@@ -205,6 +208,7 @@ All view controllers call `setupDismissKeyboardOnTap()` in `viewDidLoad()`.
 - The documentation site under `docs/` is part of release readiness.
 - When a fix or feature changes public behavior, update the docs site alongside code and tests.
 - Before considering release work complete, verify both tests and relevant docs site pages have been updated.
+- `docs/references/` holds vendored copies of the freely redistributable specifications the code cites (RFC 4493, RFC 5280, RFC 5652, NIST FIPS 197, FIPS 180-4, SP 800-38B); its `README.md` lists their licences. `docs/research/references.html` links the specifications that cannot be redistributed (ICAO 9303, BSI TR-03110, ISO/IEC, NFC Forum, NXP, Sony) and the open-source cross-references. Do not vendor paywalled or licence-restricted documents.
 
 ## What NOT to Do
 

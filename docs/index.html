@@ -28,7 +28,7 @@
 <ul>
 <li>Card identification from ATQA, SAK, ATS, FeliCa system code, ISO 15693 metadata, and ISO 7816 application hints, refined by safe probes (Ultralight C, NTAG210/212, DESFire EV1-EV3, FeliCa Lite / Lite-S).</li>
 <li>Memory operations for Ultralight, NTAG, DESFire (read-only), FeliCa Type 3, ISO 15693, and Type 4 NDEF tags.</li>
-<li>Passport and eMRTD reading with PACE (ECDH Generic Mapping on NIST curves) or BAC, Secure Messaging, data-group parsing, Passive Authentication against caller-supplied CSCA certificates, and Active Authentication.</li>
+<li>Passport and eMRTD reading with PACE (ECDH Generic Mapping on NIST P-256/384/521 and Brainpool P-224 to P-512 curves) or BAC, Secure Messaging, data-group parsing, Passive Authentication against caller-supplied CSCA certificates, and Active Authentication.</li>
 <li>Transit-card readers for Japan IC, Hong Kong Octopus, Singapore CEPAS, China T-Union, and Korea KS X 6924 paths.</li>
 <li>Japan My Number card token reads, protected individual-number reads, and PIN-attempt lookup.</li>
 <li>Dump export and import for hex, JSON, Flipper NFC, Proxmark3 MFU, libnfc MFD, and raw binary formats.</li>
@@ -85,7 +85,7 @@ let passport = try await CoreExtendedNFC.readPassport(
 <li><a href="guide/index.html">Guide</a><span class="summary">Task-oriented scanning, dump, NDEF, passport, transit, My Number, and Info.plist setup notes.</span></li>
 <li><a href="api/index.html">API Reference</a><span class="summary">Public Swift surface grouped by top-level API, card commands, models, and protocol helpers.</span></li>
 <li><a href="guide/migrating-to-2.html">Migrating to 2.0</a><span class="summary">Upgrade checklist from 1.1.2 with before/after code, renamed functions, and the subclassing contract.</span></li>
-<li><a href="research/index.html">Research Notes</a><span class="summary">Real-card validation, iOS polling identifiers, transit-card findings, and My Number data layout.</span></li>
+<li><a href="research/index.html">Research Notes</a><span class="summary">Real-card validation, iOS polling identifiers, transit-card findings, My Number data layout, and reference documents.</span></li>
 </ul>
 
 <footer>

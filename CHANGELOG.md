@@ -16,7 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Consistent facade names (`readUltralightPages`, `getDESFireApplicationIDs`, `authenticateISO15693`, ...). The old names still work as deprecated forwarders.
 - ISO 15693 tags with more than 256 blocks are read, written, dumped and NDEF-formatted with the extended commands.
 - Singapore CEPAS balance and history reader.
-- Fixes from four rounds of bug hunting across protocol parsing, session lifecycle, passport conformance, NDEF mapping and transit readers.
+- PACE on Brainpool curves (brainpoolP224r1 to brainpoolP512r1) as well as NIST P-256/384/521, with the first supported PACEInfo picked from EF.CardAccess.
+- Fixes from four rounds of bug hunting and a spec-verification round across protocol parsing, session lifecycle, passport conformance, DESFire, NDEF mapping and transit readers.
 
 ### Breaking changes
 
@@ -38,6 +39,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Only `NFCError.dataGroupNotAvailable` skips a data group. Secure-messaging and transport errors propagate. `readPassport` throws when DG1 was requested but could not be read, or when nothing could be read. Otherwise it returns a partial model with `PassportModel.dataGroupReadStatus`.
 - Only data groups listed in EF.COM or EF.SOD are selected.
 - `onProgress` messages are localized.
+- Passive Authentication is stricter: EF.SOD must have eContentType `2.23.136.1.1.1` and a matching signed contentType attribute, an LDSSecurityObject version of 0 or 1, and exactly one SignerInfo; a DSC with a keyUsage extension must assert digitalSignature (`trustChainInvalid` otherwise). An unknown LDSSecurityObject hash algorithm is `unsupportedHashAlgorithm` (it used to fall back to the SignedData digest algorithm and report a hash mismatch).
+- Active Authentication fails for RSA moduli under 1024 bits (`ActiveAuthenticationVerifier.minimumRSAModulusBits`), RSA signatures that are not exactly the modulus length, and ECDSA signatures whose `r` / `s` are not exactly the curve order length.
+- `PACEHandler.performPACE` throws `unsupportedOperation` for an unknown protocol OID (was `secureMessagingError`) and checks every parameter before sending any APDU. MSE:Set AT now carries tag `84` (domain parameter ID).
+- `SecurityInfos.paceInfos` no longer contains PACEDomainParameterInfo entries (10-arc OID with an AlgorithmIdentifier); they are in the new `paceDomainParameterInfos`.
+- `SecureMessagingTransport` accepts an AES SSC of 16 bytes (block size) or 8 bytes (zero-extended). Any other SSC length makes every exchange throw `invalidParameter` without sending anything.
+- `MRZData` reassembles TD1 / TD2 document numbers longer than nine characters: `documentNumber` includes the overflow from the optional data field, and `optionalData1` no longer starts with the overflow and its check digit.
 - **Data compatibility:** the raw values of `SecurityProtocol.taECDSASHA224` and `.taECDSASHA256` were swapped in 1.x and now match BSI TR-03110 (`0.4.0.127.0.7.2.2.2.2.2` is SHA-224, `...2.2.3` is SHA-256). `Codable` data stored by 1.x decodes to the other case for these two values. Re-parse stored DG14 / EF.CardAccess bytes instead of trusting saved enum values.
 
 #### Ultralight / NTAG writes
@@ -47,6 +54,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - WRITE and COMPATIBILITY_WRITE require the `0Ah` ACK; an empty answer is a failure.
 - `UltralightDump.restore(dump:map:target:)` gains `target: CardInfo?` and validates every page (and the card type when a target is given) before writing.
 - `UltralightCommands.probeUltralightCMemory()` is `async throws` and rethrows session loss.
+- `UltralightCAccessConfiguration.requiresAuthenticationForReads` is now `true` when AUTH1 bit 0 is `0` (it was inverted), and an AUTH0 of `30h` or higher means no protection (`firstProtectedPage == nil`), not only exactly `30h`.
+- GET_VERSION identification: NTAG I2C (product subtype `05h`) is `.mifareUltralight`; the 1k variant was reported as `.ntag216`, and the undocumented Ultralight storage code `06h` is no longer MF0UL11.
 
 #### ISO 15693
 
@@ -61,15 +70,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Type 5 writes read and validate the CC first; an unformatted tag throws `tagNotNDEFFormatted`.
 - A message that does not fit throws `ndefCapacityExceeded(required:capacity:)`. Records are encoded with `validatedData()` before anything is written.
 - RFU URI prefix codes decode to no prefix. UTF-16 text records without a BOM are big-endian.
+- Reading an erased Type 3, Type 4 or Type 5 tag (empty NDEF message) throws `ndefMessageNotFound`, as Type 2 already did (was a parse error).
+- On Type 2, `ndefCapacityExceeded(required:)` no longer counts the Terminator TLV, and a message that fills the data area exactly is accepted and written without one.
+- Type 5 tags whose CC requires the special frame format (CC byte 3 b4) are refused with `unsupportedOperation`.
 
 #### DESFire
 
 - `DESFireFileType` gains `.transactionMAC` (exhaustive switches must handle it).
 - EV2 session keys and IVs follow AN12196; hardware versions `0x12` / `0x22` / `0x42` are EV2 and `0x33` is EV3. The dump skips locked applications / files and Transaction MAC files.
+- `pcdCapabilities` (AuthenticateEV2First and the EV2 read helpers / facades) defaults to empty instead of six zero bytes, accepts 0 to 6 bytes, and is now actually sent as `LenCap ‖ PCDcap2`. The EV2First Part 2 answer must be exactly 32 bytes.
+- The AuthenticateISO read helpers (`readDataAuthenticatedISO`, `readRecordsAuthenticatedISO`, `getValueAuthenticatedISO`) strip the 8-byte CMAC the card appends, so they return 8 bytes less than before. The MAC is not verified.
+- Hardware major version `0x43` is EV3.
 
 #### FeliCa
 
 - `FeliCaCommands.readPlainServices` is `async throws` (was `async`). Tag loss throws instead of returning an empty result.
+- `writeFeliCaBlocks` writes one block per Write Without Encryption by default (was 4), because FeliCa Lite / Lite-S accept only one. Pass `maxBlocksPerWrite:` for cards that accept more.
 
 #### Transit
 
@@ -77,6 +93,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `amount` is an unsigned magnitude for every reader; the direction comes from `type`.
 - Tag loss and cancellation throw instead of returning zero balances or truncated history.
 - KS X 6924 history comes from SFI 4 records. CEPAS timestamps count from 1995-01-01 00:00 Singapore time.
+- Japan IC: ticket-machine and fare-adjustment records (console types `03`, `07`, `08`, `12`-`15`) have `exitStation == nil`; bus records (console type `05`) have no stations and put the line and stop codes in `metadata["busLineCode"]` / `metadata["busStopCode"]`.
+- CEPAS: type `76` (bus refund) is a `.topup` and `04` (service charge) a `.purchase`, both with an amount (were `.unknown` without one).
 
 #### MemoryDump
 
@@ -104,8 +122,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Facade functions were renamed to verb + family + noun. The old names remain as deprecated forwarders (see Deprecated).
 - `MyNumberCardReader.read(items:cardInfoInputSupportPIN:onProgress:)` is the `open` override point. `read(items:cardInfoInputSupportPIN:)` is `public`, not overridable, and forwards to it.
 - `CommandAPDU.le` is a computed property derived from the new `expectedResponseLength`.
-- Card identification changes: ATQA `0304` + SAK `20` is DESFire; other SAK `20` and SAK `28` / `38` are `.smartMX`; Ultralight C is detected by READ `2Bh`; system code `88B4` is split into FeliCa Lite / Lite-S; NTAG210 / NTAG212 are detected from GET_VERSION.
+- Card identification changes: ATQA `0304` + SAK `20` is DESFire; other SAK `20` (including MIFARE Plus ATQAs `0002` / `0004` / `0042` / `0044`, previously `.mifarePlusSL3_2K` / `_4K`) and SAK `28` / `38` are `.smartMX`; Ultralight C is detected by READ `2Bh`; system code `88B4` is split into FeliCa Lite / Lite-S; NTAG210 / NTAG212 are detected from GET_VERSION.
 - My Number: a refused PIN or a blocked PIN throws `pinVerificationFailed(remainingAttempts:)`; the PIN is never sent when the retry counter is already 0.
+- `ISO14443.parseATS` accepts an ATS that still starts with TL and returns empty fields when T0 b8 is set; `ATSInfo.maxFrameSize` maps FSCI 9-C to 512-4096 bytes (was 256).
 
 ### Added
 
@@ -124,6 +143,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `CardIdentifier.identify(atqaValue:sak:)` and `atqaValue(wireOrder:)`.
 - Public memberwise initializers for `ISO15693SystemInfo` and `UltralightMemoryMap`.
 - Parsers, constants, crypto helpers, NDEF mapping (`NDEFTagMapping`) and facade helpers are `public`.
+- PACE on the Brainpool curves brainpoolP224r1, P256r1, P320r1, P384r1 and P512r1 (parameter IDs 11, 13, 14, 16, 17), alongside NIST P-256/384/521; `DomainParameterID.isBrainpoolCurve` and `isSupportedForPACE`.
+- `PACEHandler.selectPACEInfo(from:)`, `isSupported(_:)` and `unsupportedReason(for:)`; `performPACE(...mappingPrivateKey:ephemeralPrivateKey:)` to replay test vectors such as ICAO 9303-11 Appendix G.1; `OpenSSLPACECurve.isValidPrivateScalar(_:)`.
+- `PACEDomainParameterInfo` and `SecurityInfos.paceDomainParameterInfos`. `SecurityInfos` saved before these fields existed still decode.
+- `ActiveAuthenticationVerifier.minimumRSAModulusBits`, `SODParser.ldsSecurityObjectOID` and `SODParser.validateLDSSecurityObjectVersion(_:)`.
+- T4T mapping 1.0 support: `Type4Reader` falls back to the NDEF application `D2760000850100` (selecting files with P2 = `00h`); `Type4Constants.ndefAIDVersion1`, `Type4Reader.selectedApplicationAID`.
+- `NDEFTagMapping.lengthLastWriteOrder(_:blockSize:tlvOffset:)` and `type5SpecialFrameFlag`; `UltralightCAccessConfiguration.firstProtectedPage(fromAUTH0:)`; `writeFeliCaBlocks(...maxBlocksPerWrite:...)`.
+- Reference documents: vendored RFC 4493, RFC 5280, RFC 5652, NIST FIPS 197, FIPS 180-4 and SP 800-38B in `docs/references/` (licences in its README), and `docs/research/references.html` linking the ICAO, BSI, ISO/IEC, NFC Forum, NXP and Sony specifications and open-source cross-references.
 
 ### Changed
 
@@ -189,6 +215,17 @@ Types and members:
 - **MemoryDump:** imports, exports and diffs never trap or truncate.
 - **Logging:** UTF-8-safe `readTail`, no queue deadlock, race-free logger configuration, file protection on log files.
 - **My Number:** the retry counter is checked before VERIFY, items are de-duplicated so VERIFY is sent once, and the individual number is no longer found by regex.
+- **PACE (spec verification):** the first supported PACEInfo is used instead of always the first (ICAO 9303-11 §4.4.4.1); MSE:Set AT sends the domain parameter ID in tag `84` (§4.4.4.1); PACEDomainParameterInfo is no longer parsed as PACEInfo (§9.2); unsupported parameters fall back to BAC before any PACE APDU.
+- **Secure Messaging:** extended outer Le `0000` whenever the protected command is extended (ICAO 9303-11 §9.8, Figure 5); 16-byte AES SSC (§9.8.2); verified against the Appendix D.4 READ BINARY vector.
+- **Passive Authentication:** eContentType and contentType attribute checked (RFC 5652 §11.1, ICAO 9303-10 §4.6.2); LDSSecurityObject version and PrintableString LDSVersionInfo (ICAO 9303-10 §4.6.2.2); DSC keyUsage digitalSignature (ICAO 9303-12). Documented limits: no CRL checks, CSCA link certificates must be supplied in `trustAnchorsDER` with their CSCA, exactly one SignerInfo.
+- **Active Authentication:** RSA modulus and signature length checks (ICAO 9303-11 §6.1, ISO/IEC 9796-2), ECDSA `r ‖ s` length (BSI TR-03111 §5.2.1); `verify` documents that its result must go through `classified(by:)`.
+- **MRZ:** TD1 / TD2 document numbers longer than nine characters (ICAO 9303-5 / -6 §4.2.2, Note j).
+- **DESFire:** AuthenticateISO session key for single-DES keys, including the all-zero factory key (proxmark3 `desfirecore.c`); CMAC stripped from plain responses after AuthenticateISO (proxmark3 `DesfireSecureChannelDecodeEV1`); EV2First sends PCDcap2 and requires a 32-byte Part 2 (AN12343 §10.1); GetVersion `0x43` = EV3 (proxmark3 `cmdhfmfdes.c`); `AESCMAC` accepts `Data` slices. Unsupported features are documented: AuthenticateAES, AuthenticateEV2NonFirst, CMAC secure messaging, command counter, TMAC.
+- **NDEF (spec verification):** Type 2 and Type 5 write the TLV length as zero first and the real length last (NFC Forum T2T §6.4.3, T5T §7.5.1); erased Type 3 / 4 / 5 tags read as `ndefMessageNotFound`; T4T mapping 1.0 (nfcpy `tt4.py`); Type 5 special-frame CC refused (T5T §4.3.1); Type 2 exact-fill without terminator (T2T §2.3).
+- **Identification:** SAK `20` with a MIFARE Plus ATQA is `.smartMX` (AN10833 §2.1); FSCI 9-C (ISO/IEC 14443-4:2016); ATS with TL, T0 b8 (ISO/IEC 14443-4 §5.2); NTAG I2C not taken for NTAG216 and storage code `06h` removed (NXP GET_VERSION tables); Ultralight C AUTH1 bit 0 and AUTH0 ≥ `30h` (MF0ICU2 §7.5.8, Table 12).
+- **FeliCa:** one block per write by default (FeliCa Lite-S User's Manual, Write Without Encryption); failure logs print Status Flag 1 and 2 in hex; purse service attribute comments.
+- **Transit (spec verification):** CEPAS bus refund `76` and service charge `04` amounts (Metrodroid `CEPASTransaction`); Japan IC ticket-machine and bus records (Metrodroid `SuicaTrip`); the Octopus offset documents that sources disagree (350 vs 500 after 2017-10-01) and how to override it with `OctopusReader(transport:balanceOffset:)`.
+- **Example app:** the MIFARE Classic access-bits decoder follows NXP MF1S50 Tables 7 and 8 (5 of 8 data-block and 6 of 8 sector-trailer conditions were wrong).
 
 [2.0.0]: https://github.com/Lakr233/CoreExtendedNFC/compare/1.1.2...2.0.0
 
