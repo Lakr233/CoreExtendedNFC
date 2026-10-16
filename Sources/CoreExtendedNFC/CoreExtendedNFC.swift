@@ -109,7 +109,13 @@ public enum CoreExtendedNFC {
             }
             let payload = try await FeliCaType3Reader(transport: felicaTransport).readNDEF()
             return try NDEFMessage(data: payload)
-        case .ntag, .mifareUltralight, .iso15693:
+        case .iso15693:
+            guard let iso15693Transport = transport as? any ISO15693TagTransporting else {
+                throw NFCError.unsupportedOperation("ISO 15693 NDEF reading requires an ISO 15693 transport")
+            }
+            let payload = try await readType5NDEF(transport: iso15693Transport)
+            return try NDEFMessage(data: payload)
+        case .ntag, .mifareUltralight:
             let dump = try await dumpCard(info: info, transport: transport)
             guard let parsed = dump.parsedNDEFMessage else {
                 throw NFCError.unsupportedOperation("No NDEF message detected for \(info.type.description)")
@@ -423,9 +429,10 @@ public enum CoreExtendedNFC {
 
         let systemInfo = try await iso15693Transport.getSystemInfo()
         try requireKnownMemorySize(systemInfo)
-        guard systemInfo.blockCount <= NDEFTagMapping.type5SingleByteAddressableBlocks else {
-            throw NFCError.unsupportedOperation("ISO 15693 dump currently supports up to 256 blocks per session")
-        }
+        // READ SINGLE BLOCK takes a one-byte block address (ISO/IEC 15693-3), so larger
+        // tags are dumped up to block 255 and the truncation is recorded as a fact.
+        let readableBlockCount = min(systemInfo.blockCount, NDEFTagMapping.type5SingleByteAddressableBlocks)
+        let isTruncated = readableBlockCount < systemInfo.blockCount
         // Get Multiple Block Security Status is optional (ISO/IEC 15693-3 §10.4.13), and
         // a tag may stay silent instead of answering with an error. CoreNFC reports that
         // silence with the same transceive codes (100/101) as a removed tag, so it is not
@@ -434,14 +441,14 @@ public enum CoreExtendedNFC {
         let lockStatuses: [Bool]
         do {
             lockStatuses = try await iso15693Transport.getBlockSecurityStatus(
-                range: NSRange(location: 0, length: systemInfo.blockCount)
+                range: NSRange(location: 0, length: readableBlockCount)
             )
         } catch where !isSessionTerminating(error) || isMissingTagResponse(error) {
-            lockStatuses = Array(repeating: false, count: systemInfo.blockCount)
+            lockStatuses = Array(repeating: false, count: readableBlockCount)
         }
 
         var blocks: [MemoryDump.Block] = []
-        for blockNumber in 0 ..< systemInfo.blockCount {
+        for blockNumber in 0 ..< readableBlockCount {
             try Task.checkCancellation()
             guard let blockIndex = UInt8(exactly: blockNumber) else {
                 throw NFCError.unsupportedOperation("ISO 15693 dump currently supports up to 256 blocks per session")
@@ -466,13 +473,62 @@ public enum CoreExtendedNFC {
             facts: [
                 .init(key: "Block Size", value: "\(systemInfo.blockSize) bytes"),
                 .init(key: "Blocks", value: "\(systemInfo.blockCount)"),
+                isTruncated
+                    ? .init(key: "Blocks Read", value: "\(readableBlockCount) of \(systemInfo.blockCount) (blocks above 255 need extended commands)")
+                    : nil,
                 systemInfo.dsfid.map { .init(key: "DSFID", value: String(format: "0x%02X", $0), monospaced: true) },
                 systemInfo.afi.map { .init(key: "AFI", value: String(format: "0x%02X", $0), monospaced: true) },
                 systemInfo.icReference.map { .init(key: "IC Reference", value: String(format: "0x%02X", $0), monospaced: true) },
                 ndefMessage.map { .init(key: "NDEF Bytes", value: "\($0.count)") },
             ].compactMap(\.self),
-            capabilities: [.readable]
+            capabilities: isTruncated ? [.partiallyReadable] : [.readable]
         )
+    }
+
+    /// Read the NDEF message of a Type 5 tag without dumping the whole tag.
+    ///
+    /// Reads the CC from block 0, then only the blocks covering the T5T_Area announced
+    /// by MLEN (NFC Forum T5T 1.0 §4.3.1 / §7.3), bounded by the single-byte addressable
+    /// blocks, so tags with more than 256 blocks can be read.
+    private static func readType5NDEF(
+        transport: any ISO15693TagTransporting
+    ) async throws -> Data {
+        let systemInfo = try await transport.getSystemInfo()
+        try requireKnownMemorySize(systemInfo)
+        let blockSize = systemInfo.blockSize
+        let addressableBlocks = min(systemInfo.blockCount, NDEFTagMapping.type5SingleByteAddressableBlocks)
+
+        var blocks: [MemoryDump.Block] = []
+        var leadingBytes = Data()
+        func readNextBlock() async throws {
+            try Task.checkCancellation()
+            let number = blocks.count
+            guard number < addressableBlocks, let address = UInt8(exactly: number) else {
+                throw NFCError.unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+            }
+            let data = try await Data(transport.readBlock(address).prefix(blockSize))
+            blocks.append(.init(number: number, data: data))
+            leadingBytes.append(data)
+        }
+
+        try await readNextBlock()
+        guard let ccLength = NDEFTagMapping.type5FormattedCCLength(leadingBytes: leadingBytes) else {
+            throw NFCError.unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+        }
+        while leadingBytes.count < ccLength {
+            try await readNextBlock()
+        }
+        let areaLength = NDEFTagMapping.type5DataAreaLength(leadingBytes: leadingBytes) ?? 0
+        let areaEnd = min(ccLength + areaLength, addressableBlocks * blockSize)
+        let blocksNeeded = (areaEnd + blockSize - 1) / blockSize
+        while blocks.count < blocksNeeded {
+            try await readNextBlock()
+        }
+
+        guard let payload = NDEFTagMapping.extractType5Message(from: blocks) else {
+            throw NFCError.unsupportedOperation("No NDEF message detected on the ISO 15693 tag")
+        }
+        return payload
     }
 
     /// ISO/IEC 15693-3 makes the memory-size field of Get System Information optional;

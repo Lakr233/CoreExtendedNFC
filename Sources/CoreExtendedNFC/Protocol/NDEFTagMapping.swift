@@ -27,22 +27,41 @@ enum NDEFTagMapping {
     ///
     /// NFC Forum T5T 1.0 §4.3.1: when CC byte 2 (MLEN) is 00h the CC is 8 bytes
     /// long (bytes 6-7 carry the 16-bit MLEN) and the TLV area starts at byte 8;
-    /// otherwise the CC is 4 bytes.
+    /// otherwise the CC is 4 bytes. The TLV scan is limited to the T5T_Area of
+    /// MLEN × 8 bytes, like the Type 2 data area.
     static func extractType5Message(from blocks: [MemoryDump.Block]) -> Data? {
         let contiguous = blocks
             .sorted(by: { $0.number < $1.number })
             .reduce(into: Data()) { result, block in
                 result.append(block.data)
             }
-        let bytes = [UInt8](contiguous)
 
-        guard bytes.count >= 4 else { return nil }
-        guard bytes[0] == 0xE1 || bytes[0] == 0xE2 else { return nil }
+        guard let ccLength = type5FormattedCCLength(leadingBytes: contiguous),
+              let areaLength = type5DataAreaLength(leadingBytes: contiguous)
+        else { return nil }
 
-        let ccLength = bytes[2] == 0x00 ? 8 : 4
-        guard bytes.count >= ccLength else { return nil }
+        let area = contiguous.dropFirst(ccLength).prefix(areaLength)
+        return extractTLVNDEF(from: Data(area))
+    }
 
-        return extractTLVNDEF(from: Data(bytes[ccLength...]))
+    /// CC length (4 or 8 bytes) when `leadingBytes` (block 0 onwards) starts with a
+    /// Type 5 CC magic (E1h / E2h, NFC Forum T5T 1.0 §4.3.1), otherwise `nil`.
+    static func type5FormattedCCLength(leadingBytes: Data) -> Int? {
+        let bytes = [UInt8](leadingBytes.prefix(4))
+        guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else { return nil }
+        return bytes[2] == 0x00 ? 8 : 4
+    }
+
+    /// Size in bytes of the T5T_Area announced by the CC (MLEN × 8, NFC Forum T5T 1.0
+    /// §4.3.1), or `nil` when `leadingBytes` does not hold a complete CC.
+    static func type5DataAreaLength(leadingBytes: Data) -> Int? {
+        guard let ccLength = type5FormattedCCLength(leadingBytes: leadingBytes) else { return nil }
+        let cc = [UInt8](leadingBytes.prefix(ccLength))
+        guard cc.count == ccLength else { return nil }
+        let memoryLengthUnits = ccLength == 8
+            ? Int(cc[6]) << 8 | Int(cc[7])
+            : Int(cc[2])
+        return memoryLengthUnits * 8
     }
 
     /// Build the 4-byte Capability Container for a Type 2 tag (page 3).
@@ -138,10 +157,16 @@ enum NDEFTagMapping {
             throw NFCError.unsupportedOperation("Type 5 tag reports too few blocks for NDEF")
         }
         let userCapacity = (addressableBlocks - ccBlocks) * blockSize
+        // MLEN counts whole 8-byte units, so the advertised T5T_Area can be a few bytes
+        // smaller than the user memory; readers stop at MLEN × 8.
         let memoryLengthUnits = userCapacity / 8
+        guard memoryLengthUnits > 0 else {
+            // A 4-byte CC with MLEN 00h would mean "8-byte CC" to readers.
+            throw NFCError.unsupportedOperation("Type 5 tag has less than 8 bytes of NDEF memory")
+        }
 
         let tlv = encodeNDEFTLV(message)
-        guard tlv.count <= userCapacity else {
+        guard tlv.count <= memoryLengthUnits * 8 else {
             throw NFCError.unsupportedOperation("NDEF message exceeds Type 5 user memory")
         }
 
@@ -208,12 +233,10 @@ enum NDEFTagMapping {
         guard cc.count == ccLength else {
             throw NFCError.invalidResponse(leadingBytes)
         }
-        let memoryLengthUnits = ccLength == 8
-            ? Int(cc[6]) << 8 | Int(cc[7])
-            : Int(cc[2])
+        let areaLength = type5DataAreaLength(leadingBytes: leadingBytes) ?? 0
 
         let addressableBytes = min(blockCount, type5SingleByteAddressableBlocks) * blockSize
-        let capacity = min(memoryLengthUnits * 8, max(0, addressableBytes - ccLength))
+        let capacity = min(areaLength, max(0, addressableBytes - ccLength))
         let tlv = encodeNDEFTLV(message)
         guard tlv.count <= capacity else {
             throw NFCError.unsupportedOperation("NDEF message exceeds Type 5 user memory")

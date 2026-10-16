@@ -534,6 +534,87 @@ struct NDEFTests {
         #expect(transport.writtenBlocks[0].data == Data([0xE1, 0x40, 0x7F, 0x00]))
     }
 
+    @Test
+    func `Type 5 NDEF reads back on a tag with more than 256 blocks`() async throws {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 300, icReference: 0x01
+            )
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        try await CoreExtendedNFC.formatNDEF(info: info, transport: transport)
+        try await CoreExtendedNFC.writeNDEF(.text("hello"), info: info, transport: transport)
+
+        transport.readBlockNumbers = []
+        // before: threw from the 256-block dump guard
+        #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: transport) == .text("hello"))
+        #expect(transport.readBlockNumbers.allSatisfy { $0 <= 255 })
+
+        let dump = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        #expect(dump.blocks.count == 256)
+        #expect(dump.facts.contains { $0.key == "Blocks Read" })
+        #expect(dump.capabilities == [.partiallyReadable])
+        #expect(dump.parsedNDEFMessage == .text("hello"))
+    }
+
+    @Test
+    func `Type 5 NDEF read stops at the MLEN data area`() async throws {
+        // MLEN = 1 → 8-byte area (blocks 1-2); the NDEF TLV starts in block 3.
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 8, icReference: 0x01
+            ),
+            storedBlocks: [0: Data([0xE1, 0x40, 0x01, 0x00]), 3: Data([0x03, 0x01, 0xD0, 0xFE])]
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        await #expect(throws: NFCError.self) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        }
+        #expect(transport.readBlockNumbers == [0, 1, 2])
+    }
+
+    @Test
+    func `Type 5 build keeps the TLV inside the advertised MLEN area`() throws {
+        // ICODE SLIX: 28 blocks × 4 bytes → 108 user bytes, MLEN 13 → 104-byte area.
+        for size in 100 ... 110 {
+            let message = Data(repeating: 0xAA, count: size)
+            guard let blocks = try? NDEFTagMapping.buildType5Blocks(message: message, blockSize: 4, blockCount: 28) else {
+                continue
+            }
+            // before: messages up to 105 bytes were accepted past MLEN × 8
+            #expect(2 + size <= Int(blocks[0][2]) * 8)
+            let extracted = NDEFTagMapping.extractType5Message(
+                from: blocks.enumerated().map { MemoryDump.Block(number: $0.offset, data: $0.element) }
+            )
+            #expect(extracted == message)
+        }
+    }
+
+    @Test
+    func `Type 5 write respects the tag's existing MLEN`() throws {
+        // CC advertises MLEN = 2 (16 bytes) on a 64-block tag.
+        let cc = Data([0xE1, 0x40, 0x02, 0x00])
+        #expect(throws: NFCError.self) {
+            _ = try NDEFTagMapping.type5NDEFWrites(
+                message: Data(repeating: 0xAA, count: 14), leadingBytes: cc, blockSize: 4, blockCount: 64
+            )
+        }
+        let writes = try NDEFTagMapping.type5NDEFWrites(
+            message: Data(repeating: 0xAA, count: 13), leadingBytes: cc, blockSize: 4, blockCount: 64
+        )
+        #expect(writes.last?.block == 4)
+    }
+
+    @Test
+    func `Type 5 format refuses a tag with less than 8 bytes of NDEF memory`() {
+        // before: CC byte 2 = 00h, which readers take as an 8-byte CC
+        #expect(throws: NFCError.self) {
+            _ = try NDEFTagMapping.buildType5Blocks(message: Data(), blockSize: 4, blockCount: 2)
+        }
+    }
+
     private func makeAttributeInfoBlock(
         nbr: UInt8,
         nbw: UInt8,
