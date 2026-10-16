@@ -624,6 +624,38 @@
           }
         }
       }
+    },
+    "Reading token information…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading token information…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取令牌信息…"
+          }
+        }
+      }
+    },
+    "Reading individual number…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading individual number…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取个人编号…"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

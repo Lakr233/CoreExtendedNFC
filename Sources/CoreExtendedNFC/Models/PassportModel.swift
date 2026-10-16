@@ -40,7 +40,7 @@ public struct PassportModel: Sendable, Codable, Equatable {
     public let securityInfoRaw: Data?
 
     /// Parsed DG15 active authentication public key.
-    public let activeAuthPublicKey: ActiveAuthPublicKey?
+    public let activeAuthPublicKey: ActiveAuthenticationPublicKey?
 
     /// Raw DG15 active authentication public key bytes.
     public let activeAuthPublicKeyRaw: Data?
@@ -106,7 +106,7 @@ public struct PassportModel: Sendable, Codable, Equatable {
         additionalDocumentDetails: [String: String]?,
         securityInfos: SecurityInfos?,
         securityInfoRaw: Data?,
-        activeAuthPublicKey: ActiveAuthPublicKey?,
+        activeAuthPublicKey: ActiveAuthenticationPublicKey?,
         activeAuthPublicKeyRaw: Data?,
         sod: SODContent?,
         sodRaw: Data?,
@@ -279,10 +279,10 @@ public struct PassportSecurityStageResult: Sendable, Equatable, Codable {
 
     /// Stage result for a passive authentication outcome.
     ///
-    /// - `.succeeded` only for ``PassiveAuthStatus/fullyVerified``: hashes match, the SOD
+    /// - `.succeeded` only for ``PassiveAuthenticationStatus/fullyVerified``: hashes match, the SOD
     ///   signature verifies and its signer chains to a supplied CSCA (ICAO 9303-11 §5.1).
     /// - `.fallback` when the hashes match but the signature is not chained to a CSCA
-    ///   (``PassiveAuthStatus/signatureVerified`` without anchors, or no signature check).
+    ///   (``PassiveAuthenticationStatus/signatureVerified`` without anchors, or no signature check).
     /// - `.failed` for an invalid signature, a broken trust chain, a hash mismatch, an
     ///   unparseable SOD or an unsupported hash algorithm.
     /// - `.skipped` when no data group the SOD covers was compared; `.notSupported`
@@ -370,11 +370,11 @@ extension PassportSecurityStageResult {
     /// proves the chip genuine only when DG15 itself is authenticated (ICAO 9303-11 §6.1,
     /// §5.1). So:
     /// - `.succeeded` only for a valid signature when passive authentication is
-    ///   ``PassiveAuthStatus/fullyVerified`` and the DG15 hash matched.
+    ///   ``PassiveAuthenticationStatus/fullyVerified`` and the DG15 hash matched.
     /// - `.failed` for an invalid signature or a failed command, and for a valid signature
     ///   whose DG15 does not match its hash in the SOD (DG15 was altered).
     /// - `.fallback` for a valid signature over a DG15 that is not authenticated: no trust
-    ///   anchors (``PassiveAuthStatus/signatureVerified``; a clone can self-sign its SOD),
+    ///   anchors (``PassiveAuthenticationStatus/signatureVerified``; a clone can self-sign its SOD),
     ///   a broken trust chain, DG15 not covered by the SOD, or no passive authentication.
     /// - `.notSupported` for an unsupported key or signature format; `.skipped` when
     ///   `activeAuthentication` is `nil` (AA did not run).
@@ -446,10 +446,10 @@ public struct PassportSecurityReport: Sendable, Equatable, Codable {
 /// `success` and `status` describe different things:
 /// - `success` is the cryptographic outcome only: the chip signed the challenge with the
 ///   private key matching the DG15 public key.
-/// - `status` says what that proves. ``ActiveAuthStatus/verified`` is used only when DG15
+/// - `status` says what that proves. ``ActiveAuthenticationStatus/verified`` is used only when DG15
 ///   itself is authenticated (its hash matches an SOD whose signature chains to a trusted
 ///   CSCA). A valid signature over an unauthenticated DG15 is
-///   ``ActiveAuthStatus/verifiedUnauthenticatedKey``: a clone can carry its own key pair
+///   ``ActiveAuthenticationStatus/verifiedUnauthenticatedKey``: a clone can carry its own key pair
 ///   and a self-signed SOD and still produce it.
 ///
 /// To decide whether the chip is genuine, check `status == .verified` or the
@@ -461,9 +461,9 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
     /// Description of the result.
     public let details: String
     /// The verification status.
-    public let status: ActiveAuthStatus
+    public let status: ActiveAuthenticationStatus
 
-    public init(success: Bool, details: String, status: ActiveAuthStatus = .verified) {
+    public init(success: Bool, details: String, status: ActiveAuthenticationStatus = .verified) {
         self.success = success
         self.details = details
         self.status = status
@@ -476,12 +476,12 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
     }
 
     /// This result with `status` re-derived against `passiveAuthentication`: a valid
-    /// signature is ``ActiveAuthStatus/verified`` only when DG15 is authenticated by
+    /// signature is ``ActiveAuthenticationStatus/verified`` only when DG15 is authenticated by
     /// fully verified passive authentication, otherwise
-    /// ``ActiveAuthStatus/verifiedUnauthenticatedKey``. Other statuses are unchanged.
+    /// ``ActiveAuthenticationStatus/verifiedUnauthenticatedKey``. Other statuses are unchanged.
     public func classified(by passiveAuthentication: PassiveAuthenticationResult?) -> ActiveAuthenticationResult {
         guard signatureIsValid else { return self }
-        let status: ActiveAuthStatus = Self.isDG15Authenticated(by: passiveAuthentication)
+        let status: ActiveAuthenticationStatus = Self.isDG15Authenticated(by: passiveAuthentication)
             ? .verified
             : .verifiedUnauthenticatedKey
         return ActiveAuthenticationResult(success: success, details: details, status: status)
@@ -495,8 +495,11 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
     }
 }
 
+@available(*, deprecated, renamed: "ActiveAuthenticationStatus")
+public typealias ActiveAuthStatus = ActiveAuthenticationStatus
+
 /// Active Authentication verification status.
-public enum ActiveAuthStatus: String, Sendable, Codable {
+public enum ActiveAuthenticationStatus: String, Sendable, Codable {
     /// The signature is valid and the DG15 key is authenticated by fully verified
     /// passive authentication, so the chip is genuine. ``PassportReader`` reports a
     /// valid signature over an unauthenticated key as ``verifiedUnauthenticatedKey``.

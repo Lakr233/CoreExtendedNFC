@@ -8,27 +8,36 @@ public extension CoreExtendedNFC {
     /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
     ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
     ///   usually stay silent then.
-    /// - Parameter manager: The session manager that runs the scan. Pass your own
-    ///   instance, or a subclass, to customize the session. It is invalidated before returning.
+    /// - Parameters:
+    ///   - items: Which fields to read (default: token info).
+    ///   - cardInfoInputSupportPIN: The 4-digit card-info-input-support PIN, required
+    ///     for `.individualNumber`.
+    ///   - message: The alert message shown during NFC scanning.
+    ///   - manager: The session manager that runs the scan. Pass your own instance,
+    ///     or a subclass, to customize the session. It is invalidated before returning.
+    ///   - onProgress: Called with each localized progress message, which is also shown
+    ///     on the NFC sheet.
     static func readMyNumberCard(
         items: [MyNumberCardItem] = [.tokenInfo],
         cardInfoInputSupportPIN: String? = nil,
         message: String? = nil,
-        manager: NFCSessionManager = NFCSessionManager()
+        manager: NFCSessionManager = NFCSessionManager(),
+        onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> MyNumberCardData {
-        let (rawInfo, transport) = try await manager.scan(
+        let (_, transport) = try await manager.scan(
             for: [.iso14443],
             message: message ?? String(localized: "Hold your iPhone near your My Number card", bundle: .module)
         )
 
         do {
-            let info = try await refineCardInfo(rawInfo, transport: transport)
-            manager.setAlertMessage(String(localized: "Reading...", bundle: .module))
             let card = try await readMyNumberCard(
-                info: info,
                 transport: transport,
                 items: items,
-                cardInfoInputSupportPIN: cardInfoInputSupportPIN
+                cardInfoInputSupportPIN: cardInfoInputSupportPIN,
+                onProgress: { msg in
+                    manager.setAlertMessage(msg)
+                    onProgress?(msg)
+                }
             )
             manager.setAlertMessage(String(localized: "Done", bundle: .module))
             manager.invalidate()
@@ -39,11 +48,22 @@ public extension CoreExtendedNFC {
     }
 
     /// Read fields from a connected My Number card transport.
+    ///
+    /// Neither starts nor ends an NFC session.
+    ///
+    /// - Parameters:
+    ///   - transport: A connected ISO 7816 transport to the card.
+    ///   - items: Which fields to read (default: token info).
+    ///   - cardInfoInputSupportPIN: The 4-digit card-info-input-support PIN, required
+    ///     for `.individualNumber`.
+    ///   - onProgress: Called with a localized message before each field is read.
+    /// - Throws: ``NFCError/unsupportedOperation(_:)`` for a non-ISO 7816 transport,
+    ///   otherwise the errors of ``MyNumberCardReader/read(items:cardInfoInputSupportPIN:onProgress:)``.
     static func readMyNumberCard(
-        info _: CardInfo,
         transport: any NFCTagTransport,
         items: [MyNumberCardItem] = [.tokenInfo],
-        cardInfoInputSupportPIN: String? = nil
+        cardInfoInputSupportPIN: String? = nil,
+        onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> MyNumberCardData {
         guard let iso7816Transport = transport as? any ISO7816TagTransporting else {
             throw NFCError.unsupportedOperation("My Number card reading requires an ISO 7816 transport")
@@ -51,13 +71,33 @@ public extension CoreExtendedNFC {
 
         return try await MyNumberCardReader(transport: iso7816Transport).read(
             items: items,
+            cardInfoInputSupportPIN: cardInfoInputSupportPIN,
+            onProgress: onProgress
+        )
+    }
+
+    /// Read fields from a connected My Number card transport.
+    ///
+    /// The `info` argument was never used; call
+    /// ``readMyNumberCard(transport:items:cardInfoInputSupportPIN:onProgress:)``.
+    @available(*, deprecated, renamed: "readMyNumberCard(transport:items:cardInfoInputSupportPIN:onProgress:)")
+    static func readMyNumberCard(
+        info _: CardInfo,
+        transport: any NFCTagTransport,
+        items: [MyNumberCardItem] = [.tokenInfo],
+        cardInfoInputSupportPIN: String? = nil
+    ) async throws -> MyNumberCardData {
+        try await readMyNumberCard(
+            transport: transport,
+            items: items,
             cardInfoInputSupportPIN: cardInfoInputSupportPIN
         )
     }
 
     /// Query remaining attempts for a My Number card PIN domain.
+    ///
+    /// Neither starts nor ends an NFC session.
     static func lookupMyNumberRemainingPINAttempts(
-        info _: CardInfo,
         transport: any NFCTagTransport,
         pinType: MyNumberPINType
     ) async throws -> Int {
@@ -67,5 +107,18 @@ public extension CoreExtendedNFC {
 
         return try await MyNumberCardReader(transport: iso7816Transport)
             .lookupRemainingPINAttempts(for: pinType)
+    }
+
+    /// Query remaining attempts for a My Number card PIN domain.
+    ///
+    /// The `info` argument was never used; call
+    /// ``lookupMyNumberRemainingPINAttempts(transport:pinType:)``.
+    @available(*, deprecated, renamed: "lookupMyNumberRemainingPINAttempts(transport:pinType:)")
+    static func lookupMyNumberRemainingPINAttempts(
+        info _: CardInfo,
+        transport: any NFCTagTransport,
+        pinType: MyNumberPINType
+    ) async throws -> Int {
+        try await lookupMyNumberRemainingPINAttempts(transport: transport, pinType: pinType)
     }
 }

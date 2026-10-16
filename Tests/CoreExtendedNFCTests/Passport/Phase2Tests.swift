@@ -701,19 +701,19 @@ struct Phase2Tests {
         #expect(!PACEHandler.DomainParameterID.brainpoolP256r1.isNISTCurve)
     }
 
-    // MARK: - PassiveAuthStatus
+    // MARK: - PassiveAuthenticationStatus
 
     @Test
-    func `PassiveAuthStatus values`() {
-        #expect(PassiveAuthStatus.dataGroupHashesVerified.rawValue == "dataGroupHashesVerified")
-        #expect(PassiveAuthStatus.hashMismatch.rawValue == "hashMismatch")
-        #expect(PassiveAuthStatus.sodParseFailed.rawValue == "sodParseFailed")
-        #expect(PassiveAuthStatus.sodNotAvailable.rawValue == "sodNotAvailable")
-        #expect(PassiveAuthStatus.unsupportedHashAlgorithm.rawValue == "unsupportedHashAlgorithm")
-        #expect(PassiveAuthStatus.signatureNotVerified.rawValue == "signatureNotVerified")
-        #expect(PassiveAuthStatus.signatureVerified.rawValue == "signatureVerified")
-        #expect(PassiveAuthStatus.signatureInvalid.rawValue == "signatureInvalid")
-        #expect(PassiveAuthStatus.fullyVerified.rawValue == "fullyVerified")
-        #expect(PassiveAuthStatus.trustChainInvalid.rawValue == "trustChainInvalid")
+    func `PassiveAuthenticationStatus values`() {
+        #expect(PassiveAuthenticationStatus.dataGroupHashesVerified.rawValue == "dataGroupHashesVerified")
+        #expect(PassiveAuthenticationStatus.hashMismatch.rawValue == "hashMismatch")
+        #expect(PassiveAuthenticationStatus.sodParseFailed.rawValue == "sodParseFailed")
+        #expect(PassiveAuthenticationStatus.sodNotAvailable.rawValue == "sodNotAvailable")
+        #expect(PassiveAuthenticationStatus.unsupportedHashAlgorithm.rawValue == "unsupportedHashAlgorithm")
+        #expect(PassiveAuthenticationStatus.signatureNotVerified.rawValue == "signatureNotVerified")
+        #expect(PassiveAuthenticationStatus.signatureVerified.rawValue == "signatureVerified")
+        #expect(PassiveAuthenticationStatus.signatureInvalid.rawValue == "signatureInvalid")
+        #expect(PassiveAuthenticationStatus.fullyVerified.rawValue == "fullyVerified")
+        #expect(PassiveAuthenticationStatus.trustChainInvalid.rawValue == "trustChainInvalid")
     }
 }

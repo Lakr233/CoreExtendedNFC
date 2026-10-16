@@ -25,12 +25,12 @@ struct ActiveAuthenticationTests {
     // MARK: - AA Status Semantics
 
     @Test
-    func `ActiveAuthStatus has correct status values`() {
-        #expect(ActiveAuthStatus.notImplemented.rawValue == "notImplemented")
-        #expect(ActiveAuthStatus.verified.rawValue == "verified")
-        #expect(ActiveAuthStatus.failed.rawValue == "failed")
-        #expect(ActiveAuthStatus.commandFailed.rawValue == "commandFailed")
-        #expect(ActiveAuthStatus.unsupportedKeyType.rawValue == "unsupportedKeyType")
+    func `ActiveAuthenticationStatus has correct status values`() {
+        #expect(ActiveAuthenticationStatus.notImplemented.rawValue == "notImplemented")
+        #expect(ActiveAuthenticationStatus.verified.rawValue == "verified")
+        #expect(ActiveAuthenticationStatus.failed.rawValue == "failed")
+        #expect(ActiveAuthenticationStatus.commandFailed.rawValue == "commandFailed")
+        #expect(ActiveAuthenticationStatus.unsupportedKeyType.rawValue == "unsupportedKeyType")
     }
 
     @Test
@@ -393,7 +393,7 @@ struct ActiveAuthenticationTests {
             return signature
         }
 
-        private func exportRSAPublicKey(_ privateKey: OpaquePointer) throws -> ActiveAuthPublicKey {
+        private func exportRSAPublicKey(_ privateKey: OpaquePointer) throws -> ActiveAuthenticationPublicKey {
             guard let output = BIO_new(BIO_s_mem()) else {
                 throw NFCError.cryptoError("Failed to allocate OpenSSL public key export state")
             }

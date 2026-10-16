@@ -27,14 +27,14 @@ public struct PassiveAuthenticationResult: Sendable, Equatable, Codable {
     public let trustChainValid: Bool?
 
     /// Overall passive authentication status.
-    public let status: PassiveAuthStatus
+    public let status: PassiveAuthenticationStatus
 
     public init(
         dataGroupHashResults: [DataGroupId: Bool],
         hasCertificate: Bool,
         cmsSignatureValid: Bool? = nil,
         trustChainValid: Bool? = nil,
-        status: PassiveAuthStatus
+        status: PassiveAuthenticationStatus
     ) {
         self.dataGroupHashResults = dataGroupHashResults
         self.hasCertificate = hasCertificate
@@ -44,12 +44,15 @@ public struct PassiveAuthenticationResult: Sendable, Equatable, Codable {
     }
 }
 
+@available(*, deprecated, renamed: "PassiveAuthenticationStatus")
+public typealias PassiveAuthStatus = PassiveAuthenticationStatus
+
 /// Passive authentication status.
 ///
 /// Full passive authentication combines CMS signature validation on the SOD with
 /// data-group hash verification. Hash comparison is always available here; CMS and
 /// trust-chain validation depend on OpenSSL support.
-public enum PassiveAuthStatus: String, Sendable, Codable {
+public enum PassiveAuthenticationStatus: String, Sendable, Codable {
     /// Data group hashes verified successfully against SOD.
     /// - Important: This does NOT mean full passive authentication is complete.
     ///   The SOD signature itself has NOT been verified against the DSC/CSCA.

@@ -470,6 +470,9 @@ open class PassportReader: @unchecked Sendable {
     }
 
     /// Parse raw data group bytes and assemble a PassportModel.
+    ///
+    /// Uses the same parsing as ``PassportModel/init(rawDataGroups:cardAccessRaw:performPassiveAuthentication:trustAnchorsDER:dataGroupReadStatus:)``,
+    /// keeping the given `cardAccess` and `securityReport`; `activeAuthResult` is `nil`.
     open func assemblePassportModel(
         rawDataGroups: [DataGroupId: Data],
         trustAnchorsDER: [Data],
@@ -478,112 +481,11 @@ open class PassportReader: @unchecked Sendable {
         securityReport: PassportSecurityReport,
         dataGroupReadStatus: [DataGroupId: PassportDataGroupReadResult]
     ) -> PassportModel {
-        // COM
-        var ldsVersion: String?
-        var unicodeVersion: String?
-        var availableDGs: [DataGroupId] = []
-        if let comData = rawDataGroups[.com] {
-            if let parsed = try? DataGroupParser.parseCOM(comData) {
-                ldsVersion = parsed.ldsVersion
-                unicodeVersion = parsed.unicodeVersion
-                availableDGs = parsed.dataGroups
-            }
-        }
-
-        // DG1 — MRZ
-        var mrz: MRZData?
-        if let dg1Data = rawDataGroups[.dg1] {
-            mrz = try? DataGroupParser.parseDG1(dg1Data)
-        }
-
-        // DG2 — Face Image
-        var faceImageData: Data?
-        if let dg2Data = rawDataGroups[.dg2] {
-            do {
-                faceImageData = try DataGroupParser.parseDG2(dg2Data)
-                if let faceImageData {
-                    NFCLog.info("Parsed DG2 face image: \(faceImageData.count) bytes", source: "Passport")
-                }
-            } catch {
-                NFCLog.error("DG2 parse failed: \(error.localizedDescription)", source: "Passport")
-            }
-        }
-
-        // DG7 — Signature Image
-        var signatureImageData: Data?
-        if let dg7Data = rawDataGroups[.dg7] {
-            do {
-                signatureImageData = try DataGroupParser.parseDG7(dg7Data)
-                if let signatureImageData {
-                    NFCLog.info("Parsed DG7 signature image: \(signatureImageData.count) bytes", source: "Passport")
-                } else {
-                    NFCLog.info("DG7 present but did not contain an extractable signature image", source: "Passport")
-                }
-            } catch {
-                NFCLog.error("DG7 parse failed: \(error.localizedDescription)", source: "Passport")
-            }
-        }
-
-        // DG11 — Additional Personal Details
-        var personalDetails: [String: String]?
-        if let dg11Data = rawDataGroups[.dg11] {
-            personalDetails = try? DataGroupParser.parseDG11(dg11Data)
-        }
-
-        // DG12 — Additional Document Details
-        var documentDetails: [String: String]?
-        if let dg12Data = rawDataGroups[.dg12] {
-            documentDetails = try? DataGroupParser.parseDG12(dg12Data)
-        }
-
-        // DG14 — Security Info
-        var securityInfos: SecurityInfos?
-        if let dg14Data = rawDataGroups[.dg14] {
-            securityInfos = try? DG14Parser.parse(dg14Data)
-        }
-
-        // DG15 — Active Auth Public Key
-        var activeAuthPublicKey: ActiveAuthPublicKey?
-        if let dg15Data = rawDataGroups[.dg15] {
-            activeAuthPublicKey = try? DG15Parser.parse(dg15Data)
-        }
-
-        // SOD — Security Object Document
-        var sodContent: SODContent?
-        if let sodData = rawDataGroups[.sod] {
-            sodContent = try? SODParser.parse(sodData)
-        }
-
-        // Passive Authentication — verify DG hashes against SOD
-        var passiveAuthResult: PassiveAuthenticationResult?
-        if let sod = sodContent {
-            passiveAuthResult = SODParser.verifyPassiveAuthentication(
-                sodContent: sod,
-                rawDataGroups: rawDataGroups,
-                trustAnchorsDER: trustAnchorsDER
-            )
-        }
-
-        return PassportModel(
+        PassportModel(
+            parsing: rawDataGroups,
             cardAccess: cardAccess,
             cardAccessRaw: cardAccessRaw,
-            ldsVersion: ldsVersion,
-            unicodeVersion: unicodeVersion,
-            availableDataGroups: availableDGs,
-            mrz: mrz,
-            faceImageData: faceImageData,
-            signatureImageData: signatureImageData,
-            additionalPersonalDetails: personalDetails,
-            additionalDocumentDetails: documentDetails,
-            securityInfos: securityInfos,
-            securityInfoRaw: rawDataGroups[.dg14],
-            activeAuthPublicKey: activeAuthPublicKey,
-            activeAuthPublicKeyRaw: rawDataGroups[.dg15],
-            sod: sodContent,
-            sodRaw: rawDataGroups[.sod],
-            passiveAuthResult: passiveAuthResult,
-            activeAuthResult: nil,
-            rawDataGroups: rawDataGroups,
+            trustAnchorsDER: trustAnchorsDER,
             securityReport: securityReport,
             dataGroupReadStatus: dataGroupReadStatus
         )
@@ -608,24 +510,7 @@ open class PassportReader: @unchecked Sendable {
     }
 
     open func buildChipAuthenticationStage(_ securityInfos: SecurityInfos?) -> PassportSecurityStageResult {
-        guard let securityInfos else {
-            return PassportSecurityStageResult(
-                status: .notAdvertised,
-                detail: "DG14 was not available, so Chip Authentication support could not be determined."
-            )
-        }
-
-        guard securityInfos.supportsChipAuthentication else {
-            return PassportSecurityStageResult(
-                status: .notAdvertised,
-                detail: "DG14 does not advertise Chip Authentication."
-            )
-        }
-
-        return PassportSecurityStageResult(
-            status: .notSupported,
-            detail: "Chip Authentication is advertised, but session key transition is not implemented yet."
-        )
+        .chipAuthentication(advertisedBy: securityInfos)
     }
 
     /// Security stage for Active Authentication.
@@ -684,7 +569,7 @@ open class PassportReader: @unchecked Sendable {
     /// - ISO/IEC 9796-2 (RSA message recovery scheme used by RSA-based AA)
     /// - BSI TR-03111, Section 4.2.1 (ECDSA plain signature format: r || s)
     open func performActiveAuthentication(
-        publicKey: ActiveAuthPublicKey,
+        publicKey: ActiveAuthenticationPublicKey,
         subjectPublicKeyInfo: Data?,
         securityInfos: SecurityInfos?,
         transport: SecureMessagingTransport

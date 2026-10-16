@@ -278,9 +278,7 @@ struct MyNumberCardReaderTests {
             ResponseAPDU(data: Data("JPKIAPICCTOKEN2     ".utf8), sw1: 0x90, sw2: 0x00),
         ]
 
-        let info = CardInfo(type: .myNumberCard, uid: transport.identifier)
         let result = try await CoreExtendedNFC.readMyNumberCard(
-            info: info,
             transport: transport,
             items: [.tokenInfo]
         )

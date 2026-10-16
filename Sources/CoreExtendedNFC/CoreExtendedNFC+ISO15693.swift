@@ -25,12 +25,17 @@ public extension CoreExtendedNFC {
     }
 
     /// Read multiple contiguous blocks from an ISO 15693 tag.
+    ///
+    /// READ MULTIPLE BLOCKS addresses blocks with a single byte, so `range`
+    /// must lie within `0...255`; otherwise ``NFCError/invalidParameter(_:)``
+    /// is thrown before anything is sent.
     static func readISO15693Blocks(
-        range: NSRange,
+        range: ClosedRange<Int>,
         transport: any NFCTagTransport
     ) async throws -> [Data] {
+        let blockRange = try iso15693BlockRange(range)
         let iso = try iso15693Transport(from: transport)
-        return try await iso.readBlocks(range: range)
+        return try await iso.readBlocks(range: blockRange)
     }
 
     /// Get system information (block count, block size, DSFID, AFI, IC reference).
@@ -42,12 +47,17 @@ public extension CoreExtendedNFC {
     }
 
     /// Get lock status for a range of blocks.
+    ///
+    /// GET MULTIPLE BLOCK SECURITY STATUS addresses blocks with a single byte,
+    /// so `range` must lie within `0...255`; otherwise
+    /// ``NFCError/invalidParameter(_:)`` is thrown before anything is sent.
     static func getISO15693BlockSecurityStatus(
-        range: NSRange,
+        range: ClosedRange<Int>,
         transport: any NFCTagTransport
     ) async throws -> [Bool] {
+        let blockRange = try iso15693BlockRange(range)
         let iso = try iso15693Transport(from: transport)
-        return try await iso.getBlockSecurityStatus(range: range)
+        return try await iso.getBlockSecurityStatus(range: blockRange)
     }
 
     // MARK: Configuration
@@ -117,7 +127,7 @@ public extension CoreExtendedNFC {
     // MARK: Security
 
     /// Send a manufacturer-specific custom command.
-    static func iso15693CustomCommand(
+    static func sendISO15693CustomCommand(
         code: Int,
         parameters: Data = Data(),
         transport: any NFCTagTransport
@@ -128,7 +138,7 @@ public extension CoreExtendedNFC {
     }
 
     /// Start or continue a challenge flow for the selected crypto suite.
-    static func iso15693Challenge(
+    static func challengeISO15693(
         cryptoSuiteIdentifier: Int,
         message: Data = Data(),
         transport: any NFCTagTransport
@@ -142,7 +152,7 @@ public extension CoreExtendedNFC {
     }
 
     /// Authenticate using the selected ISO 15693 crypto suite.
-    static func iso15693Authenticate(
+    static func authenticateISO15693(
         cryptoSuiteIdentifier: Int,
         message: Data,
         transport: any NFCTagTransport
@@ -156,7 +166,7 @@ public extension CoreExtendedNFC {
     }
 
     /// Update a security key on tags that support the ISO 15693 key update primitive.
-    static func iso15693KeyUpdate(
+    static func updateISO15693Key(
         keyIdentifier: Int,
         message: Data,
         transport: any NFCTagTransport
@@ -171,6 +181,17 @@ public extension CoreExtendedNFC {
 
     // MARK: Helpers
 
+    /// Convert a block range for the single-byte-addressed ISO 15693 commands,
+    /// rejecting negative bounds and blocks above 255.
+    static func iso15693BlockRange(_ range: ClosedRange<Int>) throws -> NSRange {
+        guard range.lowerBound >= 0, range.upperBound <= 0xFF else {
+            throw NFCError.invalidParameter(
+                "ISO 15693 block range must lie within 0...255, got \(range.lowerBound)...\(range.upperBound)"
+            )
+        }
+        return NSRange(location: range.lowerBound, length: range.count)
+    }
+
     static func iso15693Transport(
         from transport: any NFCTagTransport
     ) throws -> any ISO15693TagTransporting {
@@ -178,5 +199,83 @@ public extension CoreExtendedNFC {
             throw NFCError.unsupportedOperation("ISO 15693 operations require an ISO 15693 transport")
         }
         return iso
+    }
+
+    // MARK: Deprecated Names
+
+    @available(*, deprecated, message: "Pass a ClosedRange<Int> block range, e.g. `range: 0...3`")
+    static func readISO15693Blocks(
+        range: NSRange,
+        transport: any NFCTagTransport
+    ) async throws -> [Data] {
+        guard range.location >= 0, range.location <= 0xFF, range.length > 0, range.length <= 0x100 else {
+            throw NFCError.invalidParameter("ISO 15693 block range must contain 1-256 blocks within 0...255")
+        }
+        return try await readISO15693Blocks(
+            range: range.location ... range.location + range.length - 1,
+            transport: transport
+        )
+    }
+
+    @available(*, deprecated, message: "Pass a ClosedRange<Int> block range, e.g. `range: 0...3`")
+    static func getISO15693BlockSecurityStatus(
+        range: NSRange,
+        transport: any NFCTagTransport
+    ) async throws -> [Bool] {
+        guard range.location >= 0, range.location <= 0xFF, range.length > 0, range.length <= 0x100 else {
+            throw NFCError.invalidParameter("ISO 15693 block range must contain 1-256 blocks within 0...255")
+        }
+        return try await getISO15693BlockSecurityStatus(
+            range: range.location ... range.location + range.length - 1,
+            transport: transport
+        )
+    }
+
+    @available(*, deprecated, renamed: "sendISO15693CustomCommand(code:parameters:transport:)")
+    static func iso15693CustomCommand(
+        code: Int,
+        parameters: Data = Data(),
+        transport: any NFCTagTransport
+    ) async throws -> Data {
+        try await sendISO15693CustomCommand(code: code, parameters: parameters, transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "challengeISO15693(cryptoSuiteIdentifier:message:transport:)")
+    static func iso15693Challenge(
+        cryptoSuiteIdentifier: Int,
+        message: Data = Data(),
+        transport: any NFCTagTransport
+    ) async throws {
+        try await challengeISO15693(
+            cryptoSuiteIdentifier: cryptoSuiteIdentifier,
+            message: message,
+            transport: transport
+        )
+    }
+
+    @available(*, deprecated, renamed: "authenticateISO15693(cryptoSuiteIdentifier:message:transport:)")
+    static func iso15693Authenticate(
+        cryptoSuiteIdentifier: Int,
+        message: Data,
+        transport: any NFCTagTransport
+    ) async throws -> ISO15693SecurityResponse {
+        try await authenticateISO15693(
+            cryptoSuiteIdentifier: cryptoSuiteIdentifier,
+            message: message,
+            transport: transport
+        )
+    }
+
+    @available(*, deprecated, renamed: "updateISO15693Key(keyIdentifier:message:transport:)")
+    static func iso15693KeyUpdate(
+        keyIdentifier: Int,
+        message: Data,
+        transport: any NFCTagTransport
+    ) async throws -> ISO15693SecurityResponse {
+        try await updateISO15693Key(
+            keyIdentifier: keyIdentifier,
+            message: message,
+            transport: transport
+        )
     }
 }

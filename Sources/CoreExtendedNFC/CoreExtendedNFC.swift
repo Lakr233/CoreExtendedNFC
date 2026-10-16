@@ -15,14 +15,18 @@ public enum CoreExtendedNFC {
     ///   usually stay silent then.
     ///
     /// - Parameters:
+    ///   - pollingTargets: Which tag technologies to poll for (default: all of them).
+    ///     Narrow it, for example to `[.iso14443]`, to keep other tag types from
+    ///     being detected.
     ///   - message: The alert message shown during NFC scanning.
     ///   - manager: The session manager that runs the scan. Pass your own instance,
     ///     or a subclass, to customize the session; it is returned unchanged.
     public static func scan(
+        pollingTargets: [NFCSessionManager.PollingTarget] = [.all],
         message: String? = nil,
         manager: NFCSessionManager = NFCSessionManager()
     ) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager) {
-        let (info, transport) = try await manager.scan(message: message)
+        let (info, transport) = try await manager.scan(for: pollingTargets, message: message)
 
         do {
             let refinedInfo = try await refineCardInfo(info, transport: transport)
@@ -37,14 +41,20 @@ public enum CoreExtendedNFC {
     /// Scan and automatically dump the card's full memory.
     ///
     /// - Parameters:
+    ///   - pollingTargets: Which tag technologies to poll for (default: all of them).
     ///   - message: The alert message shown during NFC scanning.
     ///   - manager: The session manager that runs the scan. Pass your own instance,
     ///     or a subclass, to customize the session. It is invalidated before returning.
     public static func scanAndDump(
+        pollingTargets: [NFCSessionManager.PollingTarget] = [.all],
         message: String? = nil,
         manager: NFCSessionManager = NFCSessionManager()
     ) async throws -> (CardInfo, MemoryDump) {
-        let (info, transport, manager) = try await scan(message: message, manager: manager)
+        let (info, transport, manager) = try await scan(
+            pollingTargets: pollingTargets,
+            message: message,
+            manager: manager
+        )
 
         // Non-operable cards (Classic, etc.) — return identification only
         guard info.type.isOperableOnIOS else {
@@ -105,8 +115,8 @@ public enum CoreExtendedNFC {
         let (_, transport) = try await manager.scan(for: [.iso14443], message: message ?? String(localized: "Hold your iPhone near your passport", bundle: .module))
 
         do {
-            let reader = PassportReader(transport: transport)
-            let passport = try await reader.readPassport(
+            let passport = try await readPassport(
+                transport: transport,
                 mrzKey: mrzKey,
                 dataGroups: dataGroups,
                 performActiveAuth: performActiveAuth,
@@ -122,5 +132,39 @@ public enum CoreExtendedNFC {
         } catch {
             throw manager.invalidateAfterFailure(error)
         }
+    }
+
+    /// Read data groups from an electronic passport or ID card over a transport you
+    /// already hold, for example one returned by ``scan(pollingTargets:message:manager:)``.
+    ///
+    /// Runs the same workflow as ``readPassport(mrzKey:dataGroups:performActiveAuth:trustAnchorsDER:message:manager:onProgress:)``
+    /// (EF.CardAccess, PACE or BAC, data groups, passive and Active Authentication) but
+    /// neither starts nor ends an NFC session: updating the NFC sheet and invalidating
+    /// the session are up to the caller.
+    ///
+    /// - Parameters:
+    ///   - transport: A connected ISO 14443 (ISO 7816) transport to the document's chip.
+    ///   - mrzKey: The MRZ key string (use ``MRZKeyGenerator/computeMRZKey(documentNumber:dateOfBirth:dateOfExpiry:)``).
+    ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
+    ///   - performActiveAuth: Whether to attempt Active Authentication if DG15 is available.
+    ///   - trustAnchorsDER: DER-encoded CSCA certificates used to validate the SOD signer.
+    ///   - onProgress: Called with each localized progress message.
+    /// - Returns: A ``PassportModel`` with all parsed data.
+    /// - Throws: ``NFCError`` or `CancellationError`.
+    public static func readPassport(
+        transport: any NFCTagTransport,
+        mrzKey: String,
+        dataGroups: [DataGroupId] = [.com, .dg1, .dg2, .sod],
+        performActiveAuth: Bool = true,
+        trustAnchorsDER: [Data] = [],
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> PassportModel {
+        try await PassportReader(transport: transport).readPassport(
+            mrzKey: mrzKey,
+            dataGroups: dataGroups,
+            performActiveAuth: performActiveAuth,
+            trustAnchorsDER: trustAnchorsDER,
+            onProgress: onProgress
+        )
     }
 }

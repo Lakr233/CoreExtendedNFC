@@ -17,12 +17,27 @@ open class MyNumberCardReader: @unchecked Sendable {
 
     /// Read one or more fields from a My Number card.
     ///
+    /// Same as ``read(items:cardInfoInputSupportPIN:onProgress:)`` without progress
+    /// messages.
+    public func read(
+        items: [MyNumberCardItem] = [.tokenInfo],
+        cardInfoInputSupportPIN: String? = nil
+    ) async throws -> MyNumberCardData {
+        try await read(items: items, cardInfoInputSupportPIN: cardInfoInputSupportPIN, onProgress: nil)
+    }
+
+    /// Read one or more fields from a My Number card.
+    ///
     /// Throws ``NFCError/invalidParameter(_:)`` when `items` is empty or the PIN is not
     /// 4 digits, and ``NFCError/pinRequired(_:)`` when `.individualNumber` is requested
     /// without `cardInfoInputSupportPIN`.
+    ///
+    /// - Parameter onProgress: Called with a localized message (suitable for the system
+    ///   NFC sheet) before each field is read.
     open func read(
         items: [MyNumberCardItem] = [.tokenInfo],
-        cardInfoInputSupportPIN: String? = nil
+        cardInfoInputSupportPIN: String? = nil,
+        onProgress: (@Sendable (String) -> Void)?
     ) async throws -> MyNumberCardData {
         guard !items.isEmpty else {
             throw NFCError.invalidParameter("No My Number card fields were requested")
@@ -39,11 +54,13 @@ open class MyNumberCardReader: @unchecked Sendable {
         for item in uniqueItems {
             switch item {
             case .tokenInfo:
+                onProgress?(String(localized: "Reading token information…", bundle: .module))
                 tokenInfo = try await readTokenInfo()
             case .individualNumber:
                 guard let pin = cardInfoInputSupportPIN else {
                     throw NFCError.pinRequired(.cardInfoInputSupport)
                 }
+                onProgress?(String(localized: "Reading individual number…", bundle: .module))
                 individualNumber = try await readIndividualNumber(cardInfoInputSupportPIN: pin)
             }
         }

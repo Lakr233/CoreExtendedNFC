@@ -1,7 +1,10 @@
 import Foundation
 
+@available(*, deprecated, renamed: "ActiveAuthenticationPublicKey")
+public typealias ActiveAuthPublicKey = ActiveAuthenticationPublicKey
+
 /// Parsed Active Authentication public key from DG15.
-public enum ActiveAuthPublicKey: Sendable, Equatable, Codable {
+public enum ActiveAuthenticationPublicKey: Sendable, Equatable, Codable {
     /// RSA public key with modulus and exponent.
     case rsa(modulus: Data, exponent: Data)
     /// ECDSA public key with curve OID and uncompressed point.
@@ -37,8 +40,8 @@ public enum DG15Parser {
     public static let rsaOID = "1.2.840.113549.1.1.1" // rsaEncryption
     public static let ecPublicKeyOID = "1.2.840.10045.2.1" // id-ecPublicKey
 
-    /// Parse DG15 raw data into an ActiveAuthPublicKey.
-    public static func parse(_ data: Data) throws -> ActiveAuthPublicKey {
+    /// Parse DG15 raw data into an ActiveAuthenticationPublicKey.
+    public static func parse(_ data: Data) throws -> ActiveAuthenticationPublicKey {
         // Parse outer TLV: tag 0x6F wrapping SubjectPublicKeyInfo
         let nodes = try ASN1Parser.parseTLV(data)
 
@@ -124,7 +127,7 @@ public enum DG15Parser {
     ///     modulus  INTEGER,
     ///     publicExponent  INTEGER
     /// }
-    public static func parseRSAPublicKey(_ data: Data) throws -> ActiveAuthPublicKey {
+    public static func parseRSAPublicKey(_ data: Data) throws -> ActiveAuthenticationPublicKey {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let seqNode = nodes.first(where: { $0.tag == 0x30 }) else {
             return .unknown(data)

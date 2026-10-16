@@ -40,7 +40,7 @@ extension PassportDetailViewController {
     static func securityRows(
         for record: PassportRecord,
         reverifiedPassiveAuthentication: PassportSecurityStageResult? = nil,
-        reverifiedPassiveAuthStatus: PassiveAuthStatus? = nil,
+        reverifiedPassiveAuthStatus: PassiveAuthenticationStatus? = nil,
         reverifiedActiveAuthentication: PassportSecurityStageResult? = nil
     ) -> [SecurityRow] {
         let report = record.passport.securityReport
@@ -132,7 +132,7 @@ extension PassportDetailViewController {
     static func securityValue(
         for stage: PassportSecurityStageResult,
         isPassiveAuthentication: Bool,
-        passiveAuthStatus: PassiveAuthStatus? = nil
+        passiveAuthStatus: PassiveAuthenticationStatus? = nil
     ) -> String {
         guard isPassiveAuthentication else {
             return statusTitle(stage.status)
@@ -157,7 +157,7 @@ extension PassportDetailViewController {
         }
     }
 
-    static func passiveAuthenticationText(_ status: PassiveAuthStatus) -> String {
+    static func passiveAuthenticationText(_ status: PassiveAuthenticationStatus) -> String {
         switch status {
         case .fullyVerified:
             String(localized: "Verified against a trusted CSCA")

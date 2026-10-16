@@ -65,7 +65,7 @@ struct PassportAuthenticationStageTests {
 
     @Test
     func `Passive authentication succeeds only when the signature chains to a CSCA`() {
-        func stage(_ status: PassiveAuthStatus, hashes: [DataGroupId: Bool] = [.dg1: true]) -> PassportSecurityStageResult {
+        func stage(_ status: PassiveAuthenticationStatus, hashes: [DataGroupId: Bool] = [.dg1: true]) -> PassportSecurityStageResult {
             .passiveAuthentication(
                 PassiveAuthenticationResult(dataGroupHashResults: hashes, hasCertificate: true, status: status),
                 sodPresent: true
@@ -206,7 +206,7 @@ struct PassportAuthenticationStageTests {
         #expect(withoutAA.securityReport.activeAuthentication == base.securityReport.activeAuthentication)
     }
 
-    private static func passive(_ status: PassiveAuthStatus, _ hashes: [DataGroupId: Bool]) -> PassiveAuthenticationResult {
+    private static func passive(_ status: PassiveAuthenticationStatus, _ hashes: [DataGroupId: Bool]) -> PassiveAuthenticationResult {
         PassiveAuthenticationResult(dataGroupHashResults: hashes, hasCertificate: true, status: status)
     }
 
@@ -279,7 +279,7 @@ struct PassportAuthenticationStageTests {
         parameterID: 12
     )
 
-    private static func makeModel(sod: Data?, claimed: PassiveAuthStatus, dg1: Data = SODFixtures.dg1) -> PassportModel {
+    private static func makeModel(sod: Data?, claimed: PassiveAuthenticationStatus, dg1: Data = SODFixtures.dg1) -> PassportModel {
         var raw: [DataGroupId: Data] = [.dg1: dg1]
         raw[.sod] = sod
         return PassportModel(

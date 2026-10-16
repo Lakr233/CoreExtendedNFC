@@ -721,12 +721,12 @@ struct TopLevelUltralightWriteGuardTests {
         let lockBytes = Data([0x48, 0x00, 0xFF, 0xFF]) // serial byte, internal, static lock bytes
 
         await #expect(throws: NFCError.self) {
-            try await CoreExtendedNFC.writePage(2, data: lockBytes, transport: transport)
+            try await CoreExtendedNFC.writeUltralightPage(2, data: lockBytes, transport: transport)
         }
         #expect(transport.sentCommands.isEmpty)
 
         transport.responses = [Data([0x0A])] // ACK
-        try await CoreExtendedNFC.writePage(2, data: lockBytes, allowIrreversible: true, transport: transport)
+        try await CoreExtendedNFC.writeUltralightPage(2, data: lockBytes, allowIrreversible: true, transport: transport)
         #expect(transport.sentCommands == [Data([0xA2, 0x02]) + lockBytes])
     }
 
@@ -735,20 +735,20 @@ struct TopLevelUltralightWriteGuardTests {
     func `Top-level writes above page 15 without a memory map need the opt-in`(page: UInt8) async throws {
         let transport = MockTransport()
         do {
-            try await CoreExtendedNFC.writePage(page, data: Data(count: 4), transport: transport)
+            try await CoreExtendedNFC.writeUltralightPage(page, data: Data(count: 4), transport: transport)
             Issue.record("expected irreversibleWriteRefused")
         } catch NFCError.irreversibleWriteRefused(page: page) {
         }
         await #expect(throws: NFCError.self) {
-            try await CoreExtendedNFC.compatibilityWrite(page, data: Data(count: 4), transport: transport)
+            try await CoreExtendedNFC.compatibilityWriteUltralightPage(page, data: Data(count: 4), transport: transport)
         }
         #expect(transport.sentCommands.isEmpty)
 
         transport.responses = [Data([0x0A]), Data([0x0A])]
-        try await CoreExtendedNFC.writePage(page, data: Data(count: 4), allowIrreversible: true, transport: transport)
+        try await CoreExtendedNFC.writeUltralightPage(page, data: Data(count: 4), allowIrreversible: true, transport: transport)
         // With a map that has `page` in its user area the write is allowed.
         let map = UltralightMemoryMap(totalPages: 0xFF, userDataStart: 4, userDataEnd: 0xF0, configStart: nil, dynamicLockStart: nil)
-        try await CoreExtendedNFC.writePage(page, data: Data(count: 4), memoryMap: map, transport: transport)
+        try await CoreExtendedNFC.writeUltralightPage(page, data: Data(count: 4), memoryMap: map, transport: transport)
         #expect(transport.sentCommands.count == 2)
     }
 
@@ -756,7 +756,7 @@ struct TopLevelUltralightWriteGuardTests {
     func `Top-level writes to page 15 without a memory map are allowed`() async throws {
         let transport = MockTransport()
         transport.responses = [Data([0x0A])]
-        try await CoreExtendedNFC.writePage(0x0F, data: Data([1, 2, 3, 4]), transport: transport)
+        try await CoreExtendedNFC.writeUltralightPage(0x0F, data: Data([1, 2, 3, 4]), transport: transport)
         #expect(transport.sentCommands == [Data([0xA2, 0x0F, 1, 2, 3, 4])])
     }
 }

@@ -262,6 +262,89 @@ struct ISO15693Tests {
         #expect(dump.blocks.count == 256)
         #expect(dump.blocks.last?.data == Data(repeating: 0xFF, count: 4))
     }
+
+    @Test
+    func `Top-level block range reads take a closed range`() async throws {
+        let transport = MockISO15693Transport(
+            identifier: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+            icManufacturerCode: 0x04,
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
+                dsfid: 0x00,
+                afi: 0x00,
+                blockSize: 4,
+                blockCount: 256,
+                icReference: 0x01
+            ),
+            blocks: (0 ..< 256).map { Data(repeating: UInt8($0), count: 4) },
+            locked: (0 ..< 256).map { $0 % 2 == 1 }
+        )
+
+        let blocks = try await CoreExtendedNFC.readISO15693Blocks(range: 2 ... 4, transport: transport)
+        #expect(blocks == [2, 3, 4].map { Data(repeating: $0, count: 4) })
+
+        let single = try await CoreExtendedNFC.readISO15693Blocks(range: 255 ... 255, transport: transport)
+        #expect(single == [Data(repeating: 0xFF, count: 4)])
+
+        let locked = try await CoreExtendedNFC.getISO15693BlockSecurityStatus(range: 0 ... 3, transport: transport)
+        #expect(locked == [false, true, false, true])
+    }
+
+    @Test
+    func `Top-level block range reads reject ranges outside 0 through 255`() async throws {
+        let transport = MockISO15693SecurityTransport()
+
+        for range in [-1 ... 2, 0 ... 256, 300 ... 310] {
+            await #expect(throws: NFCError.self) {
+                _ = try await CoreExtendedNFC.readISO15693Blocks(range: range, transport: transport)
+            }
+            await #expect(throws: NFCError.self) {
+                _ = try await CoreExtendedNFC.getISO15693BlockSecurityStatus(range: range, transport: transport)
+            }
+        }
+        do {
+            _ = try await CoreExtendedNFC.readISO15693Blocks(range: 0 ... 256, transport: transport)
+            Issue.record("Expected invalidParameter")
+        } catch let NFCError.invalidParameter(message) {
+            #expect(message.contains("0...255"))
+        }
+    }
+
+    @Test
+    func `Top-level ISO 15693 security calls forward to the transport`() async throws {
+        let transport = MockISO15693SecurityTransport(
+            customCommandResponse: Data([0xDE, 0xAD]),
+            authenticateResponse: .init(responseFlags: 0x01, data: Data([0xAA])),
+            keyUpdateResponse: .init(responseFlags: 0x02, data: Data([0xBB]))
+        )
+
+        let custom = try await CoreExtendedNFC.sendISO15693CustomCommand(
+            code: 0xA2,
+            parameters: Data([0x01]),
+            transport: transport
+        )
+        try await CoreExtendedNFC.challengeISO15693(cryptoSuiteIdentifier: 0x10, transport: transport)
+        let auth = try await CoreExtendedNFC.authenticateISO15693(
+            cryptoSuiteIdentifier: 0x11,
+            message: Data([0x02]),
+            transport: transport
+        )
+        let keyUpdate = try await CoreExtendedNFC.updateISO15693Key(
+            keyIdentifier: 0x12,
+            message: Data([0x03]),
+            transport: transport
+        )
+
+        #expect(custom == Data([0xDE, 0xAD]))
+        #expect(auth == .init(responseFlags: 0x01, data: Data([0xAA])))
+        #expect(keyUpdate == .init(responseFlags: 0x02, data: Data([0xBB])))
+        #expect(transport.operations == [
+            "custom:A2:01",
+            "challenge:10:",
+            "authenticate:11:02",
+            "keyUpdate:12:03",
+        ])
+    }
 }
 
 private final class MockISO15693SecurityTransport: ISO15693TagTransporting, @unchecked Sendable {

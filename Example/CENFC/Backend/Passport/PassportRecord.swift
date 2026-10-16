@@ -63,73 +63,37 @@ nonisolated struct PassportRecord: StoredRecord {
     /// An imported file carries both the raw data groups (which passive
     /// authentication hashes against the SOD) and pre-parsed fields such as `mrz`.
     /// A forged file could make the two disagree, so for imported records the
-    /// app throws the pre-parsed fields away and parses the raw bytes itself:
+    /// app throws the pre-parsed fields away and lets the library parse the raw
+    /// bytes again (`PassportModel(rawDataGroups:...)`, the parsing a chip read uses):
     ///
-    /// - `mrz` comes from DG1, the portrait from DG2 and the signature from DG7.
-    ///   When that data group is missing or does not parse, the field is `nil`
-    ///   and the screen shows nothing for it, rather than the file's unverified value.
-    /// - DG11/DG12 details have no public parser and are not shown, so they are dropped.
-    /// - `passiveAuthResult` is dropped; ``reverifiedSecurity()`` recomputes it and
-    ///   re-judges the kept `activeAuthResult` against it.
-    /// - COM metadata (LDS/Unicode version, data group list) is kept: EF.COM is
-    ///   not covered by the SOD, so re-parsing it would not make it any more trustworthy.
+    /// - `mrz` comes from DG1, the portrait from DG2, the signature from DG7 and
+    ///   the additional details from DG11/DG12; COM metadata, DG14, DG15, the SOD
+    ///   and EF.CardAccess are re-parsed too. When a data group is missing or does
+    ///   not parse, its field is `nil` and the screen shows nothing for it, rather
+    ///   than the file's unverified value.
+    /// - Passive authentication is not run here (it uses OpenSSL, and records are
+    ///   decoded on the main thread), so `passiveAuthResult` is `nil`;
+    ///   ``reverifiedSecurity()`` recomputes it off the main thread and re-judges
+    ///   the kept `activeAuthResult` against it.
+    /// - The file's `activeAuthResult`, security report and read status are kept:
+    ///   they cannot be re-derived offline and are shown as not re-verified.
     nonisolated static func reparsedFromRawDataGroups(_ passport: PassportModel) -> PassportModel {
-        let raw = passport.rawDataGroups
-        // `resolved*ImageData` re-parse DG2/DG7 and only fall back to the stored
-        // image, which this probe leaves empty.
-        let probe = PassportModel(
-            ldsVersion: nil,
-            unicodeVersion: nil,
-            availableDataGroups: [],
-            mrz: nil,
-            faceImageData: nil,
-            signatureImageData: nil,
-            additionalPersonalDetails: nil,
-            additionalDocumentDetails: nil,
-            securityInfos: nil,
-            securityInfoRaw: nil,
-            activeAuthPublicKey: nil,
-            activeAuthPublicKeyRaw: nil,
-            sod: nil,
-            sodRaw: nil,
-            passiveAuthResult: nil,
-            activeAuthResult: nil,
-            rawDataGroups: raw
-        )
+        // A file may carry the SOD, DG14 or DG15 bytes only in their dedicated fields.
+        var raw = passport.rawDataGroups
+        for (dgId, bytes) in [
+            (DataGroupId.sod, passport.sodRaw),
+            (DataGroupId.dg14, passport.securityInfoRaw),
+            (DataGroupId.dg15, passport.activeAuthPublicKeyRaw),
+        ] where raw[dgId] == nil {
+            raw[dgId] = bytes
+        }
         return PassportModel(
-            cardAccess: passport.cardAccess,
-            cardAccessRaw: passport.cardAccessRaw,
-            ldsVersion: passport.ldsVersion,
-            unicodeVersion: passport.unicodeVersion,
-            availableDataGroups: passport.availableDataGroups,
-            mrz: raw[.dg1].flatMap(parseDG1),
-            faceImageData: probe.resolvedFaceImageData,
-            signatureImageData: probe.resolvedSignatureImageData,
-            additionalPersonalDetails: nil,
-            additionalDocumentDetails: nil,
-            securityInfos: passport.securityInfos,
-            securityInfoRaw: passport.securityInfoRaw,
-            activeAuthPublicKey: passport.activeAuthPublicKey,
-            activeAuthPublicKeyRaw: passport.activeAuthPublicKeyRaw,
-            sod: passport.sod,
-            sodRaw: passport.sodRaw,
-            passiveAuthResult: nil,
-            activeAuthResult: passport.activeAuthResult,
             rawDataGroups: raw,
-            securityReport: passport.securityReport,
+            cardAccessRaw: passport.cardAccessRaw,
+            performPassiveAuthentication: false,
             dataGroupReadStatus: passport.dataGroupReadStatus
         )
-    }
-
-    /// DG1 → MRZ (ICAO 9303-10 §4.7.1: `61 { 5F1F <MRZ> }`).
-    ///
-    /// Mirrors the library's internal DG1 parser, which is not public.
-    nonisolated static func parseDG1(_ data: Data) -> MRZData? {
-        guard let wrapper = try? ASN1Parser.parseTLV(data).first(where: { $0.tag == 0x61 }),
-              let mrzNode = try? wrapper.children().first(where: { $0.tag == 0x5F1F }),
-              let mrzString = String(data: mrzNode.value, encoding: .utf8)
-        else { return nil }
-        return try? MRZData(mrzString: mrzString)
+        .replacing(activeAuthResult: passport.activeAuthResult, securityReport: passport.securityReport)
     }
 
     /// Passive authentication re-run from the record's raw bytes, as a report stage.
@@ -151,7 +115,7 @@ nonisolated struct PassportRecord: StoredRecord {
         /// (its AA stage is then only what the file's author wrote).
         let activeAuthentication: PassportSecurityStageResult?
         /// The re-run passive authentication outcome, for a specific description.
-        let passiveAuthStatus: PassiveAuthStatus?
+        let passiveAuthStatus: PassiveAuthenticationStatus?
     }
 
     /// Passive authentication re-run from the raw bytes and the stored Active

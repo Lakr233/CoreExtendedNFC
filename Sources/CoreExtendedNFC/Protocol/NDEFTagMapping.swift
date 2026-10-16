@@ -124,23 +124,36 @@ public enum NDEFTagMapping {
     /// (READ/WRITE SINGLE BLOCK, ISO/IEC 15693-3).
     public static let type5SingleByteAddressableBlocks = 256
 
+    /// Highest block count reachable with two-byte block addresses
+    /// (EXTENDED READ/WRITE SINGLE BLOCK, ISO/IEC 15693-3 commands 30h / 31h).
+    public static let type5ExtendedAddressableBlocks = 65536
+
+    /// Largest MLEN an 8-byte CC can announce (16-bit field, NFC Forum T5T 1.0 §4.3.1).
+    public static let type5MaximumMemoryLengthUnits = 0xFFFF
+
     /// Build the Type 5 CC and NDEF data area as a list of blocks starting at block 0.
     ///
     /// NFC Forum T5T 1.0 §4.3.1:
-    /// - CC byte 0: magic E1h (single-byte block addressing).
+    /// - CC byte 0: magic E1h when the area fits in blocks 0-255 (single-byte block
+    ///   addressing), E2h when it runs past block 255 (two-byte block addressing).
     /// - CC byte 1: version 1.0 in b7-b4, read access b3-b2, write access b1-b0
     ///   (00b = granted, 11b = no write access).
     /// - CC byte 2: MLEN in 8-byte units; when it does not fit, byte 2 is 00h and
     ///   the 16-bit MLEN goes in bytes 6-7 of an 8-byte CC.
     /// - CC byte 3: feature flags (none advertised).
     ///
-    /// Without extended addressing commands the NDEF area is confined to blocks
-    /// 0-255, so at most 256 blocks are returned even when the tag is larger.
+    /// The NDEF area is confined to the first `addressableBlockCount` blocks. The
+    /// default, ``type5SingleByteAddressableBlocks``, suits tags without extended
+    /// addressing commands, so at most 256 blocks are returned even when the tag is
+    /// larger; pass ``type5ExtendedAddressableBlocks`` for a tag that accepts them.
+    /// When the memory exceeds the largest MLEN (FFFFh units) only the blocks
+    /// covering that area are returned.
     public static func buildType5Blocks(
         message: Data,
         blockSize: Int,
         blockCount: Int,
-        writeable: Bool = true
+        writeable: Bool = true,
+        addressableBlockCount: Int = type5SingleByteAddressableBlocks
     ) throws -> [Data] {
         guard blockSize >= 4 else {
             throw NFCError.unsupportedOperation("Type 5 block size must be at least 4 bytes")
@@ -149,7 +162,7 @@ public enum NDEFTagMapping {
             throw NFCError.unsupportedOperation("Type 5 tag reports too few blocks for NDEF")
         }
 
-        let addressableBlocks = min(blockCount, type5SingleByteAddressableBlocks)
+        let addressableBlocks = min(blockCount, addressableBlockCount)
         let shortCCBlocks = 1
         let shortCapacity = (addressableBlocks - shortCCBlocks) * blockSize
         let usesLongCC = shortCapacity / 8 > 0xFF
@@ -158,10 +171,16 @@ public enum NDEFTagMapping {
         guard addressableBlocks > ccBlocks else {
             throw NFCError.unsupportedOperation("Type 5 tag reports too few blocks for NDEF")
         }
-        let userCapacity = (addressableBlocks - ccBlocks) * blockSize
+        var dataBlocks = addressableBlocks - ccBlocks
         // MLEN counts whole 8-byte units, so the advertised T5T_Area can be a few bytes
         // smaller than the user memory; readers stop at MLEN × 8.
-        let memoryLengthUnits = userCapacity / 8
+        let fullMemoryLengthUnits = dataBlocks * blockSize / 8
+        let memoryLengthUnits = min(fullMemoryLengthUnits, type5MaximumMemoryLengthUnits)
+        if fullMemoryLengthUnits > memoryLengthUnits {
+            // Blocks past the largest announceable area are left alone.
+            dataBlocks = (memoryLengthUnits * 8 + blockSize - 1) / blockSize
+        }
+        let userCapacity = dataBlocks * blockSize
         guard memoryLengthUnits > 0 else {
             // A 4-byte CC with MLEN 00h would mean "8-byte CC" to readers.
             throw NFCError.unsupportedOperation("Type 5 tag has less than 8 bytes of NDEF memory")
@@ -172,16 +191,17 @@ public enum NDEFTagMapping {
             throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: memoryLengthUnits * 8)
         }
 
+        let magic: UInt8 = ccBlocks + dataBlocks > type5SingleByteAddressableBlocks ? 0xE2 : 0xE1
         let accessByte: UInt8 = writeable ? 0x40 : 0x43
         var cc: Data
         if usesLongCC {
             cc = Data([
-                0xE1, accessByte, 0x00, 0x00,
+                magic, accessByte, 0x00, 0x00,
                 0x00, 0x00,
                 UInt8((memoryLengthUnits >> 8) & 0xFF), UInt8(memoryLengthUnits & 0xFF),
             ])
         } else {
-            cc = Data([0xE1, accessByte, UInt8(memoryLengthUnits), 0x00])
+            cc = Data([magic, accessByte, UInt8(memoryLengthUnits), 0x00])
         }
         cc.append(Data(repeating: 0x00, count: ccBlocks * blockSize - cc.count))
 
@@ -220,12 +240,16 @@ public enum NDEFTagMapping {
     /// Only the blocks holding the NDEF TLV and its terminator TLV are returned; the
     /// CC is kept as read (a block it shares with the TLV is rewritten with the
     /// CC bytes unchanged) and memory after the terminator is left untouched.
-    /// The data area is bounded by MLEN and by the single-byte addressable blocks.
+    /// The data area is bounded by MLEN and by the first `addressableBlockCount`
+    /// blocks: the default, ``type5SingleByteAddressableBlocks``, keeps every write
+    /// in blocks 0-255; pass ``type5ExtendedAddressableBlocks`` to plan writes past
+    /// block 255 for a tag that accepts EXTENDED WRITE SINGLE BLOCK.
     public static func type5NDEFWrites(
         message: Data,
         leadingBytes: Data,
         blockSize: Int,
-        blockCount: Int
+        blockCount: Int,
+        addressableBlockCount: Int = type5SingleByteAddressableBlocks
     ) throws -> [(block: Int, data: Data)] {
         guard blockSize >= 4 else {
             throw NFCError.unsupportedOperation("Type 5 block size must be at least 4 bytes")
@@ -237,7 +261,7 @@ public enum NDEFTagMapping {
         }
         let areaLength = type5DataAreaLength(leadingBytes: leadingBytes) ?? 0
 
-        let addressableBytes = min(blockCount, type5SingleByteAddressableBlocks) * blockSize
+        let addressableBytes = min(blockCount, addressableBlockCount) * blockSize
         let capacity = min(areaLength, max(0, addressableBytes - ccLength))
         let tlv = encodeNDEFTLV(message)
         guard tlv.count <= capacity else {

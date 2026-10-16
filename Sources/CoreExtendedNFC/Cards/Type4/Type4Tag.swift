@@ -2,8 +2,12 @@ import Foundation
 
 /// High-level Type 4 tag operations.
 ///
+/// Every method forwards to ``Type4Reader``, which offers the same operations
+/// (`readCC()` is ``Type4Reader/readCapabilityContainer()``); use it directly.
+///
 /// Subclasses must preserve thread safety: any added mutable state must be
 /// lock-protected or immutable.
+@available(*, deprecated, message: "Use Type4Reader")
 open class Type4Tag: @unchecked Sendable {
     public let transport: any NFCTagTransport
     public let reader: Type4Reader

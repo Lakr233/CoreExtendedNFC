@@ -16,7 +16,7 @@ public extension CoreExtendedNFC {
     // MARK: Application Management
 
     /// GET_APPLICATION_IDS: List all application AIDs (3 bytes each) on the card.
-    static func getApplicationIDs(
+    static func getDESFireApplicationIDs(
         transport: any NFCTagTransport
     ) async throws -> [Data] {
         try await DESFireCommands(transport: transport)
@@ -24,7 +24,7 @@ public extension CoreExtendedNFC {
     }
 
     /// SELECT_APPLICATION: Select an application by its 3-byte AID.
-    static func selectApplication(
+    static func selectDESFireApplication(
         _ aid: Data,
         transport: any NFCTagTransport
     ) async throws {
@@ -33,7 +33,7 @@ public extension CoreExtendedNFC {
     }
 
     /// GET_FILE_IDS: List file IDs in the currently selected application.
-    static func getFileIDs(
+    static func getDESFireFileIDs(
         transport: any NFCTagTransport
     ) async throws -> [UInt8] {
         try await DESFireCommands(transport: transport)
@@ -41,7 +41,7 @@ public extension CoreExtendedNFC {
     }
 
     /// GET_FILE_SETTINGS: Get settings (type, access rights, size) for a specific file.
-    static func getFileSettings(
+    static func getDESFireFileSettings(
         _ fileID: UInt8,
         transport: any NFCTagTransport
     ) async throws -> DESFireFileSettings {
@@ -223,5 +223,37 @@ public extension CoreExtendedNFC {
                 key: key,
                 pcdCapabilities: pcdCapabilities
             )
+    }
+
+    // MARK: Deprecated Names
+
+    @available(*, deprecated, renamed: "getDESFireApplicationIDs(transport:)")
+    static func getApplicationIDs(
+        transport: any NFCTagTransport
+    ) async throws -> [Data] {
+        try await getDESFireApplicationIDs(transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "selectDESFireApplication(_:transport:)")
+    static func selectApplication(
+        _ aid: Data,
+        transport: any NFCTagTransport
+    ) async throws {
+        try await selectDESFireApplication(aid, transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "getDESFireFileIDs(transport:)")
+    static func getFileIDs(
+        transport: any NFCTagTransport
+    ) async throws -> [UInt8] {
+        try await getDESFireFileIDs(transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "getDESFireFileSettings(_:transport:)")
+    static func getFileSettings(
+        _ fileID: UInt8,
+        transport: any NFCTagTransport
+    ) async throws -> DESFireFileSettings {
+        try await getDESFireFileSettings(fileID, transport: transport)
     }
 }

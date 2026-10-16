@@ -6,7 +6,7 @@ public extension CoreExtendedNFC {
     // MARK: Page-Level Read / Write
 
     /// Read 4 pages (16 bytes) starting from the given page number.
-    static func readPages(
+    static func readUltralightPages(
         startPage: UInt8,
         transport: any NFCTagTransport
     ) async throws -> Data {
@@ -35,7 +35,7 @@ public extension CoreExtendedNFC {
     ///
     /// - Warning: Lock bytes, OTP bits and configuration pages are one-way:
     ///   `allowIrreversible: true` can permanently lock or brick the tag.
-    static func writePage(
+    static func writeUltralightPage(
         _ page: UInt8,
         data: Data,
         memoryMap: UltralightMemoryMap? = nil,
@@ -59,7 +59,7 @@ public extension CoreExtendedNFC {
     }
 
     /// FAST_READ: Read a contiguous range of pages in a single command.
-    static func fastRead(
+    static func fastReadUltralightPages(
         from startPage: UInt8,
         to endPage: UInt8,
         transport: any NFCTagTransport
@@ -71,13 +71,13 @@ public extension CoreExtendedNFC {
     /// Compatibility write (16-byte frame for legacy readers).
     ///
     /// The same pages are refused as for
-    /// ``writePage(_:data:memoryMap:allowIrreversible:transport:)``, including
+    /// ``writeUltralightPage(_:data:memoryMap:allowIrreversible:transport:)``, including
     /// every page above 15 when no `memoryMap` is given. See
     /// ``UltralightCommands/compatibilityWrite(_:data:memoryMap:allowIrreversible:)``.
     ///
     /// - Warning: Lock bytes, OTP bits and configuration pages are one-way:
     ///   `allowIrreversible: true` can permanently lock or brick the tag.
-    static func compatibilityWrite(
+    static func compatibilityWriteUltralightPage(
         _ page: UInt8,
         data: Data,
         memoryMap: UltralightMemoryMap? = nil,
@@ -102,7 +102,7 @@ public extension CoreExtendedNFC {
     // MARK: NTAG-Specific
 
     /// READ_SIG (0x3C): Read the 32-byte NXP ECC signature for chip authenticity verification.
-    static func readSignature(
+    static func readNTAGSignature(
         transport: any NFCTagTransport
     ) async throws -> Data {
         try await UltralightCommands(transport: transport)
@@ -110,7 +110,7 @@ public extension CoreExtendedNFC {
     }
 
     /// READ_CNT (0x39): Read the NFC single-shot counter value.
-    static func readCounter(
+    static func readNTAGCounter(
         counterID: UInt8 = 0x02,
         transport: any NFCTagTransport
     ) async throws -> UInt32 {
@@ -123,7 +123,7 @@ public extension CoreExtendedNFC {
     /// PWD_AUTH (0x1B): Authenticate with a 4-byte password.
     /// Returns the 2-byte PACK (Password Acknowledgment).
     /// Supported on Ultralight EV1 and NTAG.
-    static func passwordAuth(
+    static func authenticateUltralightPassword(
         password: Data,
         transport: any NFCTagTransport
     ) async throws -> Data {
@@ -141,7 +141,7 @@ public extension CoreExtendedNFC {
     }
 
     /// Read AUTH0 and ACCESS config pages to determine password-protection range.
-    static func readAuthConfig(
+    static func readUltralightAuthenticationConfiguration(
         configStartPage: UInt8,
         transport: any NFCTagTransport
     ) async throws -> (auth0Page: UInt8, accessBits: UInt8) {
@@ -173,5 +173,92 @@ public extension CoreExtendedNFC {
         let map = UltralightMemoryMap.forType(info.type)
         let dumper = UltralightDump(commands: commands)
         try await dumper.restore(dump: dump, map: map, target: info)
+    }
+
+    // MARK: Deprecated Names
+
+    @available(*, deprecated, renamed: "readUltralightPages(startPage:transport:)")
+    static func readPages(
+        startPage: UInt8,
+        transport: any NFCTagTransport
+    ) async throws -> Data {
+        try await readUltralightPages(startPage: startPage, transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "writeUltralightPage(_:data:memoryMap:allowIrreversible:transport:)")
+    static func writePage(
+        _ page: UInt8,
+        data: Data,
+        memoryMap: UltralightMemoryMap? = nil,
+        allowIrreversible: Bool = false,
+        transport: any NFCTagTransport
+    ) async throws {
+        try await writeUltralightPage(
+            page,
+            data: data,
+            memoryMap: memoryMap,
+            allowIrreversible: allowIrreversible,
+            transport: transport
+        )
+    }
+
+    @available(*, deprecated, renamed: "fastReadUltralightPages(from:to:transport:)")
+    static func fastRead(
+        from startPage: UInt8,
+        to endPage: UInt8,
+        transport: any NFCTagTransport
+    ) async throws -> Data {
+        try await fastReadUltralightPages(from: startPage, to: endPage, transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "compatibilityWriteUltralightPage(_:data:memoryMap:allowIrreversible:transport:)")
+    static func compatibilityWrite(
+        _ page: UInt8,
+        data: Data,
+        memoryMap: UltralightMemoryMap? = nil,
+        allowIrreversible: Bool = false,
+        transport: any NFCTagTransport
+    ) async throws {
+        try await compatibilityWriteUltralightPage(
+            page,
+            data: data,
+            memoryMap: memoryMap,
+            allowIrreversible: allowIrreversible,
+            transport: transport
+        )
+    }
+
+    @available(*, deprecated, renamed: "readNTAGSignature(transport:)")
+    static func readSignature(
+        transport: any NFCTagTransport
+    ) async throws -> Data {
+        try await readNTAGSignature(transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "readNTAGCounter(counterID:transport:)")
+    static func readCounter(
+        counterID: UInt8 = 0x02,
+        transport: any NFCTagTransport
+    ) async throws -> UInt32 {
+        try await readNTAGCounter(counterID: counterID, transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "authenticateUltralightPassword(password:transport:)")
+    static func passwordAuth(
+        password: Data,
+        transport: any NFCTagTransport
+    ) async throws -> Data {
+        try await authenticateUltralightPassword(password: password, transport: transport)
+    }
+
+    @available(*, deprecated, renamed: "readUltralightAuthenticationConfiguration(configStartPage:transport:)")
+    static func readAuthConfig(
+        configStartPage: UInt8,
+        transport: any NFCTagTransport
+    ) async throws -> (auth0Page: UInt8, accessBits: UInt8) {
+        try await readUltralightAuthenticationConfiguration(
+            configStartPage: configStartPage,
+            transport: transport
+        )
     }
 }

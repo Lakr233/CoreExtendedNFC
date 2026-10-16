@@ -74,7 +74,7 @@ public extension SODParser {
         // signature verification was NOT performed. When nothing was compared (only
         // COM/SOD read, or every covered data group absent) there is no mismatch to
         // report either: the result stays neutral and its hash results stay empty.
-        let status: PassiveAuthStatus = if results.values.allSatisfy(\.self) {
+        let status: PassiveAuthenticationStatus = if results.values.allSatisfy(\.self) {
             .signatureNotVerified
         } else {
             .hashMismatch

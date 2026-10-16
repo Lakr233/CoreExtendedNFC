@@ -26,7 +26,7 @@ public enum ActiveAuthenticationVerifier {
     public static func verify(
         challenge: Data,
         signature: Data,
-        publicKey: ActiveAuthPublicKey,
+        publicKey: ActiveAuthenticationPublicKey,
         subjectPublicKeyInfo: Data? = nil,
         securityInfos: SecurityInfos?
     ) -> ActiveAuthenticationResult {

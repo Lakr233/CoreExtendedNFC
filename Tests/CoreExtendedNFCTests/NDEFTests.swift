@@ -608,6 +608,132 @@ struct NDEFTests {
         #expect(writes.last?.block == 4)
     }
 
+    // MARK: - T5T extended addressing (blocks above 255)
+
+    private static func type5SystemInfo(blockSize: Int, blockCount: Int) -> ISO15693SystemInfo {
+        ISO15693SystemInfo(
+            uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+            dsfid: 0x00, afi: 0x00, blockSize: blockSize, blockCount: blockCount, icReference: 0x01
+        )
+    }
+
+    @Test
+    func `Type 5 format covers the whole memory with extended commands`() async throws {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: Self.type5SystemInfo(blockSize: 4, blockCount: 512),
+            supportsExtended: true
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        try await CoreExtendedNFC.formatNDEF(info: info, transport: transport)
+
+        // Probed with a read of the last block before anything was written.
+        #expect(transport.extendedReadBlockNumbers == [511])
+        #expect(transport.writtenBlocks.map(\.number) == Array(0 ... 255))
+        #expect(transport.extendedWrittenBlockNumbers == Array(256 ... 511))
+        // NDEF area = 511 blocks × 4 bytes = 2044 bytes → MLEN 255, two-byte addressing magic.
+        #expect(transport.writtenBlocks[0].data == Data([0xE2, 0x40, 0xFF, 0x00]))
+        #expect(transport.writtenBlocks[1].data == Data([0x03, 0x00, 0xFE, 0x00]))
+
+        // A message past block 255 now fits and reads back.
+        let message = NDEFMessage(records: [
+            NDEFRecord(typeNameFormat: .mimeMedia, type: Data("text/plain".utf8), payload: Data(repeating: 0x5A, count: 1500)),
+        ])
+        try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
+        // TLV 1520 bytes + FE terminator after the 4-byte CC → blocks 1-381.
+        #expect(Array(transport.extendedWrittenBlockNumbers.dropFirst(256)) == Array(256 ... 381))
+        #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: transport).data == message.data)
+    }
+
+    @Test
+    func `Type 5 extended format uses the 8-byte CC for a large area`() async throws {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: Self.type5SystemInfo(blockSize: 4, blockCount: 1024),
+            supportsExtended: true
+        )
+        let info = CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04)
+        try await CoreExtendedNFC.formatNDEF(info: info, transport: transport)
+
+        #expect(transport.writtenBlocks.count == 256)
+        #expect(transport.extendedWrittenBlockNumbers == Array(256 ... 1023))
+        // 1022 data blocks × 4 bytes = 4088 bytes → MLEN 511 (01FFh) in CC bytes 6-7.
+        #expect(transport.writtenBlocks[0].data == Data([0xE2, 0x40, 0x00, 0x00]))
+        #expect(transport.writtenBlocks[1].data == Data([0x00, 0x00, 0x01, 0xFF]))
+        #expect(transport.writtenBlocks[2].data == Data([0x03, 0x00, 0xFE, 0x00]))
+        try await CoreExtendedNFC.writeNDEF(.uri("https://a.b"), info: info, transport: transport)
+        // The CC is kept as read: the 11-byte TLV goes in blocks 2-4, after the 8-byte CC.
+        #expect(transport.writtenBlocks.suffix(3).map(\.number) == [2, 3, 4])
+        #expect(transport.storedBlocks[1] == Data([0x00, 0x00, 0x01, 0xFF]))
+        #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: transport) == .uri("https://a.b"))
+    }
+
+    @Test
+    func `Type 5 format falls back to blocks 0-255 when extended commands are unsupported`() async throws {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: Self.type5SystemInfo(blockSize: 4, blockCount: 512),
+            supportsExtended: false
+        )
+        try await CoreExtendedNFC.formatNDEF(
+            info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
+            transport: transport
+        )
+        #expect(transport.writtenBlocks.map(\.number) == Array(0 ... 255))
+        #expect(transport.extendedWrittenBlockNumbers.isEmpty)
+        #expect(transport.writtenBlocks[0].data == Data([0xE1, 0x40, 0x7F, 0x00]))
+    }
+
+    @Test
+    func `Type 5 build caps MLEN at FFFFh on the largest tags`() throws {
+        // 65536 blocks × 32 bytes would be 262 140 units; the 16-bit MLEN stops at FFFFh.
+        let blocks = try NDEFTagMapping.buildType5Blocks(
+            message: Data(),
+            blockSize: 32,
+            blockCount: 65536,
+            addressableBlockCount: NDEFTagMapping.type5ExtendedAddressableBlocks
+        )
+        #expect(blocks[0].prefix(8) == Data([0xE2, 0x40, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF]))
+        // 1 CC block + ceil(FFFFh × 8 / 32) data blocks.
+        #expect(blocks.count == 1 + 16384)
+    }
+
+    @Test
+    func `Type 5 write plan is the same with either addressing bound inside blocks 0-255`() throws {
+        let cc = Data([0xE1, 0x40, 0x02, 0x00])
+        let message = Data(repeating: 0xAA, count: 13)
+        let single = try NDEFTagMapping.type5NDEFWrites(message: message, leadingBytes: cc, blockSize: 4, blockCount: 64)
+        let extended = try NDEFTagMapping.type5NDEFWrites(
+            message: message,
+            leadingBytes: cc,
+            blockSize: 4,
+            blockCount: 64,
+            addressableBlockCount: NDEFTagMapping.type5ExtendedAddressableBlocks
+        )
+        #expect(single.map(\.block) == [1, 2, 3, 4])
+        #expect(single.map(\.block) == extended.map(\.block))
+        #expect(single.map(\.data) == extended.map(\.data))
+        #expect(single[0].data == Data([0x03, 0x0D, 0xAA, 0xAA]))
+        #expect(single[3].data == Data([0xAA, 0xAA, 0xAA, 0xFE]))
+    }
+
+    @Test
+    func `Type 5 write plan reaches past block 255 only with the extended bound`() throws {
+        // 300 blocks × 4 bytes, MLEN 149 → 1192-byte area; a 1100-byte TLV ends in block 275.
+        let cc = Data([0xE1, 0x40, 149, 0x00])
+        let message = Data(repeating: 0x5A, count: 1095)
+        #expect(throws: NFCError.ndefCapacityExceeded(required: 1100, capacity: 1020)) {
+            _ = try NDEFTagMapping.type5NDEFWrites(message: message, leadingBytes: cc, blockSize: 4, blockCount: 300)
+        }
+        let writes = try NDEFTagMapping.type5NDEFWrites(
+            message: message,
+            leadingBytes: cc,
+            blockSize: 4,
+            blockCount: 300,
+            addressableBlockCount: NDEFTagMapping.type5ExtendedAddressableBlocks
+        )
+        #expect(writes.map(\.block) == Array(1 ... 275))
+        #expect(writes[0].data == Data([0x03, 0xFF, 0x04, 0x47]))
+        #expect(writes.last?.data == Data([0x5A, 0x5A, 0x5A, 0xFE]))
+    }
+
     @Test
     func `Type 5 format refuses a tag with less than 8 bytes of NDEF memory`() {
         // before: CC byte 2 = 00h, which readers take as an 8-byte CC
@@ -798,10 +924,41 @@ private final class MockISO15693WriteTransport: ISO15693TagTransporting, @unchec
     /// Tag memory; unset blocks read as zeros.
     var storedBlocks: [UInt8: Data]
     var readBlockNumbers: [UInt8] = []
+    /// When `false`, the extended commands fall back to the protocol's default,
+    /// which throws like a tag without them.
+    let supportsExtended: Bool
+    /// Blocks from 256 on, reached only through the extended commands.
+    var extendedStoredBlocks: [Int: Data] = [:]
+    var extendedReadBlockNumbers: [Int] = []
+    var extendedWrittenBlockNumbers: [Int] = []
 
-    init(systemInfo: ISO15693SystemInfo, storedBlocks: [UInt8: Data] = [:]) {
+    init(systemInfo: ISO15693SystemInfo, storedBlocks: [UInt8: Data] = [:], supportsExtended: Bool = false) {
         self.systemInfo = systemInfo
         self.storedBlocks = storedBlocks
+        self.supportsExtended = supportsExtended
+    }
+
+    func extendedReadBlock(_ number: UInt16) async throws -> Data {
+        guard supportsExtended else {
+            throw NFCError.unsupportedOperation("ISO 15693 extended block reads are not supported by this transport")
+        }
+        extendedReadBlockNumbers.append(Int(number))
+        if let single = UInt8(exactly: number) {
+            return storedBlocks[single] ?? Data(repeating: 0x00, count: systemInfo.blockSize)
+        }
+        return extendedStoredBlocks[Int(number)] ?? Data(repeating: 0x00, count: systemInfo.blockSize)
+    }
+
+    func extendedWriteBlock(_ number: UInt16, data: Data) async throws {
+        guard supportsExtended else {
+            throw NFCError.unsupportedOperation("ISO 15693 extended block writes are not supported by this transport")
+        }
+        extendedWrittenBlockNumbers.append(Int(number))
+        if let single = UInt8(exactly: number) {
+            storedBlocks[single] = data
+        } else {
+            extendedStoredBlocks[Int(number)] = data
+        }
     }
 
     func send(_: Data) async throws -> Data {

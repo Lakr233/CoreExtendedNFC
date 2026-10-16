@@ -36,7 +36,7 @@ public enum DataGroupParser {
         try DG14Parser.parse(data)
     }
 
-    public static func parseDG15(_ data: Data) throws -> ActiveAuthPublicKey {
+    public static func parseDG15(_ data: Data) throws -> ActiveAuthenticationPublicKey {
         try DG15Parser.parse(data)
     }
 
