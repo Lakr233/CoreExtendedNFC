@@ -74,9 +74,9 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
     /// (transport error, cancellation mid-exchange, unauthenticated response). Only read
     /// or mutated while `exchangeGate` is held.
     private var sessionEndReason: String?
-    /// Whether the previous exchange was answered with a plain (unprotected) status word.
-    /// Only read or mutated while `exchangeGate` is held.
-    private var previousExchangeWasPlain = false
+    /// The plain (unprotected) status word that answered the previous exchange, or `nil`
+    /// when that exchange was protected. Only read or mutated while `exchangeGate` is held.
+    private var previousPlainStatusWord: UInt16?
 
     /// Whether an earlier failed exchange ended this secure messaging session.
     var isSessionEnded: Bool {
@@ -155,7 +155,7 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
 
             incrementSSC()
             let response = try unprotect(assembledResponse)
-            previousExchangeWasPlain = false
+            previousPlainStatusWord = nil
             return response
         } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
             // Plain status word: both SSC steps were consumed in step with the chip.
@@ -163,15 +163,24 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
             // runs secure messaging at all (ISO/IEC 7816-4 §5.6).
             if sw1 == 0x69, sw2 == 0x87 || sw2 == 0x88 {
                 sessionEndReason = String(format: "chip reported a secure messaging error (SW=%02X%02X)", sw1, sw2)
-            } else if previousExchangeWasPlain, sw1 == 0x69, sw2 == 0x82 {
+            } else if sw1 == 0x69, sw2 == 0x82,
+                      let previous = previousPlainStatusWord, previous != 0x6982
+            {
                 // ICAO 9303-11 §9.8: a chip may delete its session keys after any plain
                 // reply. Some then answer every protected command with a plain 6982
-                // instead of 6988, so a plain 6982 straight after another plain error
-                // is taken as the end of the session, not as a protected file.
+                // instead of 6988, so a plain 6982 straight after a different plain
+                // error (e.g. 6A82 for an absent file) is taken as the end of the
+                // session, not as a protected file.
+                //
+                // A 6982 after another 6982 is not: consecutive EAC-protected files
+                // (DG3 then DG4 under BAC/PACE) are each refused with a plain 6982 by
+                // chips that keep the session. On a strict chip the second 6982 is
+                // ambiguous, and reporting that file as unavailable is accurate either
+                // way; the reader reads EAC data groups last for this reason.
                 sessionEndReason = "chip answered with a plain 6982 right after another unprotected error; "
                     + "it has most likely ended secure messaging"
             }
-            previousExchangeWasPlain = true
+            previousPlainStatusWord = UInt16(sw1) << 8 | UInt16(sw2)
             throw NFCError.unexpectedStatusWord(sw1, sw2)
         } catch {
             sessionEndReason = error is CancellationError

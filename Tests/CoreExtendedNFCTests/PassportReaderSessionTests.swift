@@ -118,11 +118,16 @@ struct PassportReaderSessionTests {
     }
 
     @Test
-    func `Data groups EF.COM does not list are never selected`() async throws {
+    func `Data groups neither EF.COM nor the SOD lists are never selected`() async throws {
         let dg1 = Self.makeDG1()
-        // COM lists only DG1 (tag 61).
+        // COM lists only DG1 (tag 61); the SOD, read as the index, hashes only DG1.
         let com = Self.makeCOM(tags: [0x61])
-        let chip = SimulatedBACChip(files: [DataGroupId.com.fileID: com, DataGroupId.dg1.fileID: dg1])
+        let sod = Self.makeUnsignedSOD(hashedDataGroups: [1])
+        let chip = SimulatedBACChip(files: [
+            DataGroupId.com.fileID: com,
+            DataGroupId.dg1.fileID: dg1,
+            DataGroupId.sod.fileID: sod,
+        ])
         chip.plainNotFoundForMissingFiles = true
         chip.endSessionAfterPlainError = true
 
@@ -134,8 +139,131 @@ struct PassportReaderSessionTests {
 
         #expect(model.rawDataGroups[.dg1] == dg1)
         #expect(model.rawDataGroups[.com] == com)
+        #expect(model.rawDataGroups[.sod] == sod)
         #expect(model.dataGroupReadStatus?[.dg7]?.state == .notPresent)
-        #expect(chip.selectedFileIDs == [vectorHex("011E"), vectorHex("0101")])
+        #expect(chip.selectedFileIDs == [vectorHex("011E"), vectorHex("0101"), vectorHex("011D")])
+    }
+
+    @Test
+    func `EF.COM alone does not rule out a data group the chip has`() async throws {
+        let dg1 = Self.makeDG1()
+        let dg11 = ASN1Parser.encodeTLV(tag: 0x6B, value: ASN1Parser.encodeTLV(tag: 0x5F0E, value: Data("ANNA".utf8)))
+        // An incomplete COM: lists only DG1, although DG11 is on the chip. No SOD.
+        let com = Self.makeCOM(tags: [0x61])
+        let chip = SimulatedBACChip(files: [
+            DataGroupId.com.fileID: com,
+            DataGroupId.dg1.fileID: dg1,
+            DataGroupId.dg11.fileID: dg11,
+        ])
+        chip.plainNotFoundForMissingFiles = true
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.com, .dg1, .dg11],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg11] == dg11)
+        #expect(model.dataGroupReadStatus?[.dg11]?.state == .read)
+        // The SOD was tried once as the index and reported absent.
+        #expect(model.dataGroupReadStatus?[.sod]?.state == .unavailable)
+        #expect(chip.selectedFileIDs.filter { $0 == vectorHex("011D") }.count == 1)
+    }
+
+    @Test
+    func `EF.COM omission is settled by the SOD hash list`() async throws {
+        let dg1 = Self.makeDG1()
+        let dg11 = ASN1Parser.encodeTLV(tag: 0x6B, value: ASN1Parser.encodeTLV(tag: 0x5F0E, value: Data("ANNA".utf8)))
+        let com = Self.makeCOM(tags: [0x61])
+        let sod = Self.makeUnsignedSOD(hashedDataGroups: [1, 11])
+        let chip = SimulatedBACChip(files: [
+            DataGroupId.com.fileID: com,
+            DataGroupId.dg1.fileID: dg1,
+            DataGroupId.dg11.fileID: dg11,
+            DataGroupId.sod.fileID: sod,
+        ])
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.com, .dg1, .dg11],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg11] == dg11)
+        #expect(model.rawDataGroups[.sod] == sod)
+    }
+
+    @Test
+    func `Progress messages come from the localization catalog with their arguments filled in`() async throws {
+        let chip = SimulatedBACChip(files: [DataGroupId.dg1.fileID: Self.makeDG1()])
+        let messages = LockedValue<[String]>([])
+
+        _ = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.dg1],
+            performActiveAuth: false,
+            onProgress: { message in messages.withLock { $0.append(message) } }
+        )
+
+        // The run's language follows the simulator (en or zh-Hans).
+        let delivered = messages.withLock { $0 }
+        #expect(delivered.contains("Authenticating with BAC...") || delivered.contains("正在使用 BAC 认证…"))
+        #expect(delivered.contains("Reading DG1 (MRZ) (1/1)...") || delivered.contains("正在读取 DG1 (MRZ)（1/1）…"))
+
+        let zhBundle = try #require(
+            Bundle.module.path(forResource: "zh-Hans", ofType: "lproj").flatMap(Bundle.init(path:))
+        )
+        let format = zhBundle.localizedString(forKey: "Reading %@ (%lld/%lld)...", value: nil, table: nil)
+        #expect(String(format: format, "DG1", 1, 1) == "正在读取 DG1（1/1）…")
+    }
+
+    @Test
+    func `Two EAC data groups refused with plain 6982 are both unavailable`() async throws {
+        let dg1 = Self.makeDG1()
+        let chip = SimulatedBACChip(files: [DataGroupId.dg1.fileID: dg1])
+        chip.plainSelectStatus = [
+            DataGroupId.dg3.fileID: 0x6982,
+            DataGroupId.dg4.fileID: 0x6982,
+        ]
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.dg1, .dg3, .dg4],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg1] == dg1)
+        #expect(model.dataGroupReadStatus?[.dg3]?.state == .unavailable)
+        #expect(model.dataGroupReadStatus?[.dg4]?.state == .unavailable)
+    }
+
+    @Test
+    func `Plain 6982 after a different plain error still ends the session`() async throws {
+        let chip = SimulatedBACChip(files: [:])
+        chip.plainSelectStatus = [
+            DataGroupId.dg11.fileID: 0x6A82,
+            DataGroupId.dg12.fileID: 0x6982,
+        ]
+        let session = try await BACHandler.performBAC(mrzKey: Self.mrzKey, transport: chip)
+
+        await #expect(throws: NFCError.self) { _ = try await session.sendAPDU(.selectEF(id: DataGroupId.dg11.fileID)) }
+        #expect(await session.isSessionEnded == false)
+        await #expect(throws: NFCError.self) { _ = try await session.sendAPDU(.selectEF(id: DataGroupId.dg12.fileID)) }
+        #expect(await session.isSessionEnded)
+    }
+
+    @Test
+    func `Plain 6982 after another plain 6982 keeps the session`() async throws {
+        let chip = SimulatedBACChip(files: [:])
+        chip.plainSelectStatus = [
+            DataGroupId.dg3.fileID: 0x6982,
+            DataGroupId.dg4.fileID: 0x6982,
+        ]
+        let session = try await BACHandler.performBAC(mrzKey: Self.mrzKey, transport: chip)
+
+        await #expect(throws: NFCError.self) { _ = try await session.sendAPDU(.selectEF(id: DataGroupId.dg3.fileID)) }
+        await #expect(throws: NFCError.self) { _ = try await session.sendAPDU(.selectEF(id: DataGroupId.dg4.fileID)) }
+        #expect(await session.isSessionEnded == false)
     }
 
     @Test
@@ -397,6 +525,8 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
     /// Files that can be selected but whose READ BINARY gets this plain status word
     /// (e.g. 6982 for an EAC-protected DG3 under BAC).
     var plainReadStatus: [Data: UInt16] = [:]
+    /// Files whose SELECT gets this plain status word (e.g. 6982 for EAC DG3/DG4).
+    var plainSelectStatus: [Data: UInt16] = [:]
     /// ICAO-strict behaviour: after answering with a plain status word the chip deletes
     /// its session keys, and every later protected command gets a plain 6988.
     var endSessionAfterPlainError = false
@@ -502,7 +632,9 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
         switch apdu.ins {
         case 0xA4:
             selectedFileIDs.append(commandData)
-            if files[commandData] != nil {
+            if let status = plainSelectStatus[commandData] {
+                return plainError(status)
+            } else if files[commandData] != nil {
                 selectedFile = commandData
                 (data, sw) = (Data(), 0x9000)
             } else if plainNotFoundForMissingFiles {

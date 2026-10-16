@@ -14,6 +14,26 @@
         }
       }
     },
+    "Attempting PACE..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在尝试 PACE…"
+          }
+        }
+      }
+    },
+    "Authenticating with BAC..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在使用 BAC 认证…"
+          }
+        }
+      }
+    },
     "Authentication with the tag failed." : {
       "localizations" : {
         "zh-Hans" : {
@@ -165,6 +185,56 @@
         }
       }
     },
+    "Processing..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在处理…"
+          }
+        }
+      }
+    },
+    "Reading %@ (%lld/%lld)..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取 %1$@（%2$lld/%3$lld）…"
+          }
+        }
+      }
+    },
+    "Reading CardAccess..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取 CardAccess…"
+          }
+        }
+      }
+    },
+    "Reading DG15 (Active Auth Key)..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取 DG15（主动认证密钥）…"
+          }
+        }
+      }
+    },
+    "Reading SOD..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取 SOD…"
+          }
+        }
+      }
+    },
     "Reading..." : {
       "localizations" : {
         "zh-Hans" : {
@@ -181,6 +251,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安全报文失败：%@"
+          }
+        }
+      }
+    },
+    "Selecting application..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在选择应用…"
           }
         }
       }
@@ -301,6 +381,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支持的操作：%@"
+          }
+        }
+      }
+    },
+    "Verifying chip authenticity..." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在验证芯片真实性…"
           }
         }
       }

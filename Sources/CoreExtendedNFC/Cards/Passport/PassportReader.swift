@@ -17,7 +17,17 @@ public struct PassportReader: Sendable {
     ///   - performActiveAuth: Whether to attempt Active Authentication if DG15 is available.
     ///   - trustAnchorsDER: DER-encoded CSCA certificates. Without them passive
     ///     authentication can at best report `.fallback` (signature not chained to a CSCA).
-    ///   - onProgress: Optional callback for progress messages.
+    ///   - onProgress: Optional callback for localized progress messages (suitable for
+    ///     the system NFC sheet).
+    ///
+    /// When `dataGroups` contains `.com` but not `.sod` and EF.COM omits a requested data
+    /// group, the SOD is read as the authoritative index before that data group is
+    /// skipped; the SOD is then part of the returned model and passive authentication
+    /// runs on it.
+    ///
+    /// The returned `activeAuthResult` has status `.verified` only when the DG15 key is
+    /// authenticated by fully verified passive authentication; a valid signature over an
+    /// unauthenticated key is `.verifiedUnauthenticatedKey`.
     /// - Returns: A `PassportModel` with all parsed data.
     /// - Throws: The first read error when nothing could be read, or when DG1 was
     ///   requested but could not be read (DG1 is mandatory, ICAO 9303-10 §4.7).
@@ -44,7 +54,7 @@ public struct PassportReader: Sendable {
             detail: "BAC has not run yet."
         )
 
-        onProgress?("Reading CardAccess...")
+        onProgress?(String(localized: "Reading CardAccess...", bundle: .module))
         do {
             let rawCardAccess = try await readCardAccess(transport: transport)
             let parsedCardAccess = try CardAccessParser.parse(rawCardAccess)
@@ -77,7 +87,7 @@ public struct PassportReader: Sendable {
         }
 
         // Step 1: SELECT eMRTD application
-        onProgress?("Selecting application...")
+        onProgress?(String(localized: "Selecting application...", bundle: .module))
         NFCLog.debug("SELECT eMRTD application", source: "Passport")
         let selectAPDU = CommandAPDU.selectPassportApplication()
         let selectResponse = try await transport.sendAPDU(selectAPDU)
@@ -89,7 +99,7 @@ public struct PassportReader: Sendable {
         // Step 2: Prefer PACE when EF.CardAccess advertises it, otherwise fall back to BAC.
         var smTransport: SecureMessagingTransport?
         if let paceInfo = cardAccess?.paceInfos.first {
-            onProgress?("Attempting PACE...")
+            onProgress?(String(localized: "Attempting PACE...", bundle: .module))
             do {
                 smTransport = try await PACEHandler.performPACE(
                     paceInfo: paceInfo,
@@ -114,7 +124,7 @@ public struct PassportReader: Sendable {
         }
 
         if smTransport == nil {
-            onProgress?("Authenticating with BAC...")
+            onProgress?(String(localized: "Authenticating with BAC...", bundle: .module))
             smTransport = try await BACHandler.performBAC(
                 mrzKey: mrzKey,
                 transport: transport
@@ -131,9 +141,10 @@ public struct PassportReader: Sendable {
 
         // Step 3: Read each requested DataGroup.
         //
-        // EF.COM and the SOD are read first; a data group is selected when either lists
-        // it (ICAO 9303-10 §4.6.1: the SOD hash list is the authoritative index on
-        // LDS 1.8 chips, and COM may be incomplete). Selecting an absent file draws a
+        // EF.COM and the SOD are read first; a data group is skipped only when the SOD
+        // does not list it and COM does not either (ICAO 9303-10 §4.6.1: the SOD hash
+        // list is the authoritative index on LDS 1.8 chips, and COM may be incomplete).
+        // Selecting an absent file draws a
         // plain 6A82, and ICAO 9303-11 §9.8 lets the chip end secure messaging on any
         // unprotected reply. DG1 follows, then the other non-EAC data groups, then
         // DG15 and Active Authentication; EAC-protected DG3/DG4 (likely a plain 6982
@@ -145,20 +156,33 @@ public struct PassportReader: Sendable {
         let mainPass = readOrder.filter { !Self.isEACProtected($0) }
         var step = 0
 
+        // EF.COM alone never rules a data group out (it may be incomplete). When COM
+        // omits one and the SOD was not requested, the SOD is read once as the
+        // authoritative index; it is then kept in the model like any other file.
+        func readSODIndexIfNeeded(before dgId: DataGroupId) async throws {
+            guard session.needsSODIndex(before: dgId) else { return }
+            onProgress?(String(localized: "Reading SOD...", bundle: .module))
+            try await session.read(.sod) { try await readDataGroup(.sod, transport: smTransport) }
+        }
+
         for dgId in mainPass {
             try Task.checkCancellation()
             step += 1
+            try await readSODIndexIfNeeded(before: dgId)
             guard session.shouldSelect(dgId) else { continue }
-            onProgress?("Reading \(dgId.name) (\(step)/\(readOrder.count))...")
+            onProgress?(String(localized: "Reading \(dgId.name) (\(step)/\(readOrder.count))...", bundle: .module))
             try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
         }
 
         // Step 4: If AA was requested but DG15 wasn't in the list, read it when present.
+        if performActiveAuth, !readOrder.contains(.dg15) {
+            try await readSODIndexIfNeeded(before: .dg15)
+        }
         if performActiveAuth, !readOrder.contains(.dg15), session.isListed(.dg15) ?? true,
            session.secureMessagingEnded == nil
         {
             try Task.checkCancellation()
-            onProgress?("Reading DG15 (Active Auth Key)...")
+            onProgress?(String(localized: "Reading DG15 (Active Auth Key)...", bundle: .module))
             try await session.read(.dg15) { try await readDataGroup(.dg15, transport: smTransport) }
         }
 
@@ -171,7 +195,7 @@ public struct PassportReader: Sendable {
                 activeAuthSkipReason = "Active Authentication was not attempted because secure messaging ended: \(reason)"
             } else {
                 try Task.checkCancellation()
-                onProgress?("Verifying chip authenticity...")
+                onProgress?(String(localized: "Verifying chip authenticity...", bundle: .module))
                 do {
                     activeAuthResult = try await performActiveAuthentication(
                         publicKey: publicKey,
@@ -207,8 +231,9 @@ public struct PassportReader: Sendable {
         for dgId in eacPass {
             try Task.checkCancellation()
             step += 1
+            try await readSODIndexIfNeeded(before: dgId)
             guard session.shouldSelect(dgId) else { continue }
-            onProgress?("Reading \(dgId.name) (\(step)/\(readOrder.count))...")
+            onProgress?(String(localized: "Reading \(dgId.name) (\(step)/\(readOrder.count))...", bundle: .module))
             try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
         }
 
@@ -225,7 +250,7 @@ public struct PassportReader: Sendable {
         let rawDataGroups = session.rawDataGroups
 
         // Step 7: Parse and assemble
-        onProgress?("Processing...")
+        onProgress?(String(localized: "Processing...", bundle: .module))
         let parsed = assemblePassportModel(
             rawDataGroups: rawDataGroups,
             trustAnchorsDER: trustAnchorsDER,
@@ -247,7 +272,7 @@ public struct PassportReader: Sendable {
         }
 
         return parsed.replacing(
-            activeAuthResult: activeAuthResult,
+            activeAuthResult: activeAuthResult?.classified(by: parsed.passiveAuthResult),
             securityReport: PassportSecurityReport(
                 cardAccess: cardAccessStage,
                 pace: paceStage,
@@ -603,11 +628,10 @@ public struct PassportReader: Sendable {
 
     /// Security stage for Active Authentication.
     ///
-    /// A valid signature only proves the chip holds the private key matching DG15. That
-    /// says the chip is genuine only when DG15 itself is authenticated: its hash must
-    /// match the SOD and the SOD signature must verify (ICAO 9303-11 §6.1, §5.1).
-    /// Otherwise a clone can carry its own key pair in an unauthenticated DG15, so the
-    /// stage is reported as `.fallback`, not `.succeeded`.
+    /// Covers AA being disabled, DG15 missing and AA not completing, then defers to
+    /// ``PassportSecurityStageResult/activeAuthentication(_:passiveAuthentication:)``:
+    /// `.succeeded` only when passive authentication is fully verified (SOD chained to a
+    /// trusted CSCA) and the DG15 hash matched.
     static func activeAuthenticationStage(
         requested: Bool,
         publicKeyPresent: Bool,
@@ -635,28 +659,7 @@ public struct PassportReader: Sendable {
             )
         }
 
-        switch result.status {
-        case .verified:
-            let dg15HashVerified = passiveAuthResult?.dataGroupHashResults[.dg15] == true
-            let signatureVerified = switch passiveAuthResult?.status {
-            case .signatureVerified?, .fullyVerified?: true
-            default: false
-            }
-            guard dg15HashVerified, signatureVerified else {
-                let paStatus = passiveAuthResult?.status.rawValue ?? "not run"
-                return PassportSecurityStageResult(
-                    status: .fallback,
-                    detail: "\(result.details). The chip signed the challenge with the DG15 key, but DG15 is not "
-                        + "authenticated by a verified SOD signature (DG15 hash verified: \(dg15HashVerified), "
-                        + "passive authentication: \(paStatus)), so this does not prove the chip is genuine."
-                )
-            }
-            return PassportSecurityStageResult(status: .succeeded, detail: result.details)
-        case .notImplemented, .unsupportedKeyType:
-            return PassportSecurityStageResult(status: .notSupported, detail: result.details)
-        case .failed, .commandFailed:
-            return PassportSecurityStageResult(status: .failed, detail: result.details)
-        }
+        return .activeAuthentication(result, passiveAuthentication: passiveAuthResult)
     }
 
     // MARK: - Active Authentication
@@ -808,13 +811,25 @@ struct DataGroupReadSession {
         self.transport = transport
     }
 
-    /// Whether EF.COM or the SOD lists `dgId`; `nil` when neither index is known.
+    /// Whether EF.COM or the SOD lists `dgId`; `nil` when that is unknown.
     ///
-    /// An index that was not read, could not be parsed or lists nothing is unknown,
-    /// never "lists nothing": a COM without a usable tag list must not hide DG1.
+    /// Either index listing `dgId` is enough. Only the SOD hash list, the authoritative
+    /// index (ICAO 9303-10 §4.6.1), can rule a data group out: EF.COM may be incomplete,
+    /// so a COM that omits `dgId` without a known SOD gives `nil`. An index that was not
+    /// read, could not be parsed or lists nothing is unknown, never "lists nothing".
     func isListed(_ dgId: DataGroupId) -> Bool? {
-        if listedInCOM == nil, listedInSOD == nil { return nil }
-        return listedInCOM?.contains(dgId) == true || listedInSOD?.contains(dgId) == true
+        if listedInCOM?.contains(dgId) == true || listedInSOD?.contains(dgId) == true { return true }
+        return listedInSOD == nil ? nil : false
+    }
+
+    /// Whether the SOD should be read as an index before `dgId` is considered: EF.COM
+    /// was read and omits `dgId`, and the SOD has not been tried yet.
+    func needsSODIndex(before dgId: DataGroupId) -> Bool {
+        guard secureMessagingEnded == nil, dgId != .com, dgId != .sod,
+              status[.sod] == nil, listedInSOD == nil,
+              let listedInCOM
+        else { return false }
+        return !listedInCOM.contains(dgId)
     }
 
     /// Record that secure messaging ended outside a data group read (e.g. during AA).
@@ -832,11 +847,9 @@ struct DataGroupReadSession {
             return false
         }
         if dgId != .com, dgId != .sod, isListed(dgId) == false {
-            let detail = switch (listedInCOM != nil, listedInSOD != nil) {
-            case (true, true): "Neither EF.COM nor the SOD lists \(dgId.name)."
-            case (true, false): "EF.COM does not list \(dgId.name)."
-            default: "The SOD does not list \(dgId.name)."
-            }
+            let detail = listedInCOM != nil
+                ? "Neither EF.COM nor the SOD lists \(dgId.name)."
+                : "The SOD does not list \(dgId.name)."
             status[dgId] = PassportDataGroupReadResult(state: .notPresent, detail: detail)
             return false
         }

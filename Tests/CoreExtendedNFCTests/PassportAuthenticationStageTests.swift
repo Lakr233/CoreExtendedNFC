@@ -98,7 +98,7 @@ struct PassportAuthenticationStageTests {
     // MARK: - Active Authentication stage mapping
 
     @Test
-    func `Active authentication succeeds only when DG15 is authenticated by a verified SOD`() {
+    func `Active authentication succeeds only when DG15 is authenticated by a fully verified SOD`() {
         let verified = ActiveAuthenticationResult(success: true, details: "ECDSA verified", status: .verified)
         func stage(_ passive: PassiveAuthenticationResult?) -> PassportSecurityStageStatus {
             PassportReader.activeAuthenticationStage(
@@ -108,25 +108,106 @@ struct PassportAuthenticationStageTests {
                 passiveAuthResult: passive
             ).status
         }
-        func passive(_ status: PassiveAuthStatus, _ hashes: [DataGroupId: Bool]) -> PassiveAuthenticationResult {
-            PassiveAuthenticationResult(dataGroupHashResults: hashes, hasCertificate: true, status: status)
-        }
 
-        #expect(stage(passive(.signatureVerified, [.dg1: true, .dg15: true])) == .succeeded)
-        #expect(stage(passive(.fullyVerified, [.dg1: true, .dg15: true])) == .succeeded)
+        #expect(stage(Self.passive(.fullyVerified, [.dg1: true, .dg15: true])) == .succeeded)
+        // Signature valid but not chained to a CSCA: a clone can self-sign its SOD.
+        #expect(stage(Self.passive(.signatureVerified, [.dg1: true, .dg15: true])) == .fallback)
+        #expect(stage(Self.passive(.trustChainInvalid, [.dg1: true, .dg15: true])) == .fallback)
         // DG15 hash compared, but the SOD signature was not verified.
-        #expect(stage(passive(.signatureNotVerified, [.dg1: true, .dg15: true])) == .fallback)
+        #expect(stage(Self.passive(.signatureNotVerified, [.dg1: true, .dg15: true])) == .fallback)
         // SOD signature fine, but DG15 not covered by it.
-        #expect(stage(passive(.fullyVerified, [.dg1: true])) == .fallback)
+        #expect(stage(Self.passive(.fullyVerified, [.dg1: true])) == .fallback)
         #expect(stage(nil) == .fallback)
+        // DG15 does not match the SOD: the key was altered.
+        #expect(stage(Self.passive(.hashMismatch, [.dg1: true, .dg15: false])) == .failed)
 
         let failed = PassportReader.activeAuthenticationStage(
             requested: true,
             publicKeyPresent: true,
             result: ActiveAuthenticationResult(success: false, details: "bad", status: .failed),
-            passiveAuthResult: passive(.fullyVerified, [.dg15: true])
+            passiveAuthResult: Self.passive(.fullyVerified, [.dg15: true])
         )
         #expect(failed.status == .failed)
+    }
+
+    @Test
+    func `A valid AA signature over an unauthenticated key is never reported as verified`() {
+        let signed = ActiveAuthenticationResult(success: true, details: "ECDSA verified", status: .verified)
+
+        let unanchored = signed.classified(by: Self.passive(.signatureVerified, [.dg15: true]))
+        #expect(unanchored.status == .verifiedUnauthenticatedKey)
+        #expect(unanchored.success)
+        #expect(signed.classified(by: nil).status == .verifiedUnauthenticatedKey)
+
+        // Re-judging against fully verified passive authentication restores `.verified`.
+        let anchored = unanchored.classified(by: Self.passive(.fullyVerified, [.dg15: true]))
+        #expect(anchored.status == .verified)
+
+        // Stage and status agree for both inputs.
+        let fallback = PassportSecurityStageResult.activeAuthentication(
+            unanchored,
+            passiveAuthentication: Self.passive(.signatureVerified, [.dg15: true])
+        )
+        #expect(fallback.status == .fallback)
+        let succeeded = PassportSecurityStageResult.activeAuthentication(
+            unanchored,
+            passiveAuthentication: Self.passive(.fullyVerified, [.dg15: true])
+        )
+        #expect(succeeded.status == .succeeded)
+        #expect(PassportSecurityStageResult.activeAuthentication(nil, passiveAuthentication: nil).status == .skipped)
+
+        // Failures are not re-labelled.
+        let bad = ActiveAuthenticationResult(success: false, details: "bad", status: .failed)
+        #expect(bad.classified(by: Self.passive(.fullyVerified, [.dg15: true])) == bad)
+    }
+
+    @Test
+    func `Re-verifying security re-judges a stored AA result against the new passive result`() {
+        let base = Self.makeModel(sod: SODFixtures.genuineSOD, claimed: .fullyVerified)
+        let model = PassportModel(
+            ldsVersion: nil,
+            unicodeVersion: nil,
+            availableDataGroups: [],
+            mrz: nil,
+            faceImageData: nil,
+            signatureImageData: nil,
+            additionalPersonalDetails: nil,
+            additionalDocumentDetails: nil,
+            securityInfos: nil,
+            securityInfoRaw: nil,
+            activeAuthPublicKey: nil,
+            activeAuthPublicKeyRaw: nil,
+            sod: nil,
+            sodRaw: base.sodRaw,
+            passiveAuthResult: base.passiveAuthResult,
+            // A file claiming a genuine chip.
+            activeAuthResult: ActiveAuthenticationResult(success: true, details: "ECDSA verified", status: .verified),
+            rawDataGroups: base.rawDataGroups,
+            securityReport: PassportSecurityReport(
+                bac: PassportSecurityStageResult(status: .succeeded, detail: "BAC"),
+                activeAuthentication: PassportSecurityStageResult(status: .succeeded, detail: "claimed")
+            )
+        )
+
+        // The fixture SOD hashes only DG1, so DG15 is never authenticated.
+        let reverified = model.reverifyingSecurity(trustAnchorsDER: [SODFixtures.cscaDER])
+        #expect(reverified.passiveAuthResult?.status == .fullyVerified)
+        #expect(reverified.securityReport.passiveAuthentication.status == .succeeded)
+        #expect(reverified.activeAuthResult?.status == .verifiedUnauthenticatedKey)
+        #expect(reverified.securityReport.activeAuthentication.status == .fallback)
+        #expect(reverified.securityReport.bac == model.securityReport.bac)
+
+        let unanchored = model.reverifyingSecurity()
+        #expect(unanchored.securityReport.passiveAuthentication.status == .fallback)
+        #expect(unanchored.securityReport.activeAuthentication.status == .fallback)
+
+        // Without a stored AA result the stored AA stage (why AA did not run) is kept.
+        let withoutAA = base.reverifyingSecurity(trustAnchorsDER: [SODFixtures.cscaDER])
+        #expect(withoutAA.securityReport.activeAuthentication == base.securityReport.activeAuthentication)
+    }
+
+    private static func passive(_ status: PassiveAuthStatus, _ hashes: [DataGroupId: Bool]) -> PassiveAuthenticationResult {
+        PassiveAuthenticationResult(dataGroupHashResults: hashes, hasCertificate: true, status: status)
     }
 
     // MARK: - PACE reflection (ICAO 9303-11 §4.4.3.3)
