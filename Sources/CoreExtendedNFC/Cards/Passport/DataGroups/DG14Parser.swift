@@ -278,13 +278,13 @@ public struct TerminalAuthenticationInfo: Sendable, Equatable, Codable {
 /// - ICAO Doc 9303 Part 11, Section 9.2 (SecurityInfo ASN.1 definitions)
 /// - BSI TR-03110 Part 3, Section A.1 (SecurityInfo OID tree: 0.4.0.127.0.7.2.2.*)
 /// - JMRTD source: DG14File.java (reference implementation for OID classification)
-enum DG14Parser {
+public enum DG14Parser {
     /// Parse DG14 raw data into SecurityInfos.
-    static func parse(_ data: Data) throws -> SecurityInfos {
+    public static func parse(_ data: Data) throws -> SecurityInfos {
         try parseSecurityInfos(data, wrapperTag: 0x6E)
     }
 
-    static func parseSecurityInfos(_ data: Data, wrapperTag: UInt?) throws -> SecurityInfos {
+    public static func parseSecurityInfos(_ data: Data, wrapperTag: UInt?) throws -> SecurityInfos {
         let nodes = try ASN1Parser.parseTLV(data)
         var innerData: Data = if let wrapperTag,
                                  let wrappedNode = nodes.first(where: { $0.tag == wrapperTag })
@@ -398,7 +398,7 @@ enum DG14Parser {
     ///   value < 40 → 0.value, value < 80 → 1.(value − 40), otherwise 2.(value − 80)
     ///
     /// Returns an empty string for malformed encodings (truncated or oversized subidentifiers).
-    static func decodeOID(_ data: Data) -> String {
+    public static func decodeOID(_ data: Data) -> String {
         guard !data.isEmpty else { return "" }
 
         var subidentifiers: [UInt64] = []
@@ -432,7 +432,7 @@ enum DG14Parser {
     }
 
     /// Decode a DER-encoded INTEGER value.
-    static func decodeInteger(_ data: Data) -> Int {
+    public static func decodeInteger(_ data: Data) -> Int {
         var result = 0
         for byte in data {
             result = (result << 8) | Int(byte)

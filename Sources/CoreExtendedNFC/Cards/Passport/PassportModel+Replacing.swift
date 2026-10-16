@@ -1,6 +1,6 @@
 import Foundation
 
-extension PassportModel {
+public extension PassportModel {
     /// A copy with a new Active Authentication result and security report.
     func replacing(
         activeAuthResult: ActiveAuthenticationResult?,

@@ -6,20 +6,20 @@ import Foundation
 /// loop goes on. When secure messaging ends (MAC failure, SM status word, interrupted
 /// exchange), the remaining data groups are marked not read and everything read so far
 /// is kept. Session loss and cancellation propagate.
-struct DataGroupReadSession {
-    let transport: SecureMessagingTransport
-    private(set) var rawDataGroups: [DataGroupId: Data] = [:]
-    private(set) var status: [DataGroupId: PassportDataGroupReadResult] = [:]
+public struct DataGroupReadSession: Sendable {
+    public let transport: SecureMessagingTransport
+    public private(set) var rawDataGroups: [DataGroupId: Data] = [:]
+    public private(set) var status: [DataGroupId: PassportDataGroupReadResult] = [:]
     /// Data groups listed in EF.COM, once COM was read and listed at least one.
-    private(set) var listedInCOM: Set<DataGroupId>?
+    public private(set) var listedInCOM: Set<DataGroupId>?
     /// Data groups the SOD has a hash for, once the SOD was read and listed at least one.
-    private(set) var listedInSOD: Set<DataGroupId>?
+    public private(set) var listedInSOD: Set<DataGroupId>?
     /// Why secure messaging ended, once it has.
-    private(set) var secureMessagingEnded: String?
+    public private(set) var secureMessagingEnded: String?
     /// First error that cost a data group (anything but "not available").
-    private(set) var firstFailure: (any Error)?
+    public private(set) var firstFailure: (any Error)?
 
-    init(transport: SecureMessagingTransport) {
+    public init(transport: SecureMessagingTransport) {
         self.transport = transport
     }
 
@@ -29,14 +29,14 @@ struct DataGroupReadSession {
     /// index (ICAO 9303-10 §4.6.1), can rule a data group out: EF.COM may be incomplete,
     /// so a COM that omits `dgId` without a known SOD gives `nil`. An index that was not
     /// read, could not be parsed or lists nothing is unknown, never "lists nothing".
-    func isListed(_ dgId: DataGroupId) -> Bool? {
+    public func isListed(_ dgId: DataGroupId) -> Bool? {
         if listedInCOM?.contains(dgId) == true || listedInSOD?.contains(dgId) == true { return true }
         return listedInSOD == nil ? nil : false
     }
 
     /// Whether the SOD should be read as an index before `dgId` is considered: EF.COM
     /// was read and omits `dgId`, and the SOD has not been tried yet.
-    func needsSODIndex(before dgId: DataGroupId) -> Bool {
+    public func needsSODIndex(before dgId: DataGroupId) -> Bool {
         guard secureMessagingEnded == nil, dgId != .com, dgId != .sod,
               status[.sod] == nil, listedInSOD == nil,
               let listedInCOM
@@ -45,12 +45,12 @@ struct DataGroupReadSession {
     }
 
     /// Record that secure messaging ended outside a data group read (e.g. during AA).
-    mutating func markSecureMessagingEnded(_ reason: String) {
+    public mutating func markSecureMessagingEnded(_ reason: String) {
         if secureMessagingEnded == nil { secureMessagingEnded = reason }
     }
 
     /// Whether `dgId` should be selected. Records why when it should not.
-    mutating func shouldSelect(_ dgId: DataGroupId) -> Bool {
+    public mutating func shouldSelect(_ dgId: DataGroupId) -> Bool {
         if let secureMessagingEnded {
             status[dgId] = PassportDataGroupReadResult(
                 state: .notRead,
@@ -69,7 +69,7 @@ struct DataGroupReadSession {
     }
 
     /// Run `body` to read `dgId` and record the outcome.
-    mutating func read(_ dgId: DataGroupId, _ body: () async throws -> Data) async throws {
+    public mutating func read(_ dgId: DataGroupId, _ body: () async throws -> Data) async throws {
         do {
             let data = try await body()
             rawDataGroups[dgId] = data

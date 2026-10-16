@@ -228,7 +228,7 @@ extension MemoryDump {
     }
 
     /// Page number to data. A repeated page number keeps the last occurrence instead of trapping.
-    private static func pageMap(_ pages: [Page]) -> [Int: Data] {
+    public static func pageMap(_ pages: [Page]) -> [Int: Data] {
         Dictionary(pages.map { (Int($0.number), $0.data) }, uniquingKeysWith: { _, last in last })
     }
 
@@ -275,7 +275,8 @@ extension MemoryDump {
         let parsedNDEF: [ExportNDEFRecord]?
     }
 
-    private var suggestedExportBasename: String {
+    /// File basename used by ``exportArtifacts()``: `<family>-<uid hex>`.
+    public var suggestedExportBasename: String {
         let rawPrefix = cardInfo.type.family.description.lowercased()
         let sanitizedPrefix = rawPrefix.map { character -> Character in
             switch character {
@@ -302,7 +303,7 @@ extension MemoryDump {
     /// The libnfc, Flipper and Proxmark3 formats all store exactly 4 bytes per Type 2 page;
     /// a page of another length would shift every later page or drop bytes, so it is
     /// rejected instead of silently padded or truncated.
-    private func requirePageBasedDump(message: String) throws -> [Page] {
+    public func requirePageBasedDump(message: String) throws -> [Page] {
         guard !pages.isEmpty else {
             throw NFCError.unsupportedOperation(message)
         }
@@ -314,7 +315,7 @@ extension MemoryDump {
 
     /// Number of pages to export: the memory map size for known Type 2 layouts, but never
     /// fewer than the pages actually present, so no captured page is dropped.
-    private func inferredPageTotal(for orderedPages: [Page]) -> Int {
+    public func inferredPageTotal(for orderedPages: [Page]) -> Int {
         let pagesPresent = orderedPages.last.map { Int($0.number) + 1 } ?? 0
         switch cardInfo.type.family {
         case .ntag, .mifareUltralight:
@@ -327,7 +328,7 @@ extension MemoryDump {
     /// Flipper's `NTAG/Ultralight type` names (`mf_ultralight_features[].device_name`).
     /// Flipper has no NTAG210/212 entry and files them, by GET_VERSION storage size,
     /// as Ultralight 11 / 21, which share their page counts.
-    static func flipperTypeName(for type: CardType) -> String {
+    public static func flipperTypeName(for type: CardType) -> String {
         switch type {
         case .mifareUltralightC: "Mifare Ultralight C"
         case .mifareUltralightEV1_MF0UL11, .ntag210: "Mifare Ultralight 11"
@@ -340,7 +341,7 @@ extension MemoryDump {
     }
 
     /// Inverse of ``flipperTypeName(for:)`` for the names this library can model.
-    static func cardType(forFlipperTypeName name: String) -> CardType? {
+    public static func cardType(forFlipperTypeName name: String) -> CardType? {
         switch name {
         case "Mifare Ultralight": .mifareUltralight
         case "Mifare Ultralight C": .mifareUltralightC
@@ -356,7 +357,7 @@ extension MemoryDump {
     /// GET_VERSION responses from the NXP datasheets (NTAG210/212 §10.1, NTAG213/215/216
     /// §10.1, MF0ULx1 §8.1): fixed header, vendor, type, subtype, major, minor, storage
     /// size, protocol type.
-    private func mifareVersionBytes(for type: CardType) -> Data? {
+    public func mifareVersionBytes(for type: CardType) -> Data? {
         switch type {
         case .ntag210:
             Data([0x00, 0x04, 0x04, 0x01, 0x01, 0x00, 0x0B, 0x03])

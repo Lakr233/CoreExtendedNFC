@@ -14,7 +14,10 @@ public struct ISO15693SecurityResponse: Sendable, Equatable {
 }
 
 /// High-level ISO 15693 security and configuration operations.
-public struct ISO15693SecurityManager: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class ISO15693SecurityManager: @unchecked Sendable {
     public let transport: any ISO15693TagTransporting
 
     public init(transport: any ISO15693TagTransporting) {
@@ -25,7 +28,7 @@ public struct ISO15693SecurityManager: Sendable {
     ///
     /// - Warning: `permanentlyLock: true` sends LOCK AFI (ISO/IEC 15693-3 §10.4.7),
     ///   which is irreversible: the AFI can never be changed again on that tag.
-    public func configureAFI(_ afi: UInt8, permanentlyLock: Bool = false) async throws {
+    open func configureAFI(_ afi: UInt8, permanentlyLock: Bool = false) async throws {
         try await transport.writeAFI(afi)
         if permanentlyLock {
             try await transport.lockAFI()
@@ -39,7 +42,7 @@ public struct ISO15693SecurityManager: Sendable {
         renamed: "configureAFI(_:permanentlyLock:)",
         message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly"
     )
-    public func configureAFI(_ afi: UInt8, lock: Bool) async throws {
+    open func configureAFI(_ afi: UInt8, lock: Bool) async throws {
         try await configureAFI(afi, permanentlyLock: lock)
     }
 
@@ -47,7 +50,7 @@ public struct ISO15693SecurityManager: Sendable {
     ///
     /// - Warning: `permanentlyLock: true` sends LOCK DSFID (ISO/IEC 15693-3 §10.4.9),
     ///   which is irreversible: the DSFID can never be changed again on that tag.
-    public func configureDSFID(_ dsfid: UInt8, permanentlyLock: Bool = false) async throws {
+    open func configureDSFID(_ dsfid: UInt8, permanentlyLock: Bool = false) async throws {
         try await transport.writeDSFID(dsfid)
         if permanentlyLock {
             try await transport.lockDSFID()
@@ -61,17 +64,17 @@ public struct ISO15693SecurityManager: Sendable {
         renamed: "configureDSFID(_:permanentlyLock:)",
         message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly"
     )
-    public func configureDSFID(_ dsfid: UInt8, lock: Bool) async throws {
+    open func configureDSFID(_ dsfid: UInt8, lock: Bool) async throws {
         try await configureDSFID(dsfid, permanentlyLock: lock)
     }
 
     /// Send a manufacturer-specific custom command.
-    public func customCommand(code: Int, parameters: Data = Data()) async throws -> Data {
+    open func customCommand(code: Int, parameters: Data = Data()) async throws -> Data {
         try await transport.customCommand(code: code, parameters: parameters)
     }
 
     /// Start or continue a challenge flow for the selected crypto suite.
-    public func challenge(
+    open func challenge(
         cryptoSuiteIdentifier: Int,
         message: Data = Data()
     ) async throws {
@@ -82,7 +85,7 @@ public struct ISO15693SecurityManager: Sendable {
     }
 
     /// Authenticate using the selected ISO 15693 crypto suite.
-    public func authenticate(
+    open func authenticate(
         cryptoSuiteIdentifier: Int,
         message: Data
     ) async throws -> ISO15693SecurityResponse {
@@ -93,7 +96,7 @@ public struct ISO15693SecurityManager: Sendable {
     }
 
     /// Update a security key on tags that support the ISO 15693 key update primitive.
-    public func keyUpdate(
+    open func keyUpdate(
         keyIdentifier: Int,
         message: Data
     ) async throws -> ISO15693SecurityResponse {

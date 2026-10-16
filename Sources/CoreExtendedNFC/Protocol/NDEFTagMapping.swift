@@ -1,12 +1,13 @@
 import Foundation
 
-enum NDEFTagMapping {
+/// NFC Forum Type 2 / Type 5 tag mappings: Capability Container and NDEF TLV layout.
+public enum NDEFTagMapping {
     /// Extract the NDEF message from Type 2 pages.
     ///
     /// NFC Forum T2T 1.0 §6.4.1 NDEF detection: the tag is only in NDEF state
     /// when CC0 (page 3 byte 0) is E1h and the mapping major version (CC1 b7-b4)
     /// is at most 1. The TLV scan is limited to the data area size CC2 × 8.
-    static func extractType2Message(from pages: [MemoryDump.Page]) -> Data? {
+    public static func extractType2Message(from pages: [MemoryDump.Page]) -> Data? {
         guard let ccPage = pages.first(where: { $0.number == 3 }), ccPage.data.count >= 4 else {
             return nil
         }
@@ -29,7 +30,7 @@ enum NDEFTagMapping {
     /// long (bytes 6-7 carry the 16-bit MLEN) and the TLV area starts at byte 8;
     /// otherwise the CC is 4 bytes. The TLV scan is limited to the T5T_Area of
     /// MLEN × 8 bytes, like the Type 2 data area.
-    static func extractType5Message(from blocks: [MemoryDump.Block]) -> Data? {
+    public static func extractType5Message(from blocks: [MemoryDump.Block]) -> Data? {
         let contiguous = blocks
             .sorted(by: { $0.number < $1.number })
             .reduce(into: Data()) { result, block in
@@ -46,7 +47,7 @@ enum NDEFTagMapping {
 
     /// CC length (4 or 8 bytes) when `leadingBytes` (block 0 onwards) starts with a
     /// Type 5 CC magic (E1h / E2h, NFC Forum T5T 1.0 §4.3.1), otherwise `nil`.
-    static func type5FormattedCCLength(leadingBytes: Data) -> Int? {
+    public static func type5FormattedCCLength(leadingBytes: Data) -> Int? {
         let bytes = [UInt8](leadingBytes.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else { return nil }
         return bytes[2] == 0x00 ? 8 : 4
@@ -54,7 +55,7 @@ enum NDEFTagMapping {
 
     /// Size in bytes of the T5T_Area announced by the CC (MLEN × 8, NFC Forum T5T 1.0
     /// §4.3.1), or `nil` when `leadingBytes` does not hold a complete CC.
-    static func type5DataAreaLength(leadingBytes: Data) -> Int? {
+    public static func type5DataAreaLength(leadingBytes: Data) -> Int? {
         guard let ccLength = type5FormattedCCLength(leadingBytes: leadingBytes) else { return nil }
         let cc = [UInt8](leadingBytes.prefix(ccLength))
         guard cc.count == ccLength else { return nil }
@@ -71,7 +72,7 @@ enum NDEFTagMapping {
     /// - Byte 1: Mapping version 1.0 (0x10)
     /// - Byte 2: Data area size in 8-byte units (see ``type2DataAreaUnits(for:)``)
     /// - Byte 3: Read/write access (0x00 = read-write)
-    static func buildType2CC(for type: CardType) -> Data {
+    public static func buildType2CC(for type: CardType) -> Data {
         Data([0xE1, 0x10, type2DataAreaUnits(for: type), 0x00])
     }
 
@@ -80,7 +81,7 @@ enum NDEFTagMapping {
     /// 12h, 3Eh, 6Dh, so 215 and 216 advertise less than their 504 / 888 user
     /// bytes. NTAG210/212 datasheet §8.5.6: 06h, 10h. The other products use their
     /// whole user area (Ultralight 06h, Ultralight C 12h, EV1 06h / 10h).
-    static func type2DataAreaUnits(for type: CardType) -> UInt8 {
+    public static func type2DataAreaUnits(for type: CardType) -> UInt8 {
         switch type {
         case .ntag215:
             0x3E
@@ -97,7 +98,7 @@ enum NDEFTagMapping {
     /// Throws ``NFCError/tagNotNDEFFormatted`` when the tag is not NDEF formatted, uses
     /// an unsupported mapping major
     /// version, or denies write access (CC3 b3-b0 ≠ 0h).
-    static func type2WritableCapacity(cc: Data, memoryMap: UltralightMemoryMap) throws -> Int {
+    public static func type2WritableCapacity(cc: Data, memoryMap: UltralightMemoryMap) throws -> Int {
         let bytes = [UInt8](cc.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 else {
             throw NFCError.tagNotNDEFFormatted
@@ -111,7 +112,7 @@ enum NDEFTagMapping {
         return min(memoryMap.userDataByteCount, Int(bytes[2]) * 8)
     }
 
-    static func buildType2Area(message: Data, capacity: Int) throws -> Data {
+    public static func buildType2Area(message: Data, capacity: Int) throws -> Data {
         let tlv = encodeNDEFTLV(message)
         guard tlv.count <= capacity else {
             throw NFCError.ndefCapacityExceeded(required: tlv.count, capacity: capacity)
@@ -121,7 +122,7 @@ enum NDEFTagMapping {
 
     /// Highest block count reachable with single-byte block addresses
     /// (READ/WRITE SINGLE BLOCK, ISO/IEC 15693-3).
-    static let type5SingleByteAddressableBlocks = 256
+    public static let type5SingleByteAddressableBlocks = 256
 
     /// Build the Type 5 CC and NDEF data area as a list of blocks starting at block 0.
     ///
@@ -135,7 +136,7 @@ enum NDEFTagMapping {
     ///
     /// Without extended addressing commands the NDEF area is confined to blocks
     /// 0-255, so at most 256 blocks are returned even when the tag is larger.
-    static func buildType5Blocks(
+    public static func buildType5Blocks(
         message: Data,
         blockSize: Int,
         blockCount: Int,
@@ -199,7 +200,7 @@ enum NDEFTagMapping {
     /// - byte 1 b7-b6 is the major mapping version (only 1 is supported);
     /// - byte 1 b1-b0 is write access: only 00b (granted) permits writing;
     /// - byte 2 = 00h selects the 8-byte CC (16-bit MLEN in bytes 6-7).
-    static func type5CCLength(firstBlock: Data) throws -> Int {
+    public static func type5CCLength(firstBlock: Data) throws -> Int {
         let bytes = [UInt8](firstBlock.prefix(4))
         guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else {
             throw NFCError.tagNotNDEFFormatted
@@ -220,7 +221,7 @@ enum NDEFTagMapping {
     /// CC is kept as read (a block it shares with the TLV is rewritten with the
     /// CC bytes unchanged) and memory after the terminator is left untouched.
     /// The data area is bounded by MLEN and by the single-byte addressable blocks.
-    static func type5NDEFWrites(
+    public static func type5NDEFWrites(
         message: Data,
         leadingBytes: Data,
         blockSize: Int,
@@ -256,7 +257,7 @@ enum NDEFTagMapping {
         }
     }
 
-    private static func extractTLVNDEF(from data: Data) -> Data? {
+    public static func extractTLVNDEF(from data: Data) -> Data? {
         var offset = 0
         while offset < data.count {
             let tag = data[offset]
@@ -286,7 +287,7 @@ enum NDEFTagMapping {
         return nil
     }
 
-    private static func parseTLVLength(_ data: Data, offset: Int) -> (Int, Int)? {
+    public static func parseTLVLength(_ data: Data, offset: Int) -> (Int, Int)? {
         guard offset < data.count else { return nil }
         let first = data[offset]
         if first == 0xFF {
@@ -297,7 +298,7 @@ enum NDEFTagMapping {
         return (Int(first), 1)
     }
 
-    private static func encodeNDEFTLV(_ message: Data) -> Data {
+    public static func encodeNDEFTLV(_ message: Data) -> Data {
         var tlv = Data([0x03])
         if message.count > 0xFE {
             tlv.append(0xFF)

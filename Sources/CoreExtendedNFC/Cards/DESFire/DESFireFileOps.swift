@@ -122,7 +122,7 @@ public extension DESFireCommands {
     }
 }
 
-private extension DESFireCommands {
+public extension DESFireCommands {
     func desfireRangePayload(
         fileID: UInt8,
         firstValue: UInt32,

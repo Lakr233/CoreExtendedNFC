@@ -471,7 +471,7 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
 
     /// Whether the chip produced a valid signature with the DG15 key, whether or not
     /// that key is authenticated by passive authentication.
-    var signatureIsValid: Bool {
+    public var signatureIsValid: Bool {
         status == .verified || status == .verifiedUnauthenticatedKey
     }
 
@@ -489,7 +489,7 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
 
     /// DG15 is authenticated only when its hash matches the SOD and the SOD signature
     /// chains to a trusted CSCA (ICAO 9303-11 §5.1, §6.1).
-    static func isDG15Authenticated(by passiveAuthentication: PassiveAuthenticationResult?) -> Bool {
+    public static func isDG15Authenticated(by passiveAuthentication: PassiveAuthenticationResult?) -> Bool {
         passiveAuthentication?.status == .fullyVerified
             && passiveAuthentication?.dataGroupHashResults[.dg15] == true
     }

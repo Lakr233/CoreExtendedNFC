@@ -1,7 +1,9 @@
 import Foundation
 
-enum CardInfoRefiner {
-    static func refine(
+/// Refines a coarse scan classification with family-specific probes.
+public enum CardInfoRefiner {
+    /// Refine `info` by probing the tag; returns `info` unchanged when no probe applies.
+    public static func refine(
         _ info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> CardInfo {
@@ -19,7 +21,7 @@ enum CardInfoRefiner {
         }
     }
 
-    private static func refineUltralight(
+    public static func refineUltralight(
         _ info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> CardInfo {
@@ -46,7 +48,7 @@ enum CardInfoRefiner {
         }
     }
 
-    private static func refinePossibleUltralight(
+    public static func refinePossibleUltralight(
         _ info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> CardInfo {
@@ -64,7 +66,7 @@ enum CardInfoRefiner {
         }
     }
 
-    private static func matchesUltralightManufacturerPages(_ pages: Data, uid: Data) -> Bool {
+    public static func matchesUltralightManufacturerPages(_ pages: Data, uid: Data) -> Bool {
         guard uid.count >= 7, pages.count >= 12 else { return false }
 
         let bytes = [UInt8](pages.prefix(12))
@@ -90,7 +92,7 @@ enum CardInfoRefiner {
     /// carry it. Instead use the memory map: only Lite-S has block 0x90
     /// (WCNT, readable without authentication through service 0x000B); on a
     /// Lite that block number is rejected with a non-zero status flag.
-    private static func refineFeliCaLite(
+    public static func refineFeliCaLite(
         _ info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> CardInfo {
@@ -114,7 +116,7 @@ enum CardInfoRefiner {
         }
     }
 
-    private static func refineISO7816(
+    public static func refineISO7816(
         _ info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> CardInfo {
@@ -133,7 +135,7 @@ enum CardInfoRefiner {
         return info
     }
 
-    private static func detectFromMetadata(
+    public static func detectFromMetadata(
         initialAID: String?,
         historicalBytes: Data?
     ) -> CardType? {
@@ -153,7 +155,7 @@ enum CardInfoRefiner {
         return nil
     }
 
-    private static func detectByProbing(
+    public static func detectByProbing(
         transport: any ISO7816TagTransporting
     ) async -> CardType? {
         // Keep a successful passport SELECT as a fallback signal only.
@@ -182,7 +184,7 @@ enum CardInfoRefiner {
         return nil
     }
 
-    private static func updated(_ info: CardInfo, type: CardType) -> CardInfo {
+    public static func updated(_ info: CardInfo, type: CardType) -> CardInfo {
         CardInfo(
             type: type,
             uid: info.uid,
@@ -198,11 +200,14 @@ enum CardInfoRefiner {
     }
 }
 
-private enum FeliCaLiteConstants {
-    /// System Code shared by FeliCa Lite and Lite-S (big-endian, as CoreNFC reports it).
-    static let systemCode = Data([0x88, 0xB4])
-    /// Read-only (no authentication) service 0x000B, little-endian.
-    static let readOnlyServiceCode = Data([0x0B, 0x00])
-    /// WCNT block, present on FeliCa Lite-S only.
-    static let writeCounterBlock: UInt16 = 0x90
+public extension CardInfoRefiner {
+    /// FeliCa Lite / Lite-S constants used by ``CardInfoRefiner/refineFeliCaLite(_:transport:)``.
+    enum FeliCaLiteConstants {
+        /// System Code shared by FeliCa Lite and Lite-S (big-endian, as CoreNFC reports it).
+        public static let systemCode = Data([0x88, 0xB4])
+        /// Read-only (no authentication) service 0x000B, little-endian.
+        public static let readOnlyServiceCode = Data([0x0B, 0x00])
+        /// WCNT block, present on FeliCa Lite-S only.
+        public static let writeCounterBlock: UInt16 = 0x90
+    }
 }

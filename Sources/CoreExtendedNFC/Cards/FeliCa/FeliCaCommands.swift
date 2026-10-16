@@ -1,7 +1,10 @@
 import Foundation
 
 /// FeliCa command operations using CoreNFC's FeliCa tag API.
-public struct FeliCaCommands: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class FeliCaCommands: @unchecked Sendable {
     public struct ServiceProbe: Sendable, Equatable {
         public let serviceCode: Data
         public let label: String
@@ -12,6 +15,14 @@ public struct FeliCaCommands: Sendable {
             self.label = label
             self.keyVersion = keyVersion
         }
+    }
+
+    /// Outcome of reading one block of one service in a shared Read Without Encryption.
+    public enum ServiceReadResult: Sendable, Equatable {
+        /// The service returned this block.
+        case block(Data)
+        /// The service has no more readable blocks (or refused the read).
+        case stop
     }
 
     public struct ServiceSnapshot: Sendable, Equatable {
@@ -38,7 +49,7 @@ public struct FeliCaCommands: Sendable {
         self.transport = transport
     }
 
-    public func probeCommonServices(maxServiceIndex: Int = 15) async throws -> [ServiceProbe] {
+    open func probeCommonServices(maxServiceIndex: Int = 15) async throws -> [ServiceProbe] {
         let candidates = Self.commonServiceCodes(maxServiceIndex: maxServiceIndex)
         var probes: [ServiceProbe] = []
 
@@ -62,7 +73,7 @@ public struct FeliCaCommands: Sendable {
         return probes
     }
 
-    public func readPlainServices(
+    open func readPlainServices(
         _ services: [ServiceProbe],
         maxBlocksPerService: Int = 4,
         excluding excludedServiceCodes: Set<Data> = []
@@ -102,7 +113,7 @@ public struct FeliCaCommands: Sendable {
         }
     }
 
-    public static func commonServiceCodes(maxServiceIndex: Int = 15) -> [(serviceCode: Data, label: String)] {
+    open class func commonServiceCodes(maxServiceIndex: Int = 15) -> [(serviceCode: Data, label: String)] {
         // Service numbers are 10 bits wide (service code = number << 6 | attribute).
         let cappedMaxIndex = min(max(0, maxServiceIndex), 0x3FF)
         var candidates: [(serviceCode: Data, label: String)] = [
@@ -130,9 +141,9 @@ public struct FeliCaCommands: Sendable {
 
     /// Read Without Encryption accepts at most 16 services per command, and the
     /// block list element addresses a service with a 4-bit index.
-    static let maxServicesPerRead = 16
+    public static let maxServicesPerRead = 16
 
-    private func readSharedBlock(
+    open func readSharedBlock(
         across services: [ServiceProbe],
         blockNumber: UInt16
     ) async throws -> [Data: ServiceReadResult] {
@@ -193,16 +204,16 @@ public struct FeliCaCommands: Sendable {
         }
     }
 
-    private static let unavailableServiceVersion = Data([0xFF, 0xFF])
+    public static let unavailableServiceVersion = Data([0xFF, 0xFF])
 
-    private static let probeServiceTypes: [FeliCaMemory.ServiceType] = [
+    public static let probeServiceTypes: [FeliCaMemory.ServiceType] = [
         .randomReadWrite,
         .randomReadOnly,
         .cyclicReadWrite,
         .cyclicReadOnly,
     ]
 
-    private static func encodeServiceCode(_ code: UInt16) -> Data {
+    public static func encodeServiceCode(_ code: UInt16) -> Data {
         Data([
             UInt8(truncatingIfNeeded: code),
             UInt8(truncatingIfNeeded: code >> 8),
@@ -210,12 +221,8 @@ public struct FeliCaCommands: Sendable {
     }
 }
 
-private enum ServiceReadResult {
-    case block(Data)
-    case stop
-}
-
-private extension FeliCaMemory.ServiceType {
+public extension FeliCaMemory.ServiceType {
+    /// Human-readable service type name used for probe labels.
     var displayName: String {
         switch self {
         case .randomReadOnly:

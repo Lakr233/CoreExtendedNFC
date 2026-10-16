@@ -17,13 +17,13 @@ public enum KeyDerivation {
     }
 
     /// Generate `Kseed = SHA-1(MRZKey.utf8)[0..<16]` from the MRZ key string.
-    static func generateKseed(mrzKey: String) -> Data {
+    public static func generateKseed(mrzKey: String) -> Data {
         let hash = HashUtils.sha1(Data(mrzKey.utf8))
         return Data(hash.prefix(16))
     }
 
     /// Derive a 16-byte 2-key 3DES key from `keySeed` and the ICAO mode counter.
-    static func deriveKey(keySeed: Data, mode: Mode) -> Data {
+    public static func deriveKey(keySeed: Data, mode: Mode) -> Data {
         var input = Data(keySeed)
         input.append(contentsOf: [0x00, 0x00, 0x00, mode.rawValue])
         let hash = HashUtils.sha1(input)
@@ -40,7 +40,7 @@ public enum KeyDerivation {
     /// - AES-192 / AES-256: SHA-256, first 24 / 32 bytes.
     ///
     /// Used for PACE (`c = 1, 2, 3`) and Chip Authentication (`c = 1, 2`).
-    static func deriveKey(keySeed: Data, counter: UInt8, mode: SMEncryptionMode) -> Data {
+    public static func deriveKey(keySeed: Data, counter: UInt8, mode: SMEncryptionMode) -> Data {
         var input = Data(keySeed)
         input.append(contentsOf: [0x00, 0x00, 0x00, counter])
 
@@ -60,7 +60,7 @@ public enum KeyDerivation {
     }
 
     /// Adjust DES key bytes to odd parity.
-    static func adjustParity(_ key: Data) -> Data {
+    public static func adjustParity(_ key: Data) -> Data {
         var adjusted = Data(key)
         for i in 0 ..< adjusted.count {
             let byte = adjusted[i]

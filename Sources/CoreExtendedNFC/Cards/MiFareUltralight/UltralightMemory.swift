@@ -36,7 +36,7 @@ public struct UltralightMemoryMap: Sendable, Equatable {
     }
 
     /// Number of user data bytes (4 bytes per page, inclusive range).
-    var userDataByteCount: Int {
+    public var userDataByteCount: Int {
         Int(userDataEnd - userDataStart + 1) * 4
     }
 

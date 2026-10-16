@@ -119,12 +119,15 @@ public struct Type4CC: Sendable {
 
 /// Type 4 NDEF tag reader.
 /// Ported from libnfc examples/nfc-emulate-forum-tag4.c.
-public struct Type4Reader: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class Type4Reader: @unchecked Sendable {
     public let transport: any NFCTagTransport
 
     /// Highest file offset expressible in READ/UPDATE BINARY with P1 b8 = 0
     /// (ISO/IEC 7816-4). Larger offsets need the odd-INS variants.
-    static let maxShortFileOffset = 0x7FFF
+    public static let maxShortFileOffset = 0x7FFF
 
     public init(transport: any NFCTagTransport) {
         self.transport = transport
@@ -132,7 +135,7 @@ public struct Type4Reader: Sendable {
 
     /// Full NDEF read sequence:
     /// SELECT AID → SELECT CC → READ CC → SELECT NDEF → READ NDEF.
-    public func readNDEF() async throws -> Data {
+    open func readNDEF() async throws -> Data {
         NFCLog.info("Type 4 NDEF read", source: "Type4")
         let cc = try await readCapabilityContainer()
 
@@ -190,7 +193,7 @@ public struct Type4Reader: Sendable {
     ///
     /// Throws ``NFCError/tagNotNDEFFormatted`` when the card has no NDEF Tag
     /// Application (SELECT answered `6A82` file not found or `6A86` incorrect P1-P2).
-    public func readCapabilityContainer() async throws -> Type4CC {
+    open func readCapabilityContainer() async throws -> Type4CC {
         let selectAID = CommandAPDU.select(aid: Type4Constants.ndefAID)
         let aidResp = try await transport.sendAPDU(selectAID)
         guard aidResp.isSuccess else {
@@ -223,7 +226,7 @@ public struct Type4Reader: Sendable {
     }
 
     /// Write NDEF message to Type 4 tag.
-    public func writeNDEF(_ message: Data) async throws {
+    open func writeNDEF(_ message: Data) async throws {
         NFCLog.info("Type 4 NDEF write: \(message.count) bytes", source: "Type4")
         let cc = try await readCapabilityContainer()
 
@@ -260,7 +263,8 @@ public struct Type4Reader: Sendable {
         )
     }
 
-    private func updateBinaryChunked(offset: Int, data: Data, maxWrite: Int) async throws {
+    /// UPDATE BINARY `data` at `offset` in chunks of at most `maxWrite` bytes.
+    open func updateBinaryChunked(offset: Int, data: Data, maxWrite: Int) async throws {
         var offset = offset
         var remaining = data[...]
         while !remaining.isEmpty {
@@ -272,14 +276,16 @@ public struct Type4Reader: Sendable {
         }
     }
 
-    private func selectFile(_ fileID: Data) async throws {
+    /// SELECT FILE by 2-byte file ID in the currently selected application.
+    open func selectFile(_ fileID: Data) async throws {
         let response = try await transport.sendAPDU(CommandAPDU.selectFile(id: fileID))
         guard response.isSuccess else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
     }
 
-    private func updateBinary(offset: Int, data: Data) async throws {
+    /// One UPDATE BINARY at a short (15-bit) file offset.
+    open func updateBinary(offset: Int, data: Data) async throws {
         guard offset <= Self.maxShortFileOffset, let fileOffset = UInt16(exactly: offset) else {
             throw NFCError.unsupportedOperation("Type 4 NDEF files larger than 32 KB are not supported")
         }

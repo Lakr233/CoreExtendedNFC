@@ -8,12 +8,14 @@ public extension CoreExtendedNFC {
     /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
     ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
     ///   usually stay silent then.
+    /// - Parameter manager: The session manager that runs the scan. Pass your own
+    ///   instance, or a subclass, to customize the session. It is invalidated before returning.
     static func readMyNumberCard(
         items: [MyNumberCardItem] = [.tokenInfo],
         cardInfoInputSupportPIN: String? = nil,
-        message: String? = nil
+        message: String? = nil,
+        manager: NFCSessionManager = NFCSessionManager()
     ) async throws -> MyNumberCardData {
-        let manager = NFCSessionManager()
         let (rawInfo, transport) = try await manager.scan(
             for: [.iso14443],
             message: message ?? String(localized: "Hold your iPhone near your My Number card", bundle: .module)

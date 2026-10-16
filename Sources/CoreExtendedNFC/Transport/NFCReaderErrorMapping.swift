@@ -6,10 +6,10 @@ import Foundation
 /// importing CoreNFC.
 ///
 /// Raw codes come from `CoreNFC/NFCError.h` (`NFCReaderError`).
-enum NFCReaderErrorMapping {
+public enum NFCReaderErrorMapping {
     /// Where the error was reported. Some codes mean different things for a single
     /// tag command than for the end of the whole session.
-    enum Context {
+    public enum Context: Sendable {
         /// A tag command (transceive) failed.
         case command
         /// `tagReaderSession(_:didInvalidateWithError:)` ended the session.
@@ -20,7 +20,7 @@ enum NFCReaderErrorMapping {
     ///
     /// - Parameter userCanceledSession: the user already dismissed this session; a
     ///   session-loss failure is then reported as ``NFCError/userCanceled``.
-    static func map(
+    public static func map(
         _ error: any Error,
         context: Context = .command,
         userCanceledSession: Bool = false
@@ -41,7 +41,7 @@ enum NFCReaderErrorMapping {
     }
 
     /// Map a raw `NFCReaderError` code. Returns `nil` for codes this library does not classify.
-    static func map(
+    public static func map(
         code: Int,
         iso15693ResponseCode: Int? = nil,
         description: String = "",
@@ -57,7 +57,8 @@ enum NFCReaderErrorMapping {
         return mapped
     }
 
-    private static func mapCode(
+    /// Map a raw code without the user-cancel override applied by ``map(code:iso15693ResponseCode:description:context:userCanceledSession:)``.
+    public static func mapCode(
         _ code: Int,
         iso15693ResponseCode: Int?,
         description: String,
@@ -124,12 +125,47 @@ enum NFCReaderErrorMapping {
         }
     }
 
-    private static func detail(_ fallback: String, _ description: String) -> String {
+    /// `description`, or `fallback` when CoreNFC gave none.
+    public static func detail(_ fallback: String, _ description: String) -> String {
         description.isEmpty ? fallback : description
+    }
+
+    /// Whether `error` ends the current read flow (session loss or task cancellation)
+    /// rather than describing a single unreadable item on the card.
+    public static func isSessionTerminating(_ error: any Error) -> Bool {
+        if error is CancellationError { return true }
+        if let nfcError = error as? NFCError { return nfcError.isSessionLoss }
+        return false
+    }
+
+    /// Whether `error` is the "no answer from the tag" failure (CoreNFC 100/101/104).
+    ///
+    /// CoreNFC reports a tag that left the field and a tag that stayed silent on a
+    /// command it does not implement with the same codes, so after an *optional*
+    /// command this is not proof that the tag is gone. Callers that tolerate it must
+    /// follow up with a mandatory command, which fails if the tag really is gone.
+    public static func isMissingTagResponse(_ error: any Error) -> Bool {
+        if case NFCError.tagConnectionLost = error { return true }
+        return false
+    }
+
+    /// Run a CoreNFC call and rethrow its error as ``NFCError`` where a mapping exists.
+    ///
+    /// - Parameter monitor: the session's termination record; once the user has
+    ///   cancelled the session, session-loss failures become ``NFCError/userCanceled``.
+    public static func withNFCErrorMapping<T>(
+        _ monitor: SessionTerminationMonitor? = nil,
+        _ body: () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await body()
+        } catch {
+            throw map(error, userCanceledSession: monitor?.userCanceled ?? false)
+        }
     }
 }
 
-extension NFCError {
+public extension NFCError {
     /// Whether this error means the RF session or tag link is gone, so further
     /// commands in the same session cannot succeed.
     var isSessionLoss: Bool {
@@ -143,36 +179,20 @@ extension NFCError {
     }
 }
 
-/// Whether `error` ends the current read flow (session loss or task cancellation)
-/// rather than describing a single unreadable item on the card.
+/// Internal shorthand for ``NFCReaderErrorMapping/isSessionTerminating(_:)``.
 func isSessionTerminating(_ error: any Error) -> Bool {
-    if error is CancellationError { return true }
-    if let nfcError = error as? NFCError { return nfcError.isSessionLoss }
-    return false
+    NFCReaderErrorMapping.isSessionTerminating(error)
 }
 
-/// Whether `error` is the "no answer from the tag" failure (CoreNFC 100/101/104).
-///
-/// CoreNFC reports a tag that left the field and a tag that stayed silent on a
-/// command it does not implement with the same codes, so after an *optional*
-/// command this is not proof that the tag is gone. Callers that tolerate it must
-/// follow up with a mandatory command, which fails if the tag really is gone.
+/// Internal shorthand for ``NFCReaderErrorMapping/isMissingTagResponse(_:)``.
 func isMissingTagResponse(_ error: any Error) -> Bool {
-    if case NFCError.tagConnectionLost = error { return true }
-    return false
+    NFCReaderErrorMapping.isMissingTagResponse(error)
 }
 
-/// Run a CoreNFC call and rethrow its error as ``NFCError`` where a mapping exists.
-///
-/// - Parameter monitor: the session's termination record; once the user has
-///   cancelled the session, session-loss failures become ``NFCError/userCanceled``.
+/// Internal shorthand for ``NFCReaderErrorMapping/withNFCErrorMapping(_:_:)``.
 func withNFCErrorMapping<T>(
     _ monitor: SessionTerminationMonitor? = nil,
     _ body: () async throws -> T
 ) async throws -> T {
-    do {
-        return try await body()
-    } catch {
-        throw NFCReaderErrorMapping.map(error, userCanceledSession: monitor?.userCanceled ?? false)
-    }
+    try await NFCReaderErrorMapping.withNFCErrorMapping(monitor, body)
 }

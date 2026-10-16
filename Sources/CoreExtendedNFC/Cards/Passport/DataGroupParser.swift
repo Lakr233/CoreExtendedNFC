@@ -8,39 +8,39 @@ public enum DataGroupParser {
     ///   - id: Which data group this data represents.
     ///   - data: The raw bytes read from the chip (including TLV wrapper).
     /// - Returns: Parsed result or raw data passthrough for unimplemented groups.
-    static func parseCOM(_ data: Data) throws -> (ldsVersion: String, unicodeVersion: String, dataGroups: [DataGroupId]) {
+    public static func parseCOM(_ data: Data) throws -> (ldsVersion: String, unicodeVersion: String, dataGroups: [DataGroupId]) {
         try COMParser.parse(data)
     }
 
-    static func parseDG1(_ data: Data) throws -> MRZData {
+    public static func parseDG1(_ data: Data) throws -> MRZData {
         try DG1Parser.parse(data)
     }
 
-    static func parseDG2(_ data: Data) throws -> Data {
+    public static func parseDG2(_ data: Data) throws -> Data {
         try DG2Parser.parse(data)
     }
 
-    static func parseDG7(_ data: Data) throws -> Data? {
+    public static func parseDG7(_ data: Data) throws -> Data? {
         try DG7Parser.parse(data)
     }
 
-    static func parseDG11(_ data: Data) throws -> [String: String] {
+    public static func parseDG11(_ data: Data) throws -> [String: String] {
         try DG11Parser.parse(data)
     }
 
-    static func parseDG12(_ data: Data) throws -> [String: String] {
+    public static func parseDG12(_ data: Data) throws -> [String: String] {
         try DG12Parser.parse(data)
     }
 
-    static func parseDG14(_ data: Data) throws -> SecurityInfos {
+    public static func parseDG14(_ data: Data) throws -> SecurityInfos {
         try DG14Parser.parse(data)
     }
 
-    static func parseDG15(_ data: Data) throws -> ActiveAuthPublicKey {
+    public static func parseDG15(_ data: Data) throws -> ActiveAuthPublicKey {
         try DG15Parser.parse(data)
     }
 
-    static func parseSOD(_ data: Data) throws -> SODContent {
+    public static func parseSOD(_ data: Data) throws -> SODContent {
         try SODParser.parse(data)
     }
 }

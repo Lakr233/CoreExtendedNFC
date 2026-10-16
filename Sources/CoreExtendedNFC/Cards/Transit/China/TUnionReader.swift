@@ -16,15 +16,17 @@ import Foundation
 /// ## References
 /// - Metrodroid ChinaTransitData
 /// - NFSee
-public struct TUnionReader: Sendable {
-    let transport: any ISO7816TagTransporting
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class TUnionReader: @unchecked Sendable {
+    public let transport: any ISO7816TagTransporting
 
     public init(transport: any ISO7816TagTransporting) {
         self.transport = transport
     }
 
     /// Read T-Union card balance and info.
-    public func readBalance() async throws -> TransitBalance {
+    open func readBalance() async throws -> TransitBalance {
         NFCLog.info("T-Union balance read start", source: "TUnion")
         // 1. SELECT T-Union AID
         let selectResponse = try await transport.sendAPDUWithChaining(
@@ -69,16 +71,25 @@ public struct TUnionReader: Sendable {
         )
     }
 
-    // MARK: - Private
+    // MARK: - Steps
 
-    private struct FileInfo {
-        let serial: String
-        let validFrom: Date?
-        let validUntil: Date?
-        let source: String
+    /// Serial number and validity dates decoded from file 0x15.
+    public struct FileInfo: Sendable, Equatable {
+        public let serial: String
+        public let validFrom: Date?
+        public let validUntil: Date?
+        /// Which read path produced the data (or `"unavailable"`).
+        public let source: String
+
+        public init(serial: String, validFrom: Date?, validUntil: Date?, source: String) {
+            self.serial = serial
+            self.validFrom = validFrom
+            self.validUntil = validUntil
+            self.source = source
+        }
     }
 
-    private func readBalanceSlot(p1: UInt8) async throws -> Int {
+    open func readBalanceSlot(p1: UInt8) async throws -> Int {
         let response = try await transport.sendAPDUWithChaining(Self.balanceAPDU(p1: p1))
         NFCLog.debug(
             "T-Union GET BALANCE p1=\(String(format: "%02X", p1)) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(NFCLog.payload(response.data))",
@@ -93,7 +104,7 @@ public struct TUnionReader: Sendable {
 
     /// The negative purse is optional: a card that rejects the command (status word) has none.
     /// Session loss, cancellation, and other failures propagate instead of reading as zero.
-    private func readOptionalBalanceSlot(p1: UInt8) async throws -> Int {
+    open func readOptionalBalanceSlot(p1: UInt8) async throws -> Int {
         do {
             return try await readBalanceSlot(p1: p1)
         } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
@@ -102,7 +113,7 @@ public struct TUnionReader: Sendable {
         }
     }
 
-    private static func balanceAPDU(p1: UInt8) -> CommandAPDU {
+    open class func balanceAPDU(p1: UInt8) -> CommandAPDU {
         CommandAPDU(
             cla: TUnionConstants.GET_BALANCE_CLA,
             ins: TUnionConstants.GET_BALANCE_INS,
@@ -112,7 +123,7 @@ public struct TUnionReader: Sendable {
         )
     }
 
-    static func parseBalanceFen(_ data: Data) -> Int {
+    open class func parseBalanceFen(_ data: Data) -> Int {
         let rawValue = Data(data.prefix(4)).uint32BE
         return Int(rawValue & 0x7FFF_FFFF)
     }
@@ -120,11 +131,11 @@ public struct TUnionReader: Sendable {
     /// Displayed balance = primary purse − negative purse. Metrodroid instead shows the primary
     /// purse whenever it is positive, but a logged Shanghai card returning 800 fen in both purses
     /// displayed CNY 0.00 in the issuer app, which matches the plain difference.
-    static func displayBalance(primary: Int, negative: Int) -> Int {
+    open class func displayBalance(primary: Int, negative: Int) -> Int {
         primary - negative
     }
 
-    private func readFileInfo() async throws -> FileInfo {
+    open func readFileInfo() async throws -> FileInfo {
         do {
             // SELECT file 0x15
             let selectFile = try await transport.sendAPDUWithChaining(
@@ -153,11 +164,11 @@ public struct TUnionReader: Sendable {
         }
     }
 
-    private static func selectFileAPDU(id: Data) -> CommandAPDU {
+    open class func selectFileAPDU(id: Data) -> CommandAPDU {
         CommandAPDU(cla: 0x00, ins: 0xA4, p1: 0x00, p2: 0x00, data: id, le: 0x00)
     }
 
-    private func readFileInfoFromSFI() async throws -> FileInfo {
+    open func readFileInfoFromSFI() async throws -> FileInfo {
         do {
             let response = try await transport.sendAPDUWithChaining(Self.readFile15BySFIAPDU())
             NFCLog.debug("T-Union READ BINARY SFI 15 sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(NFCLog.payload(response.data))", source: "TUnion")
@@ -171,11 +182,11 @@ public struct TUnionReader: Sendable {
         }
     }
 
-    private static func readFile15BySFIAPDU() -> CommandAPDU {
+    open class func readFile15BySFIAPDU() -> CommandAPDU {
         CommandAPDU(cla: 0x00, ins: 0xB0, p1: TUnionConstants.file15SFIReadP1, p2: 0x00, le: 0x00)
     }
 
-    private static func parseFileInfo(_ fileData: Data, source: String) -> FileInfo {
+    open class func parseFileInfo(_ fileData: Data, source: String) -> FileInfo {
         // Serial: bytes 10-19, skip first nibble (convention from Metrodroid)
         let fileData = Data(fileData)
         let serialData = Data(fileData[TUnionConstants.serialOffset ..< TUnionConstants.serialOffset + TUnionConstants.serialLength])
@@ -192,7 +203,7 @@ public struct TUnionReader: Sendable {
         return FileInfo(serial: serial, validFrom: validFrom, validUntil: validUntil, source: source)
     }
 
-    private static func readRecordAPDU(sfi: UInt8, recordNumber: UInt8, length: UInt8) -> CommandAPDU {
+    open class func readRecordAPDU(sfi: UInt8, recordNumber: UInt8, length: UInt8) -> CommandAPDU {
         CommandAPDU(
             cla: 0x00,
             ins: 0xB2,
@@ -202,7 +213,7 @@ public struct TUnionReader: Sendable {
         )
     }
 
-    private func readTransactions() async throws -> [TransitTransaction] {
+    open func readTransactions() async throws -> [TransitTransaction] {
         let transactions = try await readRecords(
             sfi: TUnionConstants.transactionSFI,
             length: TUnionConstants.transactionRecordLength,
@@ -231,7 +242,7 @@ public struct TUnionReader: Sendable {
         return merged
     }
 
-    private func readRecords(
+    open func readRecords(
         sfi: UInt8,
         length: UInt8,
         maxRecords: Int,
@@ -267,7 +278,7 @@ public struct TUnionReader: Sendable {
         return records
     }
 
-    static func parseTransactionRecord(_ data: Data, recordNumber: Int) -> TransitTransaction? {
+    open class func parseTransactionRecord(_ data: Data, recordNumber: Int) -> TransitTransaction? {
         guard data.count >= Int(TUnionConstants.transactionRecordLength) else { return nil }
         let data = Data(data)
         let amount = Int(Data(data[TUnionConstants.transactionAmountOffset ..< TUnionConstants.transactionAmountOffset + TUnionConstants.transactionAmountLength]).uint32BE)
@@ -296,7 +307,7 @@ public struct TUnionReader: Sendable {
         )
     }
 
-    static func parseTransitActivityRecord(_ data: Data, recordNumber: Int) -> TransitTransaction? {
+    open class func parseTransitActivityRecord(_ data: Data, recordNumber: Int) -> TransitTransaction? {
         guard data.count >= Int(TUnionConstants.transitActivityRecordLength) else { return nil }
         if data.allSatisfy({ $0 == 0x00 }) {
             return nil
@@ -318,7 +329,7 @@ public struct TUnionReader: Sendable {
     }
 
     /// Parse a 4-byte hex-encoded date (YYYYMMDD) into a Date.
-    static func parseHexDate(_ data: Data) -> Date? {
+    open class func parseHexDate(_ data: Data) -> Date? {
         guard data.count >= 4 else { return nil }
 
         let hex = data.hexString // e.g. "20251231"
@@ -340,7 +351,7 @@ public struct TUnionReader: Sendable {
         return Calendar(identifier: .gregorian).date(from: components)
     }
 
-    static func parseBCDDateTime(_ data: Data) -> Date? {
+    open class func parseBCDDateTime(_ data: Data) -> Date? {
         guard data.count >= TUnionConstants.transactionDateTimeLength else { return nil }
         let values = data.prefix(7).map { byte -> Int in
             Int((byte >> 4) & 0x0F) * 10 + Int(byte & 0x0F)

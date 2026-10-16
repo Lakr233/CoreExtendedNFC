@@ -1,9 +1,12 @@
 import Foundation
 
 /// High-level Type 4 tag operations.
-public struct Type4Tag: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class Type4Tag: @unchecked Sendable {
     public let transport: any NFCTagTransport
-    private let reader: Type4Reader
+    public let reader: Type4Reader
 
     public init(transport: any NFCTagTransport) {
         self.transport = transport
@@ -11,17 +14,17 @@ public struct Type4Tag: Sendable {
     }
 
     /// Read NDEF message from a Type 4A/4B tag.
-    public func readNDEF() async throws -> Data {
+    open func readNDEF() async throws -> Data {
         try await reader.readNDEF()
     }
 
     /// Write NDEF message to a Type 4A/4B tag.
-    public func writeNDEF(_ message: Data) async throws {
+    open func writeNDEF(_ message: Data) async throws {
         try await reader.writeNDEF(message)
     }
 
     /// Read the Capability Container.
-    public func readCC() async throws -> Type4CC {
+    open func readCC() async throws -> Type4CC {
         try await reader.readCapabilityContainer()
     }
 }

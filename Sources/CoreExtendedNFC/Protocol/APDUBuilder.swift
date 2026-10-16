@@ -95,7 +95,7 @@ public struct CommandAPDU: Sendable, Equatable {
 
     /// The value CoreNFC expects for `expectedResponseLength`: `-1` for no Le field,
     /// otherwise Ne (CoreNFC rejects `0`, which in short encoding means 256).
-    var nfcExpectedResponseLength: Int {
+    public var nfcExpectedResponseLength: Int {
         expectedResponseLength ?? -1
     }
 
@@ -167,11 +167,11 @@ public struct CommandAPDU: Sendable, Equatable {
     // MARK: - Binary offset encoding
 
     /// Largest offset that fits in `P1 || P2` of an even-INS READ/UPDATE BINARY (15 bits).
-    static let maxShortBinaryOffset = 0x7FFF
+    public static let maxShortBinaryOffset = 0x7FFF
 
     /// Build a READ BINARY for `offset` expecting `expectedLength` content bytes (`1 ... 256`).
     /// Negative offsets are treated as `0`.
-    static func binaryRead(offset: Int, expectedLength: Int) -> CommandAPDU {
+    public static func binaryRead(offset: Int, expectedLength: Int) -> CommandAPDU {
         let offset = Swift.max(offset, 0)
         let wanted = Swift.min(Swift.max(expectedLength, 1), 256)
 
@@ -200,7 +200,7 @@ public struct CommandAPDU: Sendable, Equatable {
     }
 
     /// Offset data object `54` with at least two value bytes, big-endian.
-    static func offsetDataObject(_ offset: Int) -> Data {
+    public static func offsetDataObject(_ offset: Int) -> Data {
         var value: [UInt8] = []
         var remaining = UInt64(Swift.max(offset, 0))
         repeat {

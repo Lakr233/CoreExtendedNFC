@@ -6,64 +6,64 @@ import Foundation
 /// - CJRC (Cybernetics Japan Railway Common): system code 0x0003
 /// - TRETJapanNFCReader: https://github.com/treastrain/TRETJapanNFCReader
 /// - Service code layout: little-endian 2 bytes
-enum JapanICConstants {
+public enum JapanICConstants {
     /// CJRC system code. Must be registered in the app's Info.plist
     /// under `com.apple.developer.nfc.readersession.felicasystemcodes`.
-    static let systemCode = Data([0x00, 0x03])
+    public static let systemCode = Data([0x00, 0x03])
 
     // MARK: - Service Codes (little-endian)
 
     /// Balance service (random read-only, 1 block).
-    static let balanceServiceCode = Data([0x8B, 0x00]) // 0x008B
+    public static let balanceServiceCode = Data([0x8B, 0x00]) // 0x008B
 
     /// Transaction history service (cyclic read-only, up to 20 blocks).
-    static let historyServiceCode = Data([0x0F, 0x09]) // 0x090F
+    public static let historyServiceCode = Data([0x0F, 0x09]) // 0x090F
 
     /// Maximum transaction history blocks stored by common CJRC cards.
-    static let maxHistoryBlocks = 20
+    public static let maxHistoryBlocks = 20
 
     // MARK: - Balance Block Layout (16 bytes)
 
     /// Byte offset of the 2-byte LE balance within the 0x008B balance block.
-    static let balanceOffset = 0x0B
+    public static let balanceOffset = 0x0B
 
     // MARK: - History Block Layout (16 bytes)
 
     /// Byte 0: terminal/machine type.
-    static let historyMachineType = 0
+    public static let historyMachineType = 0
     /// Byte 1: usage type (ride, charge, purchase, etc.).
-    static let historyUsageType = 1
+    public static let historyUsageType = 1
     /// Byte 2: payment method.
-    static let historyPaymentType = 2
+    public static let historyPaymentType = 2
     /// Byte 3: entry/exit flag.
-    static let historyEntryExit = 3
+    public static let historyEntryExit = 3
     /// Bytes 4-5: date as packed bits — year(7) month(4) day(5), base year 2000.
-    static let historyDateOffset = 4
+    public static let historyDateOffset = 4
     /// Bytes 6-7: entry station code (product sales: purchase time hhhhhmmmmmm).
-    static let historyStationEntry = 6
+    public static let historyStationEntry = 6
     /// Bytes 8-9: exit station code.
-    static let historyStationExit = 8
+    public static let historyStationExit = 8
     /// Bytes 0x0A-0x0B: balance after transaction (2 bytes LE).
-    static let historyBalanceOffset = 0x0A
+    public static let historyBalanceOffset = 0x0A
     /// Byte 0x0F: region code.
-    static let historyRegionCode = 0x0F
+    public static let historyRegionCode = 0x0F
 
     // MARK: - Console / Process Type Classification (Metrodroid SuicaUtil / SuicaTrip)
 
     /// Byte 1 bit 7 marks a cash-supplemented variant of the same process (e.g. 0xC6 = 0x46 + cash).
-    static let processTypeMask: UInt8 = 0x7F
+    public static let processTypeMask: UInt8 = 0x7F
 
     /// Process types (byte 1 & 0x7F) that add value: charge, auto-charge at entry/exit,
     /// bus deposit, bonus charge, register deposit.
-    static let topupProcessTypes: Set<UInt8> = [0x02, 0x14, 0x15, 0x1F, 0x48, 0x49]
+    public static let topupProcessTypes: Set<UInt8> = [0x02, 0x14, 0x15, 0x1F, 0x48, 0x49]
 
     /// Process type 0x02 (charge): the record carries no station codes.
-    static let chargeProcessType: UInt8 = 0x02
+    public static let chargeProcessType: UInt8 = 0x02
 
     /// Process types (byte 1 & 0x7F) for merchandise purchase, cancel, and admission.
-    static let purchaseProcessTypes: Set<UInt8> = [0x46, 0x4A, 0x4B]
+    public static let purchaseProcessTypes: Set<UInt8> = [0x46, 0x4A, 0x4B]
 
     /// Console types (byte 0) of product-sale terminals: 0xC7 POS, 0xC8 vending machine.
     /// Their bytes 6-7 hold the purchase time (hour 5 bits, minute 6 bits) instead of stations.
-    static let productSaleConsoleTypes: Set<UInt8> = [0xC7, 0xC8]
+    public static let productSaleConsoleTypes: Set<UInt8> = [0xC7, 0xC8]
 }

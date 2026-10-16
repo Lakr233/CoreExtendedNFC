@@ -183,7 +183,7 @@ public enum ASN1Parser {
     }
 
     /// Minimal big-endian representation (at least one byte).
-    private static func bigEndianBytes(_ value: UInt64) -> [UInt8] {
+    public static func bigEndianBytes(_ value: UInt64) -> [UInt8] {
         var bytes: [UInt8] = []
         var remaining = value
         repeat {
@@ -195,14 +195,14 @@ public enum ASN1Parser {
 
     /// Deepest nesting ``findTag(_:in:)`` descends into. Real ICAO/ISO structures nest a
     /// handful of levels; the cap keeps hostile input from exhausting the stack.
-    static let maxSearchDepth = 32
+    public static let maxSearchDepth = 32
 
     /// Find the first node with the given tag in a parsed TLV sequence.
     public static func findTag(_ tag: UInt, in nodes: [TLVNode]) -> TLVNode? {
         findTag(tag, in: nodes, depth: 0)
     }
 
-    private static func findTag(_ tag: UInt, in nodes: [TLVNode], depth: Int) -> TLVNode? {
+    public static func findTag(_ tag: UInt, in nodes: [TLVNode], depth: Int) -> TLVNode? {
         for node in nodes {
             if node.tag == tag {
                 return node

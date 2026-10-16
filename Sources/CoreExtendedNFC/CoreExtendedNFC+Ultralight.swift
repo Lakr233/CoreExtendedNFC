@@ -17,7 +17,7 @@ public extension CoreExtendedNFC {
     /// Last page that is user memory on every Ultralight / NTAG product
     /// (MF0ICU1 and MF0UL11 / NTAG210 user area 04h-0Fh). Above it a page may be
     /// a lock, configuration, password or key page depending on the product.
-    internal static let ultralightCommonUserDataEnd: UInt8 = 0x0F
+    static let ultralightCommonUserDataEnd: UInt8 = 0x0F
 
     /// Write 4 bytes to a single page.
     ///
@@ -49,7 +49,7 @@ public extension CoreExtendedNFC {
 
     /// Without a memory map, a page above the smallest product's user area may be
     /// a configuration, password or key page, so it needs the opt-in.
-    private static func requireKnownPage(
+    static func requireKnownPage(
         _ page: UInt8,
         memoryMap: UltralightMemoryMap?,
         allowIrreversible: Bool

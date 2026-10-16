@@ -200,7 +200,7 @@ public struct NDEFRecord: Sendable, Equatable {
 
     /// Parse an NDEF message (NDEF 1.0 §3). Chunked payloads (§2.3.3) are reassembled
     /// into one record carrying the initial chunk's TNF, type and ID.
-    static func parseMessage(_ data: Data) throws -> [NDEFRecord] {
+    public static func parseMessage(_ data: Data) throws -> [NDEFRecord] {
         let data = Data(data) // Rebase so integer offsets index from zero.
         var records: [NDEFRecord] = []
         var offset = 0
@@ -321,7 +321,8 @@ public struct NDEFRecord: Sendable, Equatable {
         return records
     }
 
-    static func serializeMessage(_ records: [NDEFRecord]) -> Data {
+    /// Serialize records into one NDEF message, setting MB on the first and ME on the last record.
+    public static func serializeMessage(_ records: [NDEFRecord]) -> Data {
         records.enumerated().reduce(into: Data()) { result, pair in
             let (index, record) = pair
             let messageBegin = index == 0
@@ -363,7 +364,7 @@ public struct NDEFRecord: Sendable, Equatable {
         }
     }
 
-    private static func parseTextPayload(_ payload: Data) -> Payload {
+    public static func parseTextPayload(_ payload: Data) -> Payload {
         guard let status = payload.first else {
             return .unknown(data: payload)
         }
@@ -382,7 +383,7 @@ public struct NDEFRecord: Sendable, Equatable {
     }
 
     /// RTD-Text 1.0 §3.4: UTF-16 text may start with a BOM; without one it is big-endian.
-    private static func decodeUTF16Text(_ textData: Data) -> String? {
+    public static func decodeUTF16Text(_ textData: Data) -> String? {
         if textData.starts(with: [0xFE, 0xFF]) {
             return String(data: textData.dropFirst(2), encoding: .utf16BigEndian)
         }
@@ -392,7 +393,7 @@ public struct NDEFRecord: Sendable, Equatable {
         return String(data: textData, encoding: .utf16BigEndian)
     }
 
-    private static func parseURIPayload(_ payload: Data) -> Payload {
+    public static func parseURIPayload(_ payload: Data) -> Payload {
         guard let prefixCode = payload.first else {
             return .unknown(data: payload)
         }
@@ -407,7 +408,7 @@ public struct NDEFRecord: Sendable, Equatable {
     /// mandatory and whose Text records carry titles. Only direct URI ("U") and Text
     /// ("T") children are decoded; nested records (including nested Smart Posters)
     /// are not parsed, so a deeply nested payload costs linear time instead of 2^depth.
-    private static func parseSmartPoster(_ payload: Data) -> Payload {
+    public static func parseSmartPoster(_ payload: Data) -> Payload {
         guard let nestedRecords = try? parseMessage(payload) else {
             return .unknown(data: payload)
         }
@@ -427,7 +428,7 @@ public struct NDEFRecord: Sendable, Equatable {
 
     /// URI RTD 1.0 Table 3: choose the code with the longest matching prefix, so
     /// "http://www." wins over "http://" and "urn:epc:id:" over "urn:".
-    private static func abbreviateURI(_ uri: String) -> (UInt8, String) {
+    public static func abbreviateURI(_ uri: String) -> (UInt8, String) {
         var best: (code: Int, length: Int) = (0, 0)
         for (index, prefix) in uriPrefixMap.enumerated()
             where prefix.count > best.length && uri.hasPrefix(prefix)
@@ -437,7 +438,7 @@ public struct NDEFRecord: Sendable, Equatable {
         return (UInt8(best.code), String(uri.dropFirst(best.length)))
     }
 
-    private static let uriPrefixMap: [String] = [
+    public static let uriPrefixMap: [String] = [
         "",
         "http://www.",
         "https://www.",

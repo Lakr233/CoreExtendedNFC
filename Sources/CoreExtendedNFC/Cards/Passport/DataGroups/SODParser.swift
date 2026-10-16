@@ -33,12 +33,12 @@ import Foundation
 /// - RFC 5652, Section 5.4 (Message Digest Calculation: re-tag IMPLICIT [0] → SET 0x31)
 /// - RFC 5280, Section 4.1.1.2 (AlgorithmIdentifier for hash algorithms)
 /// - JMRTD source: SODFile.java (reference implementation)
-enum SODParser {
+public enum SODParser {
     // MARK: - Known OIDs
 
-    private static let signedDataOID = "1.2.840.113549.1.7.2"
+    public static let signedDataOID = "1.2.840.113549.1.7.2"
     /// Hash algorithm OIDs to names.
-    private static let hashAlgorithmNames: [String: String] = [
+    public static let hashAlgorithmNames: [String: String] = [
         "1.3.14.3.2.26": "SHA-1",
         "2.16.840.1.101.3.4.2.1": "SHA-256",
         "2.16.840.1.101.3.4.2.2": "SHA-384",
@@ -47,14 +47,14 @@ enum SODParser {
     ]
 
     /// DataGroup tag to DataGroupId mapping for hash table.
-    private static let dgTagMap: [Int: DataGroupId] = [
+    public static let dgTagMap: [Int: DataGroupId] = [
         1: .dg1, 2: .dg2, 3: .dg3, 4: .dg4, 5: .dg5,
         6: .dg6, 7: .dg7, 8: .dg8, 9: .dg9, 10: .dg10,
         11: .dg11, 12: .dg12, 13: .dg13, 14: .dg14, 15: .dg15, 16: .dg16,
     ]
 
     /// Parse SOD raw data into SODContent.
-    static func parse(_ data: Data) throws -> SODContent {
+    public static func parse(_ data: Data) throws -> SODContent {
         let nodes = try ASN1Parser.parseTLV(data)
 
         // Unwrap 0x77 wrapper if present
@@ -200,7 +200,7 @@ enum SODParser {
     ///     dataGroupHashValue  OCTET STRING
     /// }
     /// ```
-    private static func parseLDSSecurityObject(
+    public static func parseLDSSecurityObject(
         _ data: Data,
         hashAlgOID: inout String,
         hashAlgName: inout String,
@@ -288,7 +288,7 @@ enum SODParser {
     // MARK: - Signer Info
 
     /// Parse SignerInfos SET to extract signature algorithm and signature.
-    private static func parseSignerInfos(
+    public static func parseSignerInfos(
         _ data: Data,
         sigAlgOID: inout String?,
         signedAttrs: inout Data?,

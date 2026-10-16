@@ -2,13 +2,16 @@ import Foundation
 
 /// NFC Forum Type 3 tag NDEF reading.
 /// Ported from libnfc utils/nfc-read-forum-tag3.c.
-public struct FeliCaType3Reader: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class FeliCaType3Reader: @unchecked Sendable {
     /// NDEF Read service code (little-endian): 0x000B.
     public static let readServiceCode = Data([0x0B, 0x00])
     /// NDEF Write service code (little-endian): 0x0009.
     public static let writeServiceCode = Data([0x09, 0x00])
 
-    private let transport: any FeliCaTagTransporting
+    public let transport: any FeliCaTagTransporting
 
     public init(transport: any FeliCaTagTransporting) {
         self.transport = transport
@@ -19,7 +22,7 @@ public struct FeliCaType3Reader: Sendable {
     /// Throws ``NFCError/tagNotNDEFFormatted`` when the card has no NDEF read service
     /// (`0x000B`) or the attribute block is blank (all zeros), and
     /// ``NFCError/checksumMismatch`` when the block checksum is wrong.
-    public func readAttributeInfo() async throws -> FeliCaAttributeInfo {
+    open func readAttributeInfo() async throws -> FeliCaAttributeInfo {
         let blockList = [FeliCaFrame.blockListElement(blockNumber: 0)]
         let blocks: [Data]
         do {
@@ -47,10 +50,10 @@ public struct FeliCaType3Reader: Sendable {
     }
 
     /// Key version Request Service returns for a service the card does not have.
-    private static let unavailableServiceVersion = Data([0xFF, 0xFF])
+    public static let unavailableServiceVersion = Data([0xFF, 0xFF])
 
     /// Read NDEF message from Type 3 tag.
-    public func readNDEF() async throws -> Data {
+    open func readNDEF() async throws -> Data {
         NFCLog.info("FeliCa Type 3 NDEF read", source: "FeliCa")
         let attrInfo = try await readAttributeInfo()
         // NFC Forum T3T 1.0 §7.1: the NDEF is invalid unless the mapping major
@@ -86,7 +89,7 @@ public struct FeliCaType3Reader: Sendable {
     }
 
     /// Write an NDEF message to a Type 3 tag using the NFC Forum write procedure.
-    public func writeNDEF(_ message: Data) async throws {
+    open func writeNDEF(_ message: Data) async throws {
         NFCLog.info("FeliCa Type 3 NDEF write: \(message.count) bytes", source: "FeliCa")
         let attrInfo = try await readAttributeInfo()
         guard attrInfo.version >> 4 == 1 else {
@@ -133,7 +136,7 @@ public struct FeliCaType3Reader: Sendable {
     }
 
     /// Read a range of blocks, chunking to respect max blocks per CHECK.
-    func readBlocks(from startBlock: Int, count: Int, maxPerRead: Int) async throws -> Data {
+    open func readBlocks(from startBlock: Int, count: Int, maxPerRead: Int) async throws -> Data {
         var result = Data()
         var remaining = count
         var currentBlock = startBlock
@@ -175,7 +178,7 @@ public struct FeliCaType3Reader: Sendable {
         return result
     }
 
-    func writeBlocks(startingAt startBlock: Int, blocks: [Data], maxPerWrite: Int) async throws {
+    open func writeBlocks(startingAt startBlock: Int, blocks: [Data], maxPerWrite: Int) async throws {
         var remaining = blocks[...]
         var currentBlock = startBlock
 
@@ -254,7 +257,9 @@ public struct FeliCaAttributeInfo: Sendable {
         }
     }
 
-    func encoded(
+    /// Re-encode the attribute block, optionally overriding the write flag,
+    /// read/write flag and NDEF length, with a freshly computed checksum.
+    public func encoded(
         writeFlag: UInt8? = nil,
         rwFlag: UInt8? = nil,
         ndefLength: UInt32? = nil

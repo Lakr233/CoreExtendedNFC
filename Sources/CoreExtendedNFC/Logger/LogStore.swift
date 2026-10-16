@@ -1,14 +1,17 @@
 import Foundation
 
-public final class LogStore: @unchecked Sendable {
+/// Appends log lines to a rotating file set on a serial queue.
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class LogStore: @unchecked Sendable {
     public static let shared = LogStore()
 
-    let queue: DispatchQueue
-    let fileManager: FileManager
-    let maxFileSize: Int
-    let maxFiles: Int
-    let logDirectory: URL
-    let logFileName: String
+    public let queue: DispatchQueue
+    public let fileManager: FileManager
+    public let maxFileSize: Int
+    public let maxFiles: Int
+    public let logDirectory: URL
+    public let logFileName: String
 
     /// Formatting with `ISO8601DateFormatter` is thread-safe; it is created eagerly so
     /// concurrent first calls to ``append(level:category:message:)`` never race on lazy init.
@@ -49,7 +52,8 @@ public final class LogStore: @unchecked Sendable {
     }
 
     /// Files written by earlier versions used the default protection class.
-    private func upgradeExistingFileProtection() {
+    /// Called from `init` (not on ``queue``), after all stored properties are set.
+    open func upgradeExistingFileProtection() {
         let urls = [logFileURL] + (1 ... maxFiles).map { rotatedFileURL(index: $0) }
         for url in urls where fileManager.fileExists(atPath: url.path) {
             try? fileManager.setAttributes(Self.fileAttributes, ofItemAtPath: url.path)
@@ -58,15 +62,15 @@ public final class LogStore: @unchecked Sendable {
 
     /// Log files can contain card identifiers and protocol traces, so they are
     /// unreadable while the device is locked unless already open for appending.
-    static var fileAttributes: [FileAttributeKey: Any] {
+    open class var fileAttributes: [FileAttributeKey: Any] {
         [.protectionKey: FileProtectionType.completeUnlessOpen]
     }
 
-    var logFileURL: URL {
+    open var logFileURL: URL {
         logDirectory.appendingPathComponent(logFileName)
     }
 
-    public func append(level: LogLevel, category: String, message: String) {
+    open func append(level: LogLevel, category: String, message: String) {
         let line = formattedLine(level: level, category: category, message: message)
         queue.async { [weak self] in
             guard let self else { return }
@@ -87,7 +91,7 @@ public final class LogStore: @unchecked Sendable {
     ///
     /// When the file is longer than `maxBytes`, the leading partial line is dropped,
     /// so the result starts on a line boundary and never on a split multi-byte character.
-    public func readTail(maxBytes: Int = 128 * 1024) -> String {
+    open func readTail(maxBytes: Int = 128 * 1024) -> String {
         performSync {
             guard let handle = try? FileHandle(forReadingFrom: logFileURL) else { return "" }
             defer { try? handle.close() }
@@ -101,19 +105,19 @@ public final class LogStore: @unchecked Sendable {
         }
     }
 
-    public func clear() {
+    open func clear() {
         performSync {
             try? fileManager.removeItem(at: logFileURL)
             removeRotatedFiles()
         }
     }
 
-    public func flush() {
+    open func flush() {
         performSync {}
     }
 
     /// Decode a tail slice of the log as UTF-8 without ever failing outright.
-    static func decodeTail(_ data: Data, isTruncated: Bool) -> String {
+    open class func decodeTail(_ data: Data, isTruncated: Bool) -> String {
         var bytes = data[...]
         if isTruncated {
             if let newline = bytes.firstIndex(of: 0x0A) {
@@ -136,12 +140,14 @@ public final class LogStore: @unchecked Sendable {
         return queue.sync(execute: work)
     }
 
-    private func formattedLine(level: LogLevel, category: String, message: String) -> Data {
+    /// Called on the caller's thread before the line is queued.
+    open func formattedLine(level: LogLevel, category: String, message: String) -> Data {
         let timestamp = timestampFormatter.string(from: Date())
         return "\(timestamp) [\(level.rawValue)] [\(category)] \(message)\n".data(using: .utf8) ?? Data()
     }
 
-    private func ensureLogFileExists() throws {
+    /// Runs on ``queue``.
+    open func ensureLogFileExists() throws {
         if !fileManager.fileExists(atPath: logFileURL.path) {
             let dir = logFileURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -149,7 +155,8 @@ public final class LogStore: @unchecked Sendable {
         }
     }
 
-    private func rotateIfNeeded() throws {
+    /// Runs on ``queue`` after each append.
+    open func rotateIfNeeded() throws {
         let attributes = try fileManager.attributesOfItem(atPath: logFileURL.path)
         guard let size = attributes[.size] as? NSNumber, size.intValue >= maxFileSize else { return }
 
@@ -172,11 +179,12 @@ public final class LogStore: @unchecked Sendable {
         fileManager.createFile(atPath: logFileURL.path, contents: nil, attributes: Self.fileAttributes)
     }
 
-    func rotatedFileURL(index: Int) -> URL {
+    open func rotatedFileURL(index: Int) -> URL {
         logDirectory.appendingPathComponent("\(logFileName).\(index)")
     }
 
-    private func removeRotatedFiles() {
+    /// Runs on ``queue``.
+    open func removeRotatedFiles() {
         for index in 1 ... maxFiles {
             try? fileManager.removeItem(at: rotatedFileURL(index: index))
         }

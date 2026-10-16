@@ -32,7 +32,7 @@ public enum SMEncryptionMode: Sendable {
     case aes256
 
     /// Block size for the cipher.
-    var blockSize: Int {
+    public var blockSize: Int {
         switch self {
         case .tripleDES: 8
         case .aes128, .aes192, .aes256: 16
@@ -41,12 +41,12 @@ public enum SMEncryptionMode: Sendable {
 
     /// SSC (Send Sequence Counter) length in bytes.
     /// Always 8 bytes — for AES, the SSC is zero-padded to 16 bytes when used.
-    var sscLength: Int {
+    public var sscLength: Int {
         8
     }
 
     /// MAC length in bytes (truncated output).
-    var macLength: Int {
+    public var macLength: Int {
         8
     }
 }
@@ -61,13 +61,18 @@ public enum SMEncryptionMode: Sendable {
 ///
 /// Conforms to `NFCTagTransport` so it can be used transparently
 /// in place of the original transport after authentication.
-public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+/// The session keys, the SSC and the exchange gate are private and cannot be reached from a
+/// subclass; `sendAPDU(_:)` is not overridable because it owns the SSC sequencing.
+open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
     private let underlying: any NFCTagTransport
     private let ksEnc: Data
     private let ksMac: Data
     /// Send Sequence Counter. Only read or mutated while `exchangeGate` is held.
     private var ssc: Data
-    private let mode: SMEncryptionMode
+    /// Cipher suite of this secure messaging session.
+    public let mode: SMEncryptionMode
     /// Serializes command/response pairs so concurrent callers cannot desynchronize the SSC.
     private let exchangeGate = AsyncExchangeGate()
     /// Set once an exchange failed in a way that leaves the SSC out of step with the chip
@@ -79,14 +84,14 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
     private var previousPlainStatusWord: UInt16?
 
     /// Whether an earlier failed exchange ended this secure messaging session.
-    var isSessionEnded: Bool {
+    public var isSessionEnded: Bool {
         get async {
             await sessionEndedReason != nil
         }
     }
 
     /// Why this secure messaging session ended, or `nil` while it is still usable.
-    var sessionEndedReason: String? {
+    public var sessionEndedReason: String? {
         get async {
             await exchangeGate.acquire()
             defer { exchangeGate.release() }
@@ -94,7 +99,7 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         }
     }
 
-    public var identifier: Data {
+    open var identifier: Data {
         underlying.identifier
     }
 
@@ -112,7 +117,7 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         self.mode = mode
     }
 
-    public func send(_: Data) async throws -> Data {
+    open func send(_: Data) async throws -> Data {
         throw NFCError.unsupportedOperation("Use sendAPDU for Secure Messaging")
     }
 
@@ -451,12 +456,16 @@ extension SecureMessagingTransport: CustomStringConvertible, CustomDebugStringCo
 ///
 /// Unlike an actor, the gate stays held across suspension points, so a second
 /// `sendAPDU` cannot interleave between protect/send/unprotect of the first.
-final class AsyncExchangeGate: @unchecked Sendable {
+/// Every `acquire()` must be balanced by exactly one `release()`; releasing a gate that
+/// is not held hands it to the next waiter.
+public final class AsyncExchangeGate: @unchecked Sendable {
     private let lock = NSLock()
     private var isHeld = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    func acquire() async {
+    public init() {}
+
+    public func acquire() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let acquired: Bool = lock.withLock {
                 if isHeld {
@@ -472,7 +481,7 @@ final class AsyncExchangeGate: @unchecked Sendable {
         }
     }
 
-    func release() {
+    public func release() {
         let next: CheckedContinuation<Void, Never>? = lock.withLock {
             if waiters.isEmpty {
                 isHeld = false

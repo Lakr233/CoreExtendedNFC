@@ -2,31 +2,28 @@ import CoreNFC
 import Foundation
 
 /// Transport adapter wrapping `NFCFeliCaTag`.
-public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
-    private let tag: NFCFeliCaTag
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
+    public let tag: NFCFeliCaTag
     /// Set by `NFCSessionManager`: once the user cancels the session, failures are
     /// reported as `NFCError.userCanceled`.
-    private let terminationMonitor: SessionTerminationMonitor?
+    public let terminationMonitor: SessionTerminationMonitor?
 
-    public var identifier: Data {
+    open var identifier: Data {
         tag.currentIDm
     }
 
-    public var systemCode: Data {
+    open var systemCode: Data {
         tag.currentSystemCode
     }
 
-    public init(tag: NFCFeliCaTag) {
-        self.tag = tag
-        terminationMonitor = nil
-    }
-
-    init(tag: NFCFeliCaTag, terminationMonitor: SessionTerminationMonitor?) {
+    public init(tag: NFCFeliCaTag, terminationMonitor: SessionTerminationMonitor? = nil) {
         self.tag = tag
         self.terminationMonitor = terminationMonitor
     }
 
-    public func send(_ data: Data) async throws -> Data {
+    open func send(_ data: Data) async throws -> Data {
         NFCLog.rawCommand(data, family: .felica, source: "FeliCa")
         let response: Data = try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { continuation in
@@ -43,12 +40,12 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         return response
     }
 
-    public func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+    open func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
         throw NFCError.unsupportedOperation("FeliCa does not use ISO 7816 APDUs")
     }
 
     /// Read blocks without encryption from one or more services.
-    public func readWithoutEncryption(
+    open func readWithoutEncryption(
         serviceCodeList: [Data],
         blockList: [Data]
     ) async throws -> [Data] {
@@ -68,7 +65,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     }
 
     /// Read blocks without encryption.
-    public func readWithoutEncryption(
+    open func readWithoutEncryption(
         serviceCode: Data,
         blockList: [Data]
     ) async throws -> [Data] {
@@ -79,7 +76,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     }
 
     /// Write blocks without encryption to one or more services.
-    public func writeWithoutEncryption(
+    open func writeWithoutEncryption(
         serviceCodeList: [Data],
         blockList: [Data],
         blockData: [Data]
@@ -100,7 +97,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     }
 
     /// Write blocks without encryption.
-    public func writeWithoutEncryption(
+    open func writeWithoutEncryption(
         serviceCode: Data,
         blockList: [Data],
         blockData: [Data]
@@ -113,7 +110,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     }
 
     /// Check whether the requested service codes exist.
-    public func requestService(nodeCodeList: [Data]) async throws -> [Data] {
+    open func requestService(nodeCodeList: [Data]) async throws -> [Data] {
         NFCLog.debug("→ REQUEST_SERVICE nodes=\(nodeCodeList.count)", source: "FeliCa")
         let result = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.requestService(nodeCodeList: nodeCodeList)

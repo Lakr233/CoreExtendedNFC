@@ -15,9 +15,9 @@ import Foundation
 ///         ...                           Header fields
 ///       5F2E or 7F2E <len> <image>      Biometric data (JPEG/JPEG2000)
 /// ```
-enum DG2Parser {
+public enum DG2Parser {
     /// Extract the face image data (JPEG or JPEG2000 bytes) from DG2.
-    static func parse(_ data: Data) throws -> Data {
+    public static func parse(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
 
         // Find outermost DG2 wrapper (0x75)
@@ -39,10 +39,10 @@ enum DG2Parser {
 
     /// Maximum TLV nesting depth searched for biometric data. Real DG2 files nest
     /// about four levels; the cap bounds recursion on hostile chip data.
-    static let maxSearchDepth = 32
+    public static let maxSearchDepth = 32
 
     /// Recursively search for biometric image data in DG2 TLV structure.
-    private static func findBiometricData(in data: Data, depth: Int) -> Data? {
+    public static func findBiometricData(in data: Data, depth: Int) -> Data? {
         guard depth < maxSearchDepth, let nodes = try? ASN1Parser.parseTLV(data) else { return nil }
 
         for node in nodes {
@@ -70,7 +70,7 @@ enum DG2Parser {
     /// The biometric data begins with an ISO 19794-5 facial record header.
     /// We scan for JPEG (0xFFD8), JP2 boxed JPEG2000 (0x0000000C), or
     /// a raw JPEG2000 codestream (0xFF4FFF51).
-    private static func extractImage(from input: Data) -> Data {
+    public static func extractImage(from input: Data) -> Data {
         let data = Data(input)
         // An empty or 1-byte biometric data object holds no image signature.
         guard data.count >= 2 else { return data }

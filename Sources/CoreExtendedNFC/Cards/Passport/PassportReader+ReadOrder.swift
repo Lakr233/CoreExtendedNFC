@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Data group read loop
 
-extension PassportReader {
+public extension PassportReader {
     /// Order in which requested data groups are read: COM and the SOD first (their
     /// lists decide what is selected), then DG1, then the rest as requested, with the
     /// EAC-protected DG3/DG4 last. Duplicates are dropped.

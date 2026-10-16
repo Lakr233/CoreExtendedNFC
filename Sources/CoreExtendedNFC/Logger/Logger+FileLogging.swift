@@ -1,8 +1,9 @@
 import Foundation
 import OSLog
 
-enum LogCategoryResolver {
-    static func resolve(category: String?, fileID: String) -> String {
+/// Picks a log category from an explicit name or, failing that, the caller's file ID.
+public enum LogCategoryResolver {
+    public static func resolve(category: String?, fileID: String) -> String {
         if let category, !category.isEmpty { return category }
 
         let lowercased = fileID.lowercased()
@@ -15,15 +16,15 @@ enum LogCategoryResolver {
 }
 
 public extension Logger {
-    func debugFile(_ message: String, category: String? = nil, fileID: String = #fileID) {
+    func nfcDebugFile(_ message: String, category: String? = nil, fileID: String = #fileID) {
         logToFile(.debug, message, category: category, fileID: fileID)
     }
 
-    func infoFile(_ message: String, category: String? = nil, fileID: String = #fileID) {
+    func nfcInfoFile(_ message: String, category: String? = nil, fileID: String = #fileID) {
         logToFile(.info, message, category: category, fileID: fileID)
     }
 
-    func errorFile(_ message: String, category: String? = nil, fileID: String = #fileID) {
+    func nfcErrorFile(_ message: String, category: String? = nil, fileID: String = #fileID) {
         logToFile(.error, message, category: category, fileID: fileID)
     }
 
@@ -34,7 +35,8 @@ public extension Logger {
     }
 }
 
-private extension LogLevel {
+public extension LogLevel {
+    /// The matching `OSLogType`.
     var osLogType: OSLogType {
         switch self {
         case .debug: .debug

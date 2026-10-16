@@ -56,7 +56,7 @@ public extension UltralightCommands {
     }
 }
 
-extension UltralightCommands {
+public extension UltralightCommands {
     func authenticateUltralightC(
         key: Data,
         randomA: Data?
@@ -99,7 +99,7 @@ extension UltralightCommands {
         return UltralightCAuthenticationSession(randomA: randomAValue, randomB: rndB)
     }
 
-    private func validateOrGenerateRandom(_ candidate: Data?) throws -> Data {
+    func validateOrGenerateRandom(_ candidate: Data?) throws -> Data {
         if let candidate {
             guard candidate.count == 8 else {
                 throw NFCError.cryptoError("Ultralight C random input must be 8 bytes")
@@ -110,7 +110,7 @@ extension UltralightCommands {
         return try CryptoUtils.secureRandomBytes(count: 8)
     }
 
-    private func rotateLeft(_ data: Data) -> Data {
+    func rotateLeft(_ data: Data) -> Data {
         guard let first = data.first else { return Data() }
         return Data(data.dropFirst()) + Data([first])
     }

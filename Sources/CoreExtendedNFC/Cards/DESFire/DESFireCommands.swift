@@ -2,7 +2,10 @@ import Foundation
 
 /// DESFire native command builder and sender.
 /// Commands are wrapped in ISO 7816 framing: [0x90, CMD, 0x00, 0x00, LEN, DATA..., 0x00].
-public struct DESFireCommands: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class DESFireCommands: @unchecked Sendable {
     public let transport: any NFCTagTransport
 
     public init(transport: any NFCTagTransport) {
@@ -31,7 +34,7 @@ public struct DESFireCommands: Sendable {
     // MARK: - Core Send
 
     /// Send a DESFire native command with automatic AF chaining.
-    public func sendCommand(_ cmd: UInt8, data: Data? = nil) async throws -> Data {
+    open func sendCommand(_ cmd: UInt8, data: Data? = nil) async throws -> Data {
         try await sendWithChaining(cmd, data: data)
     }
 }

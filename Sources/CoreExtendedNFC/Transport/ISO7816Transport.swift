@@ -2,35 +2,32 @@ import CoreNFC
 import Foundation
 
 /// Transport adapter wrapping `NFCISO7816Tag`.
-public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable {
-    private let tag: NFCISO7816Tag
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable {
+    public let tag: NFCISO7816Tag
     /// Set by `NFCSessionManager`: once the user cancels the session, failures are
     /// reported as `NFCError.userCanceled`.
-    private let terminationMonitor: SessionTerminationMonitor?
+    public let terminationMonitor: SessionTerminationMonitor?
 
-    public var identifier: Data {
+    open var identifier: Data {
         tag.identifier
     }
 
-    public var initialAID: String {
+    open var initialAID: String {
         tag.initialSelectedAID
     }
 
-    public init(tag: NFCISO7816Tag) {
-        self.tag = tag
-        terminationMonitor = nil
-    }
-
-    init(tag: NFCISO7816Tag, terminationMonitor: SessionTerminationMonitor?) {
+    public init(tag: NFCISO7816Tag, terminationMonitor: SessionTerminationMonitor? = nil) {
         self.tag = tag
         self.terminationMonitor = terminationMonitor
     }
 
-    public func send(_: Data) async throws -> Data {
+    open func send(_: Data) async throws -> Data {
         throw NFCError.unsupportedOperation("Use sendAPDU for ISO 7816 tags")
     }
 
-    public func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+    open func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
         NFCLog.apduCommand(apdu, source: "ISO7816")
         let nfcAPDU = NFCISO7816APDU(
             instructionClass: apdu.cla,
@@ -49,7 +46,7 @@ public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable
 
     /// Send an APDU and resolve `61xx` (GET RESPONSE) and `6Cxx` (wrong Le) statuses.
     /// The number of follow-up frames is bounded by ``APDUExchange``.
-    public func sendAPDUWithChaining(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+    open func sendAPDUWithChaining(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
         try await APDUExchange.transmit(apdu) { try await self.sendAPDU($0) }
     }
 }

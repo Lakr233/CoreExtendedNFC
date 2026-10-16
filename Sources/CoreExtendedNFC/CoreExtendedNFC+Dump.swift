@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - Memory Dump
 
-extension CoreExtendedNFC {
+public extension CoreExtendedNFC {
     /// Dump a card's memory using an already-connected transport.
-    public static func dumpCard(
+    static func dumpCard(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
@@ -47,7 +47,7 @@ extension CoreExtendedNFC {
     }
 
     /// Dump a DESFire card: list apps, list files, read all accessible data.
-    private static func dumpDESFire(
+    static func dumpDESFire(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
@@ -55,7 +55,7 @@ extension CoreExtendedNFC {
             .dumpAll(cardInfo: info)
     }
 
-    private static func dumpType4(
+    static func dumpType4(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
@@ -88,7 +88,7 @@ extension CoreExtendedNFC {
         )
     }
 
-    private static func dumpMyNumberCard(
+    static func dumpMyNumberCard(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
@@ -117,7 +117,7 @@ extension CoreExtendedNFC {
         )
     }
 
-    private static func dumpFeliCa(
+    static func dumpFeliCa(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
@@ -219,7 +219,7 @@ extension CoreExtendedNFC {
         )
     }
 
-    private static func dumpISO15693(
+    static func dumpISO15693(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
@@ -231,7 +231,7 @@ extension CoreExtendedNFC {
         return try await ISO15693Reader(transport: iso15693Transport).readAllBlocks(info: info)
     }
 
-    private static func summarizeFeliCaServices(_ services: [FeliCaCommands.ServiceProbe]) -> String {
+    static func summarizeFeliCaServices(_ services: [FeliCaCommands.ServiceProbe]) -> String {
         let preview = services.prefix(4).map { "\($0.label) [\($0.serviceCode.hexString)]" }
         if services.count > 4 {
             return preview.joined(separator: ", ") + ", +\(services.count - 4) more"

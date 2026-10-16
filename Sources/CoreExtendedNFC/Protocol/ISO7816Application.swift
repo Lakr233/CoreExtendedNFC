@@ -91,7 +91,7 @@ public enum ISO7816Application: String, Sendable, Codable, CaseIterable {
         }
     }
 
-    private static func normalize(_ aid: String?) -> String? {
+    public static func normalize(_ aid: String?) -> String? {
         let normalized = aid?
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "<", with: "")

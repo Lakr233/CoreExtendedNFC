@@ -5,24 +5,26 @@ import Foundation
 /// One traditional EZ-Link card has been read on iPhone Air with iOS 27; other
 /// cards and discovery configurations remain unverified. SimplyGo account-based
 /// history is not supported. Call before application-refinement probes.
-public struct CEPASReader: Sendable {
-    private let transport: any ISO7816TagTransporting
-    // CEPAS timestamps start at 1995-01-01 00:00 in Singapore (UTC+08:00),
-    // i.e. 1994-12-31T16:00:00Z (same epoch as FareBot / Metrodroid).
-    private static let epoch = Date(timeIntervalSince1970: 788_889_600)
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class CEPASReader: @unchecked Sendable {
+    public let transport: any ISO7816TagTransporting
+    /// CEPAS timestamps start at 1995-01-01 00:00 in Singapore (UTC+08:00),
+    /// i.e. 1994-12-31T16:00:00Z (same epoch as FareBot / Metrodroid).
+    public static let epoch = Date(timeIntervalSince1970: 788_889_600)
 
     public init(transport: any ISO7816TagTransporting) {
         self.transport = transport
     }
 
-    public func readBalanceAndHistory() async throws -> TransitBalance {
+    open func readBalanceAndHistory() async throws -> TransitBalance {
         try await selectFile()
         return try await readBalanceAndHistory(purse: readPurse())
     }
 
     /// Any status-word rejection of SELECT 4000, or an unsupported GET PURSE, is a non-match so
     /// other readers can be tried; malformed data and read failures propagate.
-    func readIfSupported() async throws -> TransitBalance? {
+    open func readIfSupported() async throws -> TransitBalance? {
         let purse: Data
         do {
             do {
@@ -40,7 +42,7 @@ public struct CEPASReader: Sendable {
         return try await readBalanceAndHistory(purse: purse)
     }
 
-    private func selectFile() async throws {
+    open func selectFile() async throws {
         NFCLog.info("CEPAS read start; initial AID=\(transport.initialAID)", source: "CEPAS")
         _ = try await read(
             CommandAPDU(cla: 0x00, ins: 0xA4, p1: 0x00, p2: 0x00, data: Data([0x40, 0x00])),
@@ -48,13 +50,13 @@ public struct CEPASReader: Sendable {
         )
     }
 
-    private func readPurse() async throws -> Data {
+    open func readPurse() async throws -> Data {
         // Some legacy cards require 90 32 03 00 00 00, which Core NFC rejects.
         // Use the standard five-byte form; no silent fallback.
         return try await read(CommandAPDU(cla: 0x90, ins: 0x32, p1: 0x03, p2: 0x00, le: 0x00), stage: "GET PURSE")
     }
 
-    private func readBalanceAndHistory(purse: Data) async throws -> TransitBalance {
+    open func readBalanceAndHistory(purse: Data) async throws -> TransitBalance {
         guard purse.count >= 63, purse.count >= 63 + Int(purse[41]) else {
             throw NFCError.invalidResponse(purse)
         }
@@ -105,7 +107,7 @@ public struct CEPASReader: Sendable {
         )
     }
 
-    private func read(_ command: CommandAPDU, stage: String) async throws -> Data {
+    open func read(_ command: CommandAPDU, stage: String) async throws -> Data {
         NFCLog.debug(stage, source: "CEPAS")
         let response = try await transport.sendAPDUWithChaining(command)
         guard response.isSuccess else {
@@ -118,12 +120,12 @@ public struct CEPASReader: Sendable {
         return Data(response.data)
     }
 
-    private static func signedAmount(_ bytes: Data) -> Int {
+    open class func signedAmount(_ bytes: Data) -> Int {
         let value = bytes.reduce(0) { ($0 << 8) | Int($1) }
         return value & 0x80_0000 == 0 ? value : value - 0x100_0000
     }
 
-    private static func transaction(_ record: Data, recordNumber: Int) -> TransitTransaction {
+    open class func transaction(_ record: Data, recordNumber: Int) -> TransitTransaction {
         let type: TransactionType
         switch record[0] {
         case 0x30, 0x31: type = .trip

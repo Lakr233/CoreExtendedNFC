@@ -10,8 +10,8 @@ import Foundation
 /// 61 <len>
 ///   5F1F <len> <MRZ string bytes>
 /// ```
-enum DG1Parser {
-    static func parse(_ data: Data) throws -> MRZData {
+public enum DG1Parser {
+    public static func parse(_ data: Data) throws -> MRZData {
         let nodes = try ASN1Parser.parseTLV(data)
 
         guard let dg1Node = nodes.first(where: { $0.tag == 0x61 }) else {

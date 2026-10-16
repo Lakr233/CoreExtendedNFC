@@ -9,15 +9,18 @@ import Foundation
 /// such as `NFCReaderTransceiveErrorSessionInvalidated` (103). Transports consult
 /// the monitor of their session and report those failures as
 /// ``NFCError/userCanceled`` once the user cancel has been recorded.
-final class SessionTerminationMonitor: Sendable {
+public final class SessionTerminationMonitor: Sendable {
     private let userCanceledFlag = LockedValue(false)
 
+    public init() {}
+
     /// Whether the user dismissed the session.
-    var userCanceled: Bool {
+    public var userCanceled: Bool {
         userCanceledFlag.withLock { $0 }
     }
 
-    func recordUserCancel() {
+    /// Record that the user dismissed the session.
+    public func recordUserCancel() {
         userCanceledFlag.withLock { $0 = true }
     }
 }

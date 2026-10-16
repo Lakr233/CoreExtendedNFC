@@ -90,12 +90,12 @@ public struct MRZData: Sendable, Equatable, Codable {
     // MARK: - Private
 
     /// Replaces filler characters and trims surrounding whitespace.
-    private static func clean(_ str: String) -> String {
+    public static func clean(_ str: String) -> String {
         str.replacingOccurrences(of: "<", with: " ").trimmingCharacters(in: .whitespaces)
     }
 
     /// Splits an MRZ name field into last and first names.
-    private static func parseNames(_ nameLine: String) -> (String, String) {
+    public static func parseNames(_ nameLine: String) -> (String, String) {
         let components = nameLine.components(separatedBy: "<<")
         guard components.count >= 2 else {
             return (clean(nameLine), "")

@@ -10,6 +10,12 @@ public enum ISO15693Memory {
     public struct TagConfig: Sendable {
         public let blockSize: Int
         public let blockCount: Int
+
+        public init(blockSize: Int, blockCount: Int) {
+            self.blockSize = blockSize
+            self.blockCount = blockCount
+        }
+
         public var totalBytes: Int {
             blockSize * blockCount
         }

@@ -5,14 +5,19 @@ import Foundation
 #endif
 
 #if canImport(OpenSSL)
-    final class OpenSSLPACECurve {
+    /// Elliptic-curve arithmetic for PACE Generic Mapping (ICAO 9303-11 §4.4.3.3.1),
+    /// backed by OpenSSL. All inputs and outputs are big-endian scalars or uncompressed
+    /// points; the OpenSSL handles never leave this type.
+    ///
+    /// Not thread-safe: an instance owns an OpenSSL `BN_CTX`, so use it from one task at a time.
+    public final class OpenSSLPACECurve {
         private let group: OpaquePointer
         private let order: OpaquePointer
         private let ctx: OpaquePointer
         private let coordinateLength: Int
         private let scalarLength: Int
 
-        init(parameterID: PACEHandler.DomainParameterID) throws {
+        public init(parameterID: PACEHandler.DomainParameterID) throws {
             guard let group = EC_GROUP_new_by_curve_name(parameterID.opensslNID) else {
                 throw NFCError.cryptoError("PACE: failed to create elliptic-curve group")
             }
@@ -45,7 +50,7 @@ import Foundation
             EC_GROUP_free(group)
         }
 
-        func generatePrivateScalar() throws -> Data {
+        public func generatePrivateScalar() throws -> Data {
             while true {
                 var random = Data(count: scalarLength)
                 let status = random.withUnsafeMutableBytes { bytes in
@@ -63,7 +68,7 @@ import Foundation
             }
         }
 
-        func publicPoint(privateScalar: Data, generator: Data?) throws -> Data {
+        public func publicPoint(privateScalar: Data, generator: Data?) throws -> Data {
             let scalar = try makeScalar(privateScalar)
             defer { BN_free(scalar) }
 
@@ -88,7 +93,7 @@ import Foundation
             return try exportPoint(result)
         }
 
-        func sharedPoint(privateScalar: Data, peerPublic: Data) throws -> Data {
+        public func sharedPoint(privateScalar: Data, peerPublic: Data) throws -> Data {
             let scalar = try makeScalar(privateScalar)
             defer { BN_free(scalar) }
 
@@ -107,7 +112,7 @@ import Foundation
             return try exportPoint(result)
         }
 
-        func mappedGenerator(nonce: Data, sharedPoint: Data) throws -> Data {
+        public func mappedGenerator(nonce: Data, sharedPoint: Data) throws -> Data {
             let nonceScalar = try makeReducedScalar(nonce)
             defer { BN_free(nonceScalar) }
 
@@ -129,7 +134,7 @@ import Foundation
             return try exportPoint(result)
         }
 
-        func sharedSecretXCoordinate(privateScalar: Data, peerPublic: Data) throws -> Data {
+        public func sharedSecretXCoordinate(privateScalar: Data, peerPublic: Data) throws -> Data {
             let scalar = try makeScalar(privateScalar)
             defer { BN_free(scalar) }
 
@@ -151,7 +156,7 @@ import Foundation
         /// Whether two encoded points are the same curve point, whatever their encoding.
         ///
         /// - Throws: `NFCError.cryptoError` when either encoding is not a valid point.
-        func isSamePoint(_ lhs: Data, _ rhs: Data) throws -> Bool {
+        public func isSamePoint(_ lhs: Data, _ rhs: Data) throws -> Bool {
             let lhsPoint = try makePoint(lhs)
             defer { EC_POINT_free(lhsPoint) }
             let rhsPoint = try makePoint(rhs)
@@ -264,7 +269,7 @@ import Foundation
         }
     }
 
-    private extension PACEHandler.DomainParameterID {
+    public extension PACEHandler.DomainParameterID {
         var opensslNID: Int32 {
             switch self {
             case .secp256r1:

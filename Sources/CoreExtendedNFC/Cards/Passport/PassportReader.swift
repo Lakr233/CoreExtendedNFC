@@ -2,7 +2,9 @@ import Foundation
 
 /// Orchestrates the full eMRTD reading workflow:
 /// SELECT application → BAC authentication → read DataGroups → parse → verify.
-public struct PassportReader: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class PassportReader: @unchecked Sendable {
     public let transport: any NFCTagTransport
 
     public init(transport: any NFCTagTransport) {
@@ -31,7 +33,7 @@ public struct PassportReader: Sendable {
     /// - Returns: A `PassportModel` with all parsed data.
     /// - Throws: The first read error when nothing could be read, or when DG1 was
     ///   requested but could not be read (DG1 is mandatory, ICAO 9303-10 §4.7).
-    public func readPassport(
+    open func readPassport(
         mrzKey: String,
         dataGroups: [DataGroupId] = [.com, .dg1, .dg2, .sod],
         performActiveAuth: Bool = true,
@@ -287,10 +289,10 @@ public struct PassportReader: Sendable {
         )
     }
 
-    // MARK: - Private
+    // MARK: - Steps
 
     /// Select and read a complete DataGroup file.
-    private func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -> Data {
+    open func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -> Data {
         // SELECT EF
         let selectAPDU = CommandAPDU.selectEF(id: dgId.fileID)
         let selectResponse = try await sendMappingUnavailable(selectAPDU, transport: transport, context: "SELECT \(dgId.name)")
@@ -308,12 +310,12 @@ public struct PassportReader: Sendable {
     /// Status words meaning "this file is absent or protected", not a broken session:
     /// 6A82 file not found, 6982 security status not satisfied (EAC DG3/DG4),
     /// 6A88 referenced data not found, 6986 command not allowed (no current EF).
-    static let fileUnavailableStatusWords: Set<UInt16> = [0x6A82, 0x6982, 0x6A88, 0x6986]
+    public static let fileUnavailableStatusWords: Set<UInt16> = [0x6A82, 0x6982, 0x6A88, 0x6986]
 
     /// Send `apdu`, turning a plain (unprotected) "file unavailable" status word into
     /// ``NFCError/dataGroupNotAvailable(_:)``. Chips commonly answer those errors without
     /// secure messaging.
-    private func sendMappingUnavailable(
+    open func sendMappingUnavailable(
         _ apdu: CommandAPDU,
         transport: any NFCTagTransport,
         context: String
@@ -330,7 +332,7 @@ public struct PassportReader: Sendable {
     /// Largest file this reader accepts for `dgId` (ICAO 9303-10 sizes, generous margins).
     /// Image data groups may be large; everything else is a few kilobytes at most, so a
     /// corrupt or hostile length field cannot make the reader allocate or read megabytes.
-    static func maxFileLength(for dgId: DataGroupId) -> Int {
+    open class func maxFileLength(for dgId: DataGroupId) -> Int {
         switch dgId {
         case .dg2, .dg3, .dg4, .dg5, .dg6, .dg7:
             largeFileMaxLength
@@ -339,8 +341,8 @@ public struct PassportReader: Sendable {
         }
     }
 
-    static let smallFileMaxLength = 64 * 1024
-    static let largeFileMaxLength = 10 * 1024 * 1024
+    public static let smallFileMaxLength = 64 * 1024
+    public static let largeFileMaxLength = 10 * 1024 * 1024
 
     /// Read the entire contents of the currently selected EF using READ BINARY.
     ///
@@ -350,7 +352,7 @@ public struct PassportReader: Sendable {
     /// Handles multi-byte length fields (0x81, 0x82, 0x83) by reading additional
     /// header bytes if the initial 4-byte read doesn't contain the complete
     /// tag + length header.
-    private func readBinaryAll(transport: any NFCTagTransport, maxLength: Int) async throws -> Data {
+    open func readBinaryAll(transport: any NFCTagTransport, maxLength: Int) async throws -> Data {
         // Read initial header bytes — 4 bytes covers tag (1-2) + short length (1)
         // but may not cover long-form lengths (0x82 = 3 bytes, 0x83 = 4 bytes)
         let headerAPDU = CommandAPDU.readBinaryChunk(offset: 0, length: 4)
@@ -450,7 +452,7 @@ public struct PassportReader: Sendable {
     /// DO'53) above 0x7FFF so DG2/DG3 files larger than 32 KB never wrap (ISO/IEC 7816-4
     /// §11.2.3). A `B1` read may return a few bytes less than requested; the caller
     /// advances by the bytes actually returned.
-    private func readBinaryChunk(
+    open func readBinaryChunk(
         offset: Int,
         length: Int,
         transport: any NFCTagTransport
@@ -468,7 +470,7 @@ public struct PassportReader: Sendable {
     }
 
     /// Parse raw data group bytes and assemble a PassportModel.
-    private func assemblePassportModel(
+    open func assemblePassportModel(
         rawDataGroups: [DataGroupId: Data],
         trustAnchorsDER: [Data],
         cardAccess: SecurityInfos?,
@@ -587,7 +589,7 @@ public struct PassportReader: Sendable {
         )
     }
 
-    private func readCardAccess(transport: any NFCTagTransport) async throws -> Data {
+    open func readCardAccess(transport: any NFCTagTransport) async throws -> Data {
         let selectMasterResponse = try await transport.sendAPDU(.selectMasterFile())
         guard selectMasterResponse.isSuccess else {
             throw NFCError.dataGroupNotAvailable(
@@ -605,7 +607,7 @@ public struct PassportReader: Sendable {
         return try await readBinaryAll(transport: transport, maxLength: Self.smallFileMaxLength)
     }
 
-    private func buildChipAuthenticationStage(_ securityInfos: SecurityInfos?) -> PassportSecurityStageResult {
+    open func buildChipAuthenticationStage(_ securityInfos: SecurityInfos?) -> PassportSecurityStageResult {
         guard let securityInfos else {
             return PassportSecurityStageResult(
                 status: .notAdvertised,
@@ -632,7 +634,7 @@ public struct PassportReader: Sendable {
     /// ``PassportSecurityStageResult/activeAuthentication(_:passiveAuthentication:)``:
     /// `.succeeded` only when passive authentication is fully verified (SOD chained to a
     /// trusted CSCA) and the DG15 hash matched.
-    static func activeAuthenticationStage(
+    open class func activeAuthenticationStage(
         requested: Bool,
         publicKeyPresent: Bool,
         result: ActiveAuthenticationResult?,
@@ -681,7 +683,7 @@ public struct PassportReader: Sendable {
     /// - ICAO Doc 9303 Part 11, Section 6.2 (AA public key in DG15, signature verification)
     /// - ISO/IEC 9796-2 (RSA message recovery scheme used by RSA-based AA)
     /// - BSI TR-03111, Section 4.2.1 (ECDSA plain signature format: r || s)
-    private func performActiveAuthentication(
+    open func performActiveAuthentication(
         publicKey: ActiveAuthPublicKey,
         subjectPublicKeyInfo: Data?,
         securityInfos: SecurityInfos?,

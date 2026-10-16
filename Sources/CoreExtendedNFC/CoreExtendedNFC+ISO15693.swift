@@ -169,9 +169,9 @@ public extension CoreExtendedNFC {
         )
     }
 
-    // MARK: Private
+    // MARK: Helpers
 
-    private static func iso15693Transport(
+    static func iso15693Transport(
         from transport: any NFCTagTransport
     ) throws -> any ISO15693TagTransporting {
         guard let iso = transport as? any ISO15693TagTransporting else {

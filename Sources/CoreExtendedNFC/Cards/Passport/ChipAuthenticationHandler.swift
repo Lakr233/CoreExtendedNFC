@@ -69,7 +69,7 @@ public enum ChipAuthenticationHandler {
     /// MSE:Set AT for Chip Authentication (AES): `00 22 41 A4`, data `80 <OID> [84 <keyID>]`.
     ///
     /// P1 = 0x41 (set for internal authentication / computation), not 0xC1 which selects PACE.
-    static func mseSetATForCA(oid: Data, keyID: Int?) -> CommandAPDU {
+    public static func mseSetATForCA(oid: Data, keyID: Int?) -> CommandAPDU {
         var data = ASN1Parser.encodeTLV(tag: 0x80, value: oid)
         if let keyID {
             data.append(ASN1Parser.encodeTLV(tag: 0x84, value: encodeKeyReference(keyID)))
@@ -78,7 +78,7 @@ public enum ChipAuthenticationHandler {
     }
 
     /// MSE:Set KAT for Chip Authentication (3DES): `00 22 41 A6`, data `91 <PK_PCD> [84 <keyID>]`.
-    static func mseSetKATForCA(ephemeralPublicKey: Data, keyID: Int?) -> CommandAPDU {
+    public static func mseSetKATForCA(ephemeralPublicKey: Data, keyID: Int?) -> CommandAPDU {
         var data = ASN1Parser.encodeTLV(tag: 0x91, value: ephemeralPublicKey)
         if let keyID {
             data.append(ASN1Parser.encodeTLV(tag: 0x84, value: encodeKeyReference(keyID)))
@@ -87,7 +87,7 @@ public enum ChipAuthenticationHandler {
     }
 
     /// GENERAL AUTHENTICATE for Chip Authentication (AES): data `7C { 80 <PK_PCD> }`.
-    static func generalAuthenticateForCA(ephemeralPublicKey: Data) -> CommandAPDU {
+    public static func generalAuthenticateForCA(ephemeralPublicKey: Data) -> CommandAPDU {
         let dynamicAuthData = ASN1Parser.encodeTLV(
             tag: 0x7C,
             value: ASN1Parser.encodeTLV(tag: 0x80, value: ephemeralPublicKey)
@@ -95,10 +95,10 @@ public enum ChipAuthenticationHandler {
         return CommandAPDU.generalAuthenticate(data: dynamicAuthData, isLast: true)
     }
 
-    // MARK: - Private
+    // MARK: - Helpers
 
     /// Find the ChipAuthenticationPublicKeyInfo that matches the CA info.
-    private static func findMatchingPublicKey(
+    public static func findMatchingPublicKey(
         caInfo: ChipAuthenticationInfo,
         publicKeys: [ChipAuthenticationPublicKeyInfo]
     ) -> ChipAuthenticationPublicKeyInfo? {
@@ -109,7 +109,7 @@ public enum ChipAuthenticationHandler {
     }
 
     /// Encode a key identifier as the minimal big-endian unsigned byte string.
-    private static func encodeKeyReference(_ keyID: Int) -> Data {
+    public static func encodeKeyReference(_ keyID: Int) -> Data {
         var value = UInt64(truncatingIfNeeded: keyID)
         var bytes: [UInt8] = []
         repeat {
@@ -122,7 +122,7 @@ public enum ChipAuthenticationHandler {
     /// Encode an OID string (dotted decimal) to DER content octets (X.690 §8.19).
     ///
     /// Returns empty data when the string is not a valid OID.
-    static func encodeOID(_ oidString: String) -> Data {
+    public static func encodeOID(_ oidString: String) -> Data {
         let parts = oidString.split(separator: ".", omittingEmptySubsequences: false)
         let components = parts.compactMap { UInt64($0) }
         guard components.count >= 2, components.count == parts.count else { return Data() }
@@ -142,7 +142,7 @@ public enum ChipAuthenticationHandler {
     }
 
     /// Base-128 encoding of one OID subidentifier with continuation bits.
-    private static func base128(_ value: UInt64) -> [UInt8] {
+    public static func base128(_ value: UInt64) -> [UInt8] {
         var remaining = value >> 7
         var bytes: [UInt8] = [UInt8(value & 0x7F)]
         while remaining > 0 {
@@ -156,7 +156,7 @@ public enum ChipAuthenticationHandler {
     ///
     /// Uses the ICAO 9303-11 §9.7.1 KDF: SHA-1 for 3DES (parity adjusted) and AES-128,
     /// SHA-256 for AES-192/256. KSenc = KDF(K, 1), KSmac = KDF(K, 2).
-    static func deriveCASessionKeys(
+    public static func deriveCASessionKeys(
         sharedSecret: Data,
         mode: SMEncryptionMode
     ) -> (ksEnc: Data, ksMac: Data) {

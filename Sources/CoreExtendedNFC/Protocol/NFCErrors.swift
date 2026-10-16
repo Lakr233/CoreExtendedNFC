@@ -228,11 +228,11 @@ extension NFCError: LocalizedError {
         }
     }
 
-    private static func hexByte(_ value: UInt8) -> String {
+    public static func hexByte(_ value: UInt8) -> String {
         String(format: "%02X", value)
     }
 
-    private static func pinName(_ pinType: MyNumberPINType) -> String {
+    public static func pinName(_ pinType: MyNumberPINType) -> String {
         switch pinType {
         case .digitalSignature:
             String(localized: "digital signature PIN", bundle: .module)
@@ -245,7 +245,7 @@ extension NFCError: LocalizedError {
         }
     }
 
-    private static func hexStatus(_ value: Int) -> String {
+    public static func hexStatus(_ value: Int) -> String {
         String(format: "%02X", value)
     }
 }

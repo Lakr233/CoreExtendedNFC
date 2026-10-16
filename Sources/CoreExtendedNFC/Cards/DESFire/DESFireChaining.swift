@@ -1,6 +1,6 @@
 import Foundation
 
-extension DESFireCommands {
+public extension DESFireCommands {
     /// Upper bound on Additional Frame (91 AF) round trips for one command.
     ///
     /// The largest DESFire data files (8 KB) need about 140 frames of 59 bytes,

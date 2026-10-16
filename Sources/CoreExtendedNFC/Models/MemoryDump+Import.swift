@@ -1,8 +1,8 @@
 import Foundation
 
-extension MemoryDump {
+public extension MemoryDump {
     /// Import a Flipper Zero `.nfc` page dump.
-    public static func importFlipperNFC(_ text: String) throws -> MemoryDump {
+    static func importFlipperNFC(_ text: String) throws -> MemoryDump {
         let parsed = try FlipperNFCFile(text: text)
         return MemoryDump(
             cardInfo: CardInfo(
@@ -23,7 +23,7 @@ extension MemoryDump {
     /// Import a Proxmark3 MFU dump.
     ///
     /// Supports both the documented 56-byte header format and plain 4-byte-page binaries.
-    public static func importProxmark3MFU(_ data: Data) throws -> MemoryDump {
+    static func importProxmark3MFU(_ data: Data) throws -> MemoryDump {
         let parsed = try Proxmark3MFUDump(data: data)
         return MemoryDump(
             cardInfo: CardInfo(
@@ -43,11 +43,17 @@ extension MemoryDump {
     }
 
     /// A page parsed from an imported file, before its number is range-checked.
-    private struct ImportedPageRecord {
-        let number: Int
-        let data: Data
+    struct ImportedPageRecord: Sendable, Equatable {
+        public let number: Int
+        public let data: Data
 
-        func validatedPage() throws -> Page {
+        public init(number: Int, data: Data) {
+            self.number = number
+            self.data = data
+        }
+
+        /// The record as a ``MemoryDump/Page``; throws when `number` is outside 0-255.
+        public func validatedPage() throws -> Page {
             guard let pageNumber = UInt8(exactly: number) else {
                 throw NFCError.malformedDump("Page \(number) is outside the Type 2 page range 0-255")
             }
@@ -55,18 +61,19 @@ extension MemoryDump {
         }
     }
 
-    private struct FlipperNFCFile {
-        typealias PageRecord = ImportedPageRecord
+    /// A parsed Flipper Zero `.nfc` file for an NTAG / Ultralight tag.
+    struct FlipperNFCFile: Sendable {
+        public typealias PageRecord = ImportedPageRecord
 
-        let uid: Data
-        let atqa: Data?
-        let sak: UInt8?
-        let totalPages: Int
-        let pages: [PageRecord]
-        private let version: Data?
-        private let typeName: String?
+        public let uid: Data
+        public let atqa: Data?
+        public let sak: UInt8?
+        public let totalPages: Int
+        public let pages: [PageRecord]
+        public let version: Data?
+        public let typeName: String?
 
-        init(text: String) throws {
+        public init(text: String) throws {
             var fields: [String: String] = [:]
             var pageRecords: [PageRecord] = []
 
@@ -114,7 +121,7 @@ extension MemoryDump {
             pages = pageRecords.sorted(by: { $0.number < $1.number })
         }
 
-        var cardType: CardType {
+        public var cardType: CardType {
             // An all-zero version means GET_VERSION was not available (Ultralight, Ultralight C).
             if let version, version != Data(repeating: 0x00, count: version.count),
                let parsedVersion = try? UltralightVersionResponse(data: version)
@@ -137,18 +144,19 @@ extension MemoryDump {
         }
     }
 
-    private struct Proxmark3MFUDump {
-        typealias PageRecord = ImportedPageRecord
+    /// A parsed Proxmark3 `hf mfu dump` binary, with or without the `mfu_dump_t` header.
+    struct Proxmark3MFUDump: Sendable {
+        public typealias PageRecord = ImportedPageRecord
 
         /// Size of the Proxmark3 `mfu_dump_t` header that precedes page data:
         /// version[8], tbo[2], tbo1[1], pages[1], signature[32], counter_tearing[3][4].
-        static let headerLength = 56
+        public static let headerLength = 56
         /// Offset of `pages` in the header: the index of the last page in the dump.
-        static let lastPageIndexOffset = 11
+        public static let lastPageIndexOffset = 11
 
         /// Page totals of the known Type 2 memory maps (Ultralight, MF0UL11, MF0UL21,
         /// NTAG213, Ultralight C, NTAG215, NTAG216).
-        static let knownPageTotals: Set<Int> = [16, 20, 41, 45, 48, 135, 231]
+        public static let knownPageTotals: Set<Int> = [16, 20, 41, 45, 48, 135, 231]
 
         /// Whether `data` is a headered Proxmark3 dump: the header's last-page index must
         /// agree with the number of 4-byte pages that follow it.
@@ -158,7 +166,7 @@ extension MemoryDump {
         /// the plain reading wins unless the header is plausible on its own: the version
         /// field is a GET_VERSION response or all zero, and the first page after the header
         /// carries a consistent BCC0 (ISO/IEC 14443-3: `0x88 ^ UID0 ^ UID1 ^ UID2`).
-        static func hasHeader(_ data: Data) -> Bool {
+        public static func hasHeader(_ data: Data) -> Bool {
             guard data.count >= headerLength + 4,
                   (data.count - headerLength).isMultiple(of: 4)
             else { return false }
@@ -171,12 +179,12 @@ extension MemoryDump {
             return hasPlausibleVersion(data) && hasConsistentBCC0(afterHeaderIn: data)
         }
 
-        private static func hasPlausibleVersion(_ data: Data) -> Bool {
+        public static func hasPlausibleVersion(_ data: Data) -> Bool {
             let version = data.prefix(8)
             return version.allSatisfy { $0 == 0x00 } || looksLikeHeader(data)
         }
 
-        private static func hasConsistentBCC0(afterHeaderIn data: Data) -> Bool {
+        public static func hasConsistentBCC0(afterHeaderIn data: Data) -> Bool {
             let page0 = data.startIndex + headerLength
             return data[page0 + 3] == 0x88 ^ data[page0] ^ data[page0 + 1] ^ data[page0 + 2]
         }
@@ -185,17 +193,17 @@ extension MemoryDump {
         /// (fixed header 00h, NXP vendor 04h, ISO/IEC 14443-3 protocol type 03h;
         /// NTAG21x / MF0ULx1 datasheets). A plain page dump starts with UID0, which is
         /// 04h for NXP tags, so it does not match.
-        static func looksLikeHeader(_ data: Data) -> Bool {
+        public static func looksLikeHeader(_ data: Data) -> Bool {
             guard data.count >= headerLength + 4 else { return false }
             let start = data.startIndex
             return data[start] == 0x00 && data[start + 1] == 0x04 && data[start + 7] == 0x03
         }
 
-        let cardType: CardType
-        let uid: Data
-        let pages: [PageRecord]
+        public let cardType: CardType
+        public let uid: Data
+        public let pages: [PageRecord]
 
-        init(data: Data) throws {
+        public init(data: Data) throws {
             let version: Data?
             let payload: Data
 

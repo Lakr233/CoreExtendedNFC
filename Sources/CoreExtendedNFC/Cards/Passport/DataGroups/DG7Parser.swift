@@ -11,9 +11,9 @@ import Foundation
 ///   02 <len> <count>       Number of instances
 ///   5F43 <len> <image>     Image data (JPEG/JPEG2000)
 /// ```
-enum DG7Parser {
+public enum DG7Parser {
     /// Extract signature image bytes from DG7.
-    static func parse(_ data: Data) throws -> Data? {
+    public static func parse(_ data: Data) throws -> Data? {
         let nodes = try ASN1Parser.parseTLV(data)
 
         guard let dg7Node = nodes.first(where: { $0.tag == 0x67 }) else {

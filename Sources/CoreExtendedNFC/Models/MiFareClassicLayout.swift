@@ -9,6 +9,12 @@ public enum MiFareClassicLayout: Sendable {
         public let sectorCount: Int
         /// Number of blocks in a given sector.
         public let blocksPerSector: @Sendable (Int) -> Int
+
+        public init(sectorCount: Int, blocksPerSector: @escaping @Sendable (Int) -> Int) {
+            self.sectorCount = sectorCount
+            self.blocksPerSector = blocksPerSector
+        }
+
         /// Total number of blocks.
         public var totalBlocks: Int {
             (0 ..< sectorCount).reduce(0) { $0 + blocksPerSector($1) }

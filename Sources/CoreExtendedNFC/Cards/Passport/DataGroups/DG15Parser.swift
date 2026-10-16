@@ -32,13 +32,13 @@ public enum ActiveAuthPublicKey: Sendable, Equatable, Codable {
 /// - ICAO Doc 9303 Part 11, Section 6.2 (AA public key: RSA or ECDSA)
 /// - RFC 5280, Section 4.1 (SubjectPublicKeyInfo ASN.1 definition)
 /// - RFC 3279 (RSA, DSA, ECDSA algorithm identifiers for SubjectPublicKeyInfo)
-enum DG15Parser {
+public enum DG15Parser {
     /// Known algorithm OIDs for public key types.
-    private static let rsaOID = "1.2.840.113549.1.1.1" // rsaEncryption
-    private static let ecPublicKeyOID = "1.2.840.10045.2.1" // id-ecPublicKey
+    public static let rsaOID = "1.2.840.113549.1.1.1" // rsaEncryption
+    public static let ecPublicKeyOID = "1.2.840.10045.2.1" // id-ecPublicKey
 
     /// Parse DG15 raw data into an ActiveAuthPublicKey.
-    static func parse(_ data: Data) throws -> ActiveAuthPublicKey {
+    public static func parse(_ data: Data) throws -> ActiveAuthPublicKey {
         // Parse outer TLV: tag 0x6F wrapping SubjectPublicKeyInfo
         let nodes = try ASN1Parser.parseTLV(data)
 
@@ -107,7 +107,7 @@ enum DG15Parser {
     /// ECDSA keys may carry explicit ECParameters instead of a named-curve OID
     /// (BSI TR-03111, ICAO 9303-11 §6.1); passing the original SPKI to the verifier
     /// keeps those parameters intact.
-    static func subjectPublicKeyInfo(_ data: Data) -> Data? {
+    public static func subjectPublicKeyInfo(_ data: Data) -> Data? {
         guard let nodes = try? ASN1Parser.parseTLV(data) else { return nil }
         let spkiData = nodes.first(where: { $0.tag == 0x6F })?.value ?? data
         guard let spkiNodes = try? ASN1Parser.parseTLV(spkiData),
@@ -124,7 +124,7 @@ enum DG15Parser {
     ///     modulus  INTEGER,
     ///     publicExponent  INTEGER
     /// }
-    private static func parseRSAPublicKey(_ data: Data) throws -> ActiveAuthPublicKey {
+    public static func parseRSAPublicKey(_ data: Data) throws -> ActiveAuthPublicKey {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let seqNode = nodes.first(where: { $0.tag == 0x30 }) else {
             return .unknown(data)

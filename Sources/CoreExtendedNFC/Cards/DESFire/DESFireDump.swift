@@ -12,10 +12,18 @@ import Foundation
 /// - Transaction MAC files (type 0x05) and files whose settings cannot be
 ///   parsed are counted but not read.
 /// - Task cancellation is honoured between applications and files.
-struct DESFireDump: Sendable {
-    let commands: DESFireCommands
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class DESFireDump: @unchecked Sendable {
+    public let commands: DESFireCommands
 
-    func dumpAll(cardInfo: CardInfo) async throws -> MemoryDump {
+    public init(commands: DESFireCommands) {
+        self.commands = commands
+    }
+
+    /// Dump every application and file that is readable without authentication.
+    open func dumpAll(cardInfo: CardInfo) async throws -> MemoryDump {
         var files: [MemoryDump.FileData] = []
         var lockedApplications = 0
         var lockedFiles = 0
@@ -98,7 +106,7 @@ struct DESFireDump: Sendable {
     }
 
     /// Read a file's contents, or `nil` for file types that are not dumped.
-    private func readContents(fileID: UInt8, settings: DESFireFileSettings) async throws -> Data? {
+    open func readContents(fileID: UInt8, settings: DESFireFileSettings) async throws -> Data? {
         switch settings.fileType {
         case .standardData, .backupData:
             return try await commands.readData(fileID: fileID)
@@ -129,7 +137,7 @@ struct DESFireDump: Sendable {
     }
 
     /// DESFire statuses that mean "not readable without authentication".
-    static func isAccessDenied(_ error: NFCError) -> Bool {
+    open class func isAccessDenied(_ error: NFCError) -> Bool {
         switch error {
         case .desfireError(.authenticationError),
              .desfireError(.permissionDenied),

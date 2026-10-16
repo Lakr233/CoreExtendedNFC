@@ -4,7 +4,7 @@ import Foundation
     import OpenSSL
 #endif
 
-extension SODParser {
+public extension SODParser {
     // MARK: - Passive Authentication (Hash Verification)
 
     /// Verify data group hashes against the hashes stored in SOD.
@@ -140,14 +140,14 @@ extension SODParser {
         }
     }
 
-    private enum CMSSignatureStatus {
+    enum CMSSignatureStatus: Sendable, Equatable {
         case unavailable
         /// Verified with the key of this certificate (DER), the one the SignerInfo names.
         case verified(signerCertificateDER: Data)
         case invalid
     }
 
-    private static func verifyCMSSignature(sodContent: SODContent) -> CMSSignatureStatus {
+    static func verifyCMSSignature(sodContent: SODContent) -> CMSSignatureStatus {
         guard let rawCMSData = sodContent.rawCMSData,
               sodContent.documentSignerCertificate != nil,
               sodContent.signature != nil
@@ -273,7 +273,7 @@ extension SODParser {
         return Data(bytes)
     }
 
-    private static func verifyTrustChain(
+    static func verifyTrustChain(
         documentSignerCertificateDER: Data?,
         trustAnchorsDER: [Data]
     ) -> Bool {

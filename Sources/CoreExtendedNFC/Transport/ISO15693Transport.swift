@@ -2,35 +2,32 @@ import CoreNFC
 import Foundation
 
 /// Transport adapter wrapping `NFCISO15693Tag`.
-public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
-    private let tag: NFCISO15693Tag
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
+    public let tag: NFCISO15693Tag
     /// Set by `NFCSessionManager`: once the user cancels the session, failures are
     /// reported as `NFCError.userCanceled`.
-    private let terminationMonitor: SessionTerminationMonitor?
+    public let terminationMonitor: SessionTerminationMonitor?
 
-    public var identifier: Data {
+    open var identifier: Data {
         tag.identifier
     }
 
-    public var icManufacturerCode: Int {
+    open var icManufacturerCode: Int {
         tag.icManufacturerCode
     }
 
-    public var icSerialNumber: Data {
+    open var icSerialNumber: Data {
         tag.icSerialNumber
     }
 
-    public init(tag: NFCISO15693Tag) {
-        self.tag = tag
-        terminationMonitor = nil
-    }
-
-    init(tag: NFCISO15693Tag, terminationMonitor: SessionTerminationMonitor?) {
+    public init(tag: NFCISO15693Tag, terminationMonitor: SessionTerminationMonitor? = nil) {
         self.tag = tag
         self.terminationMonitor = terminationMonitor
     }
 
-    public func send(_ data: Data) async throws -> Data {
+    open func send(_ data: Data) async throws -> Data {
         guard let commandByte = data.first else {
             throw NFCError.unsupportedOperation("ISO 15693 raw send requires at least one byte (command code)")
         }
@@ -58,12 +55,12 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         return response
     }
 
-    public func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+    open func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
         throw NFCError.unsupportedOperation("ISO 15693 does not use ISO 7816 APDUs")
     }
 
     /// Read a single block.
-    public func readBlock(_ number: UInt8) async throws -> Data {
+    open func readBlock(_ number: UInt8) async throws -> Data {
         NFCLog.debug("→ READ_BLOCK #\(number)", source: "ISO15693")
         let data = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.readSingleBlock(requestFlags: [.highDataRate], blockNumber: number)
@@ -73,7 +70,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Write a single block.
-    public func writeBlock(_ number: UInt8, data: Data) async throws {
+    open func writeBlock(_ number: UInt8, data: Data) async throws {
         NFCLog.debug("→ WRITE_BLOCK #\(number) \(NFCLog.payload(data))", source: "ISO15693")
         try await withNFCErrorMapping(terminationMonitor) {
             try await tag.writeSingleBlock(
@@ -86,7 +83,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Extended read of a single block addressed with a 2-byte block number (command 0x30).
-    public func extendedReadBlock(_ number: UInt16) async throws -> Data {
+    open func extendedReadBlock(_ number: UInt16) async throws -> Data {
         NFCLog.debug("→ EXT_READ_BLOCK #\(number)", source: "ISO15693")
         let data = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.extendedReadSingleBlock(requestFlags: [.highDataRate], blockNumber: Int(number))
@@ -96,7 +93,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Extended write of a single block addressed with a 2-byte block number (command 0x31).
-    public func extendedWriteBlock(_ number: UInt16, data: Data) async throws {
+    open func extendedWriteBlock(_ number: UInt16, data: Data) async throws {
         NFCLog.debug("→ EXT_WRITE_BLOCK #\(number) \(NFCLog.payload(data))", source: "ISO15693")
         try await withNFCErrorMapping(terminationMonitor) {
             try await tag.extendedWriteSingleBlock(
@@ -109,7 +106,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Read multiple contiguous blocks.
-    public func readBlocks(range: NSRange) async throws -> [Data] {
+    open func readBlocks(range: NSRange) async throws -> [Data] {
         NFCLog.debug("→ READ_BLOCKS \(range.location)..\(range.location + range.length - 1)", source: "ISO15693")
         let blocks = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.readMultipleBlocks(requestFlags: [.highDataRate], blockRange: range)
@@ -119,7 +116,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Get UID, block size, block count, and related system info.
-    public func getSystemInfo() async throws -> ISO15693SystemInfo {
+    open func getSystemInfo() async throws -> ISO15693SystemInfo {
         NFCLog.debug("→ GET_SYSTEM_INFO", source: "ISO15693")
         let systemInfo = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.systemInfo(requestFlags: [.highDataRate])
@@ -137,7 +134,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Get locked flags for a range of blocks.
-    public func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
+    open func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
         let statuses = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.getMultipleBlockSecurityStatus(
                 requestFlags: [.highDataRate],
@@ -147,25 +144,25 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         return statuses.map { $0 != 0 }
     }
 
-    public func writeAFI(_ afi: UInt8) async throws {
-        try await completion { tag.writeAFI(requestFlags: [.highDataRate], afi: afi, completionHandler: $0) }
+    open func writeAFI(_ afi: UInt8) async throws {
+        try await awaitCompletion { tag.writeAFI(requestFlags: [.highDataRate], afi: afi, completionHandler: $0) }
     }
 
     /// - Warning: Irreversible: permanently locks the AFI (see ``ISO15693TagTransporting/lockAFI()``).
-    public func lockAFI() async throws {
-        try await completion { tag.lockAFI(requestFlags: [.highDataRate], completionHandler: $0) }
+    open func lockAFI() async throws {
+        try await awaitCompletion { tag.lockAFI(requestFlags: [.highDataRate], completionHandler: $0) }
     }
 
-    public func writeDSFID(_ dsfid: UInt8) async throws {
-        try await completion { tag.writeDSFID(requestFlags: [.highDataRate], dsfid: dsfid, completionHandler: $0) }
+    open func writeDSFID(_ dsfid: UInt8) async throws {
+        try await awaitCompletion { tag.writeDSFID(requestFlags: [.highDataRate], dsfid: dsfid, completionHandler: $0) }
     }
 
     /// - Warning: Irreversible: permanently locks the DSFID (see ``ISO15693TagTransporting/lockDSFID()``).
-    public func lockDSFID() async throws {
-        try await completion { tag.lockDSFID(requestFlags: [.highDataRate], completionHandler: $0) }
+    open func lockDSFID() async throws {
+        try await awaitCompletion { tag.lockDSFID(requestFlags: [.highDataRate], completionHandler: $0) }
     }
 
-    public func customCommand(code: Int, parameters: Data) async throws -> Data {
+    open func customCommand(code: Int, parameters: Data) async throws -> Data {
         try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { continuation in
                 tag.customCommand(
@@ -179,7 +176,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         }
     }
 
-    public func challenge(cryptoSuiteIdentifier: Int, message: Data) async throws {
+    open func challenge(cryptoSuiteIdentifier: Int, message: Data) async throws {
         try await withNFCErrorMapping(terminationMonitor) {
             try await tag.challenge(
                 requestFlags: [.highDataRate],
@@ -189,7 +186,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         }
     }
 
-    public func authenticate(
+    open func authenticate(
         cryptoSuiteIdentifier: Int,
         message: Data
     ) async throws -> ISO15693SecurityResponse {
@@ -206,7 +203,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         )
     }
 
-    public func keyUpdate(
+    open func keyUpdate(
         keyIdentifier: Int,
         message: Data
     ) async throws -> ISO15693SecurityResponse {
@@ -224,7 +221,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     }
 
     /// Bridge a CoreNFC `(Error?) -> Void` completion call to async/await.
-    private func completion(_ start: (@escaping @Sendable ((any Error)?) -> Void) -> Void) async throws {
+    public func awaitCompletion(_ start: (@escaping @Sendable ((any Error)?) -> Void) -> Void) async throws {
         try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 start { error in
@@ -244,7 +241,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
     /// (Info flags b1–b4), and CoreNFC reports an absent field as `-1`.
     /// Absent byte fields become `nil` (never trapping on `UInt8(-1)`); absent memory
     /// size is normalised to `-1` and rejected by the dump and NDEF paths.
-    static func makeSystemInfo(
+    open class func makeSystemInfo(
         uid: Data,
         dsfid: Int,
         afi: Int,

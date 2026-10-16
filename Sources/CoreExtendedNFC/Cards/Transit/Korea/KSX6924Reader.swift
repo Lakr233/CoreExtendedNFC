@@ -17,8 +17,10 @@ import Foundation
 /// ## References
 /// - KS X 6924 specification
 /// - Metrodroid KSX6924Application, TMoneyTrip, SnapperTransitData
-public struct KSX6924Reader: Sendable {
-    let transport: any ISO7816TagTransporting
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class KSX6924Reader: @unchecked Sendable {
+    public let transport: any ISO7816TagTransporting
 
     public init(transport: any ISO7816TagTransporting) {
         self.transport = transport
@@ -28,18 +30,18 @@ public struct KSX6924Reader: Sendable {
     ///
     /// For the shared T-Money / Snapper AID the transaction file is also read, because it is
     /// the only way to tell the two systems (and their currencies) apart.
-    public func readBalance() async throws -> TransitBalance {
+    open func readBalance() async throws -> TransitBalance {
         try await read(includeTransactions: false)
     }
 
     /// Read balance + transaction records.
-    public func readBalanceAndHistory() async throws -> TransitBalance {
+    open func readBalanceAndHistory() async throws -> TransitBalance {
         try await read(includeTransactions: true)
     }
 
-    // MARK: - Private
+    // MARK: - Steps
 
-    private func read(includeTransactions: Bool) async throws -> TransitBalance {
+    open func read(includeTransactions: Bool) async throws -> TransitBalance {
         NFCLog.info("KSX6924 read start history=\(includeTransactions)", source: "KSX6924")
         let (aidName, aid, fciData) = try await selectCard()
         let purseInfo = parsePurseInfo(fciData)
@@ -80,7 +82,7 @@ public struct KSX6924Reader: Sendable {
     }
 
     /// Try each known AID until one succeeds. Returns (name, aid, fciResponseData).
-    private func selectCard() async throws -> (String, Data, Data) {
+    open func selectCard() async throws -> (String, Data, Data) {
         for (name, aid) in KSX6924Constants.allAIDs {
             NFCLog.debug("KSX6924 SELECT AID \(aid.hexString) (\(name))", source: "KSX6924")
             do {
@@ -100,7 +102,7 @@ public struct KSX6924Reader: Sendable {
         throw NFCError.applicationNotFound(aid: KSX6924Constants.tMoneyAID)
     }
 
-    private func readRawBalance() async throws -> Int {
+    open func readRawBalance() async throws -> Int {
         let apdu = CommandAPDU(
             cla: KSX6924Constants.CLA,
             ins: KSX6924Constants.INS_GET_BALANCE,
@@ -120,7 +122,7 @@ public struct KSX6924Reader: Sendable {
     }
 
     /// READ RECORD `00 B2 n 24 00`: record `n` of SFI 4, Le = 256.
-    static func readRecordAPDU(recordNumber: UInt8) -> CommandAPDU {
+    open class func readRecordAPDU(recordNumber: UInt8) -> CommandAPDU {
         CommandAPDU(
             cla: 0x00,
             ins: 0xB2,
@@ -132,7 +134,7 @@ public struct KSX6924Reader: Sendable {
 
     /// Read SFI 4 records until the card reports no further record. Session loss and
     /// cancellation propagate; any other per-record failure ends the record list.
-    private func readRecords() async throws -> [Data] {
+    open func readRecords() async throws -> [Data] {
         var records: [Data] = []
         for recordNumber in 1 ... KSX6924Constants.maxRecords {
             try Task.checkCancellation()
@@ -163,7 +165,7 @@ public struct KSX6924Reader: Sendable {
     /// is deliberately not used: Snapper's SFI 4 records also carry type 1 / 2 at byte 0
     /// (Metrodroid `SnapperTransaction.parseTransaction`, 2 = top-up), so rejecting those
     /// values would misreport real Snapper cards as T-Money.
-    static func isSnapper(records: [Data]) -> Bool {
+    open class func isSnapper(records: [Data]) -> Bool {
         guard !records.isEmpty else { return false }
         return records.allSatisfy { record in
             let bytes = [UInt8](record)
@@ -174,13 +176,20 @@ public struct KSX6924Reader: Sendable {
 
     // MARK: - Parsing
 
-    struct PurseInfo {
-        let serial: String
-        let issueDate: Date?
-        let expiryDate: Date?
+    /// Purse info decoded from the SELECT response FCI (tag 0xB0).
+    public struct PurseInfo: Sendable, Equatable {
+        public let serial: String
+        public let issueDate: Date?
+        public let expiryDate: Date?
+
+        public init(serial: String, issueDate: Date?, expiryDate: Date?) {
+            self.serial = serial
+            self.issueDate = issueDate
+            self.expiryDate = expiryDate
+        }
     }
 
-    func parsePurseInfo(_ fciData: Data) -> PurseInfo {
+    open func parsePurseInfo(_ fciData: Data) -> PurseInfo {
         guard !fciData.isEmpty,
               let nodes = try? ASN1Parser.parseTLV(fciData),
               let purseNode = ASN1Parser.findTag(KSX6924Constants.PURSE_TAG, in: nodes),
@@ -207,7 +216,7 @@ public struct KSX6924Reader: Sendable {
     }
 
     /// Parse a 4-byte BCD date (YYYYMMDD) into a Date.
-    static func parseBCDDate(_ data: Data) -> Date? {
+    open class func parseBCDDate(_ data: Data) -> Date? {
         guard data.count >= 4 else { return nil }
 
         let hex = data.hexString // e.g. "20251231"
@@ -230,7 +239,7 @@ public struct KSX6924Reader: Sendable {
     }
 
     /// Parse a 7-byte BCD date-time (YYYYMMDDhhmmss) in Korea Standard Time.
-    static func parseBCDDateTime(_ data: Data) -> Date? {
+    open class func parseBCDDateTime(_ data: Data) -> Date? {
         let bytes = [UInt8](data)
         guard bytes.count == 7,
               bytes.allSatisfy({ $0 >> 4 <= 9 && $0 & 0x0F <= 9 })
@@ -257,7 +266,7 @@ public struct KSX6924Reader: Sendable {
     /// Layout: byte 0 type, bytes 2..<6 balance after (BE), 6..<10 counter,
     /// 10..<14 cost (BE, unsigned), 26..<33 BCD date-time (KST).
     /// Returns nil for unused slots (zero cost and no valid timestamp).
-    static func parseRecord(_ data: Data, recordNumber: Int? = nil) -> TransitTransaction? {
+    open class func parseRecord(_ data: Data, recordNumber: Int? = nil) -> TransitTransaction? {
         let bytes = [UInt8](data)
         guard bytes.count >= KSX6924Constants.recordMinimumLength else { return nil }
 

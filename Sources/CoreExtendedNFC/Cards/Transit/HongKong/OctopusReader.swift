@@ -1,9 +1,11 @@
 import Foundation
 
 /// Reads balance from Hong Kong Octopus FeliCa transit cards.
-public struct OctopusReader: Sendable {
-    let transport: any FeliCaTagTransporting
-    let balanceOffset: Int
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class OctopusReader: @unchecked Sendable {
+    public let transport: any FeliCaTagTransporting
+    public let balanceOffset: Int
 
     public init(transport: any FeliCaTagTransporting) {
         self.transport = transport
@@ -18,7 +20,7 @@ public struct OctopusReader: Sendable {
         self.balanceOffset = balanceOffset
     }
 
-    public func readBalance() async throws -> TransitBalance {
+    open func readBalance() async throws -> TransitBalance {
         NFCLog.info("Octopus balance read start idm=\(NFCLog.payload(transport.identifier))", source: "Octopus")
         try validateSystemCode()
 
@@ -57,11 +59,11 @@ public struct OctopusReader: Sendable {
         )
     }
 
-    static func balanceCents(rawValue: Int, offset: Int = OctopusConstants.defaultBalanceRawOffset) -> Int {
+    open class func balanceCents(rawValue: Int, offset: Int = OctopusConstants.defaultBalanceRawOffset) -> Int {
         (rawValue - offset) * 10
     }
 
-    private func validateSystemCode() throws {
+    open func validateSystemCode() throws {
         NFCLog.debug("Octopus system code=\(transport.systemCode.hexString) expected=\(OctopusConstants.systemCode.hexString)", source: "Octopus")
         guard transport.systemCode == OctopusConstants.systemCode else {
             // Not an Octopus (0x8008) card.

@@ -3,7 +3,11 @@ import Foundation
 
 /// Manages an `NFCTagReaderSession` and exposes detection through async/await.
 /// The session stays active after detection so callers can keep using the transport.
-public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @unchecked Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+/// Override the `open` hooks (``identifyTag(_:monitor:)``, ``pollingOptions(from:)``,
+/// ``sessionDidBecomeActive(_:)``, ...); session bookkeeping itself is not overridable.
+open class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @unchecked Sendable {
     /// Which tag types to poll for.
     public enum PollingTarget: Sendable {
         case iso14443
@@ -120,7 +124,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
     /// invalidated without an error message and ``NFCError/userCanceled`` (or the
     /// `CancellationError`) is returned, so a failure that raced the cancel is not
     /// shown to the user as a read error.
-    func invalidateAfterFailure(_ error: any Error) -> any Error {
+    open func invalidateAfterFailure(_ error: any Error) -> any Error {
         let outcome = Self.failureOutcome(for: error, userCanceled: wasCanceledByUser)
         if let message = outcome.alertMessage {
             invalidate(errorMessage: message)
@@ -132,7 +136,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
 
     /// The error to rethrow and the message to show on the sheet (`nil` = none)
     /// for a failure that ended a session.
-    static func failureOutcome(
+    open class func failureOutcome(
         for error: any Error,
         userCanceled: Bool
     ) -> (error: any Error, alertMessage: String?) {
@@ -158,8 +162,9 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
 
     // MARK: - NFCTagReaderSessionDelegate
 
-    public func tagReaderSessionDidBecomeActive(_: NFCTagReaderSession) {
+    public func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {
         NFCLog.info("NFC session active, waiting for tag…", source: "Session")
+        sessionDidBecomeActive(session)
     }
 
     public func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
@@ -170,8 +175,10 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
         // `invalidate()` followed by a new `scan()`) must not touch the new scan.
         // A user cancel is recorded even when no scan is pending, so the transport's
         // in-flight and later commands report `.userCanceled`.
-        guard let continuation = scanState.sessionInvalidated(session, userCanceled: userCanceled) else { return }
-        continuation.resume(throwing: mapped)
+        if let continuation = scanState.sessionInvalidated(session, userCanceled: userCanceled) {
+            continuation.resume(throwing: mapped)
+        }
+        sessionDidInvalidate(session, error: mapped)
     }
 
     public func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
@@ -182,6 +189,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
             return
         }
         let monitor = scanState.currentMonitor
+        let managerType = type(of: self)
         guard let continuation = scanState.takeContinuationForDetection(by: session) else { return }
 
         // CoreNFC session and tag objects are not Sendable. These immutable references
@@ -200,7 +208,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
                     continuation.resume(throwing: CancellationError())
                     return
                 }
-                let (cardInfo, transport) = try Self.identifyTag(nfcTag, monitor: monitor)
+                let (cardInfo, transport) = try managerType.identifyTag(nfcTag, monitor: monitor)
                 NFCLog.info("Tag detected: \(cardInfo.type.description) UID:\(NFCLog.payload(cardInfo.uid))", source: "Session")
                 continuation.resume(returning: (cardInfo, transport))
             } catch {
@@ -212,8 +220,18 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
         }
     }
 
+    // MARK: - Subclass Hooks
+
+    /// Called after the session became active. Default: does nothing.
+    open func sessionDidBecomeActive(_ session: NFCTagReaderSession) {}
+
+    /// Called after a session ended and any pending scan was failed, including a
+    /// session this manager no longer owns. `error` is the mapped error
+    /// (see ``invalidationError(from:)``). Default: does nothing.
+    open func sessionDidInvalidate(_ session: NFCTagReaderSession, error: any Error) {}
+
     /// Map the error CoreNFC reports when a session ends to ``NFCError``.
-    static func invalidationError(from error: any Error) -> any Error {
+    open class func invalidationError(from error: any Error) -> any Error {
         let mapped = NFCReaderErrorMapping.map(error, context: .sessionInvalidation)
         if mapped is NFCError {
             return mapped
@@ -221,9 +239,8 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
         return NFCError.sessionInvalidated(error.localizedDescription)
     }
 
-    // MARK: - Private
-
-    private static func pollingOptions(from targets: [PollingTarget]) -> NFCTagReaderSession.PollingOption {
+    /// CoreNFC polling options for `targets`.
+    open class func pollingOptions(from targets: [PollingTarget]) -> NFCTagReaderSession.PollingOption {
         if targets.contains(.all) {
             return [.iso14443, .iso18092, .iso15693]
         }
@@ -244,7 +261,8 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
         return options
     }
 
-    private static func identifyTag(_ tag: NFCTag, monitor: SessionTerminationMonitor?) throws -> (CardInfo, any NFCTagTransport) {
+    /// Wrap a connected tag in a transport and describe it. Called on the connecting task.
+    open class func identifyTag(_ tag: NFCTag, monitor: SessionTerminationMonitor?) throws -> (CardInfo, any NFCTagTransport) {
         switch tag {
         case let .miFare(mifareTag):
             let transport = MiFareTransport(tag: mifareTag, terminationMonitor: monitor)

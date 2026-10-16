@@ -2,7 +2,10 @@ import Foundation
 
 /// MIFARE Ultralight / NTAG command builder and sender.
 /// Ported from libnfc utils/nfc-mfultralight.c and utils/mifare.h.
-public struct UltralightCommands: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class UltralightCommands: @unchecked Sendable {
     public let transport: any NFCTagTransport
 
     public init(transport: any NFCTagTransport) {
@@ -10,7 +13,7 @@ public struct UltralightCommands: Sendable {
     }
 
     /// READ (0x30): Read 4 pages (16 bytes) starting at `startPage`.
-    public func readPages(startPage: UInt8) async throws -> Data {
+    open func readPages(startPage: UInt8) async throws -> Data {
         let response = try await transport.send(Data([0x30, startPage]))
         guard response.count >= 16 else {
             throw NFCError.invalidResponse(response)
@@ -53,7 +56,7 @@ public struct UltralightCommands: Sendable {
     ///   - allowIrreversible: Explicit opt-in to write lock, OTP and
     ///     configuration pages.
     /// - Throws: ``NFCError/invalidParameter(_:)`` when `data` is not 4 bytes.
-    public func writePage(
+    open func writePage(
         _ page: UInt8,
         data: Data,
         memoryMap: UltralightMemoryMap? = nil,
@@ -71,7 +74,7 @@ public struct UltralightCommands: Sendable {
 
     /// FAST_READ (0x3A): Read a range of pages [start...end] inclusive.
     /// Returns (end - start + 1) × 4 bytes.
-    public func fastRead(from start: UInt8, to end: UInt8) async throws -> Data {
+    open func fastRead(from start: UInt8, to end: UInt8) async throws -> Data {
         guard end >= start else {
             throw NFCError.invalidParameter("FAST_READ end page must not be before start page")
         }
@@ -94,7 +97,7 @@ public struct UltralightCommands: Sendable {
     ///   `allowIrreversible` is `true`, exactly as for
     ///   ``writePage(_:data:memoryMap:allowIrreversible:)``. Both phases must be
     ///   answered with the ACK byte `0Ah`.
-    public func compatibilityWrite(
+    open func compatibilityWrite(
         _ page: UInt8,
         data: Data,
         memoryMap: UltralightMemoryMap? = nil,
@@ -146,7 +149,7 @@ public struct UltralightCommands: Sendable {
     ///   (``NFCError/tagConnectionLost``) is treated as "not Ultralight C",
     ///   because CoreNFC reports a NAKed or unanswered optional command the same
     ///   way; the next mandatory command fails if the tag really left the field.
-    public func probeUltralightCMemory() async throws -> Bool {
+    open func probeUltralightCMemory() async throws -> Bool {
         let response: Data
         do {
             response = try await transport.send(Data([0x30, 0x2B]))
@@ -168,7 +171,7 @@ public struct UltralightCommands: Sendable {
     ///   datasheet any next command other than the AF second step is NAKed
     ///   and drops the tag to IDLE, so the tag must be re-selected before use.
     ///   The library's own identification uses ``probeUltralightCMemory()``.
-    public func probeUltralightCAuthentication() async -> Bool {
+    open func probeUltralightCAuthentication() async -> Bool {
         guard let response = try? await transport.send(Data([0x1A, 0x00])) else {
             return false
         }
@@ -180,7 +183,7 @@ public struct UltralightCommands: Sendable {
     /// Page 3 is OTP: the written bits are OR-ed into the current value. Without
     /// the opt-in it is read first and the write is allowed only when it would
     /// leave the page unchanged.
-    func requireWritable(
+    open func requireWritable(
         _ page: UInt8,
         data: Data,
         memoryMap: UltralightMemoryMap?,
@@ -198,7 +201,7 @@ public struct UltralightCommands: Sendable {
     /// Refuse a write to the UID, lock, configuration, password or key pages
     /// unless the caller opted in. Page 3 (OTP) needs the tag's current value
     /// and is checked by the async overload.
-    static func requireWritable(
+    open class func requireWritable(
         _ page: UInt8,
         memoryMap: UltralightMemoryMap?,
         allowIrreversible: Bool
@@ -219,7 +222,7 @@ public struct UltralightCommands: Sendable {
     /// WRITE and COMPATIBILITY_WRITE answer with the 4-bit ACK `Ah`, which CoreNFC
     /// returns as the single byte `0Ah` (NAKs are `0h`/`1h`/`4h`/`5h`). An empty
     /// answer is not an acknowledgement.
-    static func requireACK(_ response: Data, page: UInt8) throws {
+    open class func requireACK(_ response: Data, page: UInt8) throws {
         guard response.first == 0x0A else {
             throw NFCError.writeFailed(page: page)
         }

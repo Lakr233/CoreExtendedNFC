@@ -14,8 +14,8 @@ import Foundation
 /// - 0x5F1C: Tax/Exit Requirements
 /// - 0x5F55: Date of Personalization (YYYYMMDD)
 /// - 0x5F56: Serial Number of Personalization Device
-enum DG12Parser {
-    private static let tagMapping: [(UInt, String)] = [
+public enum DG12Parser {
+    public static let tagMapping: [(UInt, String)] = [
         (0x5F19, "issuingAuthority"),
         (0x5F26, "dateOfIssue"),
         (0x5F1B, "endorsements"),
@@ -24,7 +24,7 @@ enum DG12Parser {
         (0x5F56, "personalizationDeviceSerial"),
     ]
 
-    static func parse(_ data: Data) throws -> [String: String] {
+    public static func parse(_ data: Data) throws -> [String: String] {
         let nodes = try ASN1Parser.parseTLV(data)
 
         guard let dg12Node = nodes.first(where: { $0.tag == 0x6C }) else {

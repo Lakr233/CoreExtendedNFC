@@ -4,16 +4,26 @@ import Foundation
     import OpenSSL
 #endif
 
-enum ActiveAuthenticationVerifier {
-    private struct HashDescriptor {
-        let algorithmName: String
-        let digestLength: Int
-        let compute: @Sendable (Data) -> Data
+public enum ActiveAuthenticationVerifier {
+    /// A digest algorithm used by an Active Authentication signature.
+    public struct HashDescriptor: Sendable {
+        /// OpenSSL digest name (`sha1`, `sha256`, ...).
+        public let algorithmName: String
+        /// Digest length in bytes.
+        public let digestLength: Int
+        /// Computes the digest of its input.
+        public let compute: @Sendable (Data) -> Data
+
+        public init(algorithmName: String, digestLength: Int, compute: @escaping @Sendable (Data) -> Data) {
+            self.algorithmName = algorithmName
+            self.digestLength = digestLength
+            self.compute = compute
+        }
     }
 
-    private static let ecPublicKeyOID = "1.2.840.10045.2.1"
+    public static let ecPublicKeyOID = "1.2.840.10045.2.1"
 
-    static func verify(
+    public static func verify(
         challenge: Data,
         signature: Data,
         publicKey: ActiveAuthPublicKey,
@@ -48,7 +58,7 @@ enum ActiveAuthenticationVerifier {
         }
     }
 
-    private static func verifyRSA(
+    public static func verifyRSA(
         challenge: Data,
         signature: Data,
         modulus: Data,
@@ -101,7 +111,7 @@ enum ActiveAuthenticationVerifier {
         #endif
     }
 
-    private static func verifyECDSA(
+    public static func verifyECDSA(
         challenge: Data,
         signature: Data,
         curveOID: String,
@@ -169,7 +179,7 @@ enum ActiveAuthenticationVerifier {
         #endif
     }
 
-    private static func hashDescriptorForECDSA(_ oid: String) -> HashDescriptor? {
+    public static func hashDescriptorForECDSA(_ oid: String) -> HashDescriptor? {
         switch oid {
         case "0.4.0.127.0.7.1.1.4.1.1":
             HashDescriptor(algorithmName: "sha1", digestLength: 20, compute: HashUtils.sha1)
@@ -186,7 +196,7 @@ enum ActiveAuthenticationVerifier {
         }
     }
 
-    private static func hashDescriptorForRSATrailer(_ trailer: UInt8) -> HashDescriptor? {
+    public static func hashDescriptorForRSATrailer(_ trailer: UInt8) -> HashDescriptor? {
         switch trailer {
         case 0xBC, 0x33:
             HashDescriptor(algorithmName: "sha1", digestLength: 20, compute: HashUtils.sha1)
@@ -203,7 +213,7 @@ enum ActiveAuthenticationVerifier {
         }
     }
 
-    private static func parseRecoveredRSASignature(_ recovered: Data) -> (HashDescriptor, Data, Data)? {
+    public static func parseRecoveredRSASignature(_ recovered: Data) -> (HashDescriptor, Data, Data)? {
         guard recovered.count >= 3 else {
             return nil
         }
@@ -303,7 +313,7 @@ enum ActiveAuthenticationVerifier {
             return recovered
         }
 
-        private static func makeRSASubjectPublicKeyInfo(modulus: Data, exponent: Data) -> Data {
+        public static func makeRSASubjectPublicKeyInfo(modulus: Data, exponent: Data) -> Data {
             let rsaEncryptionOID = ASN1Parser.encodeTLV(tag: 0x06, value: ChipAuthenticationHandler.encodeOID("1.2.840.113549.1.1.1"))
             let nullParameters = ASN1Parser.encodeTLV(tag: 0x05, value: Data())
             let algorithmIdentifier = ASN1Parser.encodeTLV(tag: 0x30, value: rsaEncryptionOID + nullParameters)
@@ -320,7 +330,7 @@ enum ActiveAuthenticationVerifier {
             return ASN1Parser.encodeTLV(tag: 0x30, value: algorithmIdentifier + subjectPublicKey)
         }
 
-        private static func encodeASN1Integer(_ value: Data) -> Data {
+        public static func encodeASN1Integer(_ value: Data) -> Data {
             var normalized = value.drop(while: { $0 == 0x00 })
             if normalized.isEmpty {
                 normalized = Data([0x00])[...]
@@ -364,7 +374,7 @@ enum ActiveAuthenticationVerifier {
             return key
         }
 
-        private static func convertPlainECDSASignatureToDER(_ signature: Data) throws -> Data {
+        public static func convertPlainECDSASignatureToDER(_ signature: Data) throws -> Data {
             guard signature.count >= 2, signature.count.isMultiple(of: 2) else {
                 throw NFCError.cryptoError("ECDSA signature must be plain r||s")
             }

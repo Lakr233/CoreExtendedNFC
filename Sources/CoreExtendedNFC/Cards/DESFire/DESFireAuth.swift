@@ -133,7 +133,7 @@ public extension DESFireCommands {
     }
 }
 
-extension DESFireCommands {
+public extension DESFireCommands {
     func getValueAuthenticatedEV2(
         fileID: UInt8,
         keyNo: UInt8,
@@ -400,13 +400,13 @@ extension DESFireCommands {
         )
     }
 
-    private func sendAuthenticationStart(command: UInt8, data: Data) async throws -> ResponseAPDU {
+    func sendAuthenticationStart(command: UInt8, data: Data) async throws -> ResponseAPDU {
         let response = try await transport.sendAPDU(CommandAPDU.desfireWrap(command: command, data: data))
         try validateDESFireStatus(response, expected: .additionalFrame)
         return response
     }
 
-    private func sendAuthenticationContinuation(_ data: Data) async throws -> ResponseAPDU {
+    func sendAuthenticationContinuation(_ data: Data) async throws -> ResponseAPDU {
         let response = try await transport.sendAPDU(
             CommandAPDU.desfireWrap(command: Self.ADDITIONAL_FRAME, data: data)
         )
@@ -414,7 +414,7 @@ extension DESFireCommands {
         return response
     }
 
-    private func validateDESFireStatus(_ response: ResponseAPDU, expected: DESFireStatus) throws {
+    func validateDESFireStatus(_ response: ResponseAPDU, expected: DESFireStatus) throws {
         guard response.sw1 == 0x91 else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
@@ -426,7 +426,7 @@ extension DESFireCommands {
         }
     }
 
-    private func validateOrGenerateRandom(_ candidate: Data?, count: Int) throws -> Data {
+    func validateOrGenerateRandom(_ candidate: Data?, count: Int) throws -> Data {
         if let candidate {
             guard candidate.count == count else {
                 throw NFCError.cryptoError("Random input must be \(count) bytes")
@@ -436,17 +436,8 @@ extension DESFireCommands {
         return try CryptoUtils.secureRandomBytes(count: count)
     }
 
-    private func rotateLeft(_ data: Data) -> Data {
+    func rotateLeft(_ data: Data) -> Data {
         guard let first = data.first else { return Data() }
         return Data(data.dropFirst()) + Data([first])
-    }
-
-}
-
-private extension Data {
-    static func + (lhs: Data, rhs: Data) -> Data {
-        var result = Data(lhs)
-        result.append(rhs)
-        return result
     }
 }

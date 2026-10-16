@@ -6,9 +6,9 @@ import Foundation
 /// `description`, `debugDescription` or the type's mirror. Each of these shows only
 /// non-secret fields and key lengths, so session keys never reach a log or a crash
 /// report by accident. The stored properties stay readable for callers that need them.
-enum SecretRedaction {
+public enum SecretRedaction {
     /// Placeholder for a secret byte string: its length, never its bytes.
-    static func redacted(_ data: Data) -> String {
+    public static func redacted(_ data: Data) -> String {
         "<redacted \(data.count) bytes>"
     }
 }

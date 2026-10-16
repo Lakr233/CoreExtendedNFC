@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - NDEF Operations
 
-extension CoreExtendedNFC {
+public extension CoreExtendedNFC {
     /// Read and parse an NDEF message using the best available family-specific path.
-    public static func readNDEF(
+    static func readNDEF(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> NDEFMessage {
@@ -48,7 +48,7 @@ extension CoreExtendedNFC {
     /// does not fit, or ``NFCError/tagLocked`` when it denies write access. Only the
     /// blocks holding the NDEF TLV are written on Type 5 tags; use
     /// ``formatNDEF(info:transport:)`` to format a blank tag.
-    public static func writeNDEF(
+    static func writeNDEF(
         _ message: NDEFMessage,
         info: CardInfo,
         transport: any NFCTagTransport
@@ -93,7 +93,7 @@ extension CoreExtendedNFC {
     ///   with an unusable CC. This is the only library path that writes page 3
     ///   with the irreversible opt-in; ``writeNDEF(_:info:transport:)`` never
     ///   writes page 3.
-    public static func formatNDEF(
+    static func formatNDEF(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws {
@@ -119,7 +119,7 @@ extension CoreExtendedNFC {
     /// by MLEN (NFC Forum T5T 1.0 §4.3.1 / §7.3). Blocks from 256 on are read with
     /// EXTENDED READ SINGLE BLOCK; when the tag rejects it the read stops there, so a
     /// message that ends past block 255 is then reported as not found.
-    private static func readType5NDEF(
+    static func readType5NDEF(
         transport: any ISO15693TagTransporting
     ) async throws -> Data {
         let systemInfo = try await transport.getSystemInfo()
@@ -174,7 +174,7 @@ extension CoreExtendedNFC {
 
     /// ISO/IEC 15693-3 makes the memory-size field of Get System Information optional;
     /// CoreNFC then reports block size and count as `-1`.
-    private static func requireKnownMemorySize(_ systemInfo: ISO15693SystemInfo) throws {
+    static func requireKnownMemorySize(_ systemInfo: ISO15693SystemInfo) throws {
         guard systemInfo.blockCount > 0, systemInfo.blockSize > 0 else {
             throw NFCError.unsupportedOperation("The ISO 15693 tag did not report its memory size")
         }
@@ -183,7 +183,7 @@ extension CoreExtendedNFC {
     /// Write `message` into the NDEF data area announced by the tag's Capability
     /// Container (page 3). The area is CC2 × 8 bytes (NFC Forum T2T 1.0 §6.1), which
     /// can be smaller than the user memory (NTAG215/216), and readers stop there.
-    private static func writeType2NDEF(
+    static func writeType2NDEF(
         _ message: Data,
         info: CardInfo,
         transport: any NFCTagTransport
@@ -195,7 +195,7 @@ extension CoreExtendedNFC {
         try await writeType2Area(message, capacity: capacity, memory: memory, commands: commands)
     }
 
-    private static func writeType2Area(
+    static func writeType2Area(
         _ message: Data,
         capacity: Int,
         memory: UltralightMemoryMap,
@@ -218,7 +218,7 @@ extension CoreExtendedNFC {
         }
     }
 
-    private static func formatType2NDEF(
+    static func formatType2NDEF(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws {
@@ -246,7 +246,7 @@ extension CoreExtendedNFC {
     /// Reads the CC first and refuses tags that are not formatted (CC magic E1h/E2h)
     /// or deny write access, then writes only the blocks holding the NDEF TLV and
     /// its terminator. Use ``formatNDEF(info:transport:)`` to format a blank tag.
-    private static func writeType5NDEF(
+    static func writeType5NDEF(
         _ message: Data,
         transport: any ISO15693TagTransporting
     ) async throws {
@@ -306,7 +306,7 @@ extension CoreExtendedNFC {
     /// Same layout as ``NDEFTagMapping/type5NDEFWrites(message:leadingBytes:blockSize:blockCount:)``
     /// (CC kept as read, NDEF TLV then terminator TLV, NFC Forum T5T 1.0 §4.3 / §7.5)
     /// without the single-byte addressing bound.
-    private static func type5ExtendedNDEFWrites(
+    static func type5ExtendedNDEFWrites(
         message: Data,
         leadingBytes: Data,
         blockSize: Int,
@@ -344,7 +344,7 @@ extension CoreExtendedNFC {
 
     /// Format a Type 5 tag: write a fresh CC and an empty NDEF message, clearing
     /// the rest of the single-byte addressable data area.
-    private static func formatType5NDEF(
+    static func formatType5NDEF(
         transport: any ISO15693TagTransporting
     ) async throws {
         let systemInfo = try await transport.getSystemInfo()

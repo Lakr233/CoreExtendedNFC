@@ -2,7 +2,10 @@ import Foundation
 
 /// Full card dump and restore operations for Ultralight/NTAG.
 /// Ported from libnfc utils/nfc-mfultralight.c dump/restore logic.
-public struct UltralightDump: Sendable {
+///
+/// Subclasses must preserve thread safety: any added mutable state must be
+/// lock-protected or immutable.
+open class UltralightDump: @unchecked Sendable {
     public let commands: UltralightCommands
 
     public init(commands: UltralightCommands) {
@@ -10,7 +13,7 @@ public struct UltralightDump: Sendable {
     }
 
     /// Read all pages into a MemoryDump.
-    public func dumpAll(cardInfo: CardInfo, map: UltralightMemoryMap) async throws -> MemoryDump {
+    open func dumpAll(cardInfo: CardInfo, map: UltralightMemoryMap) async throws -> MemoryDump {
         var pages: [MemoryDump.Page] = []
         var facts: [MemoryDump.Fact] = []
         var capabilities: [CardCapability] = []
@@ -100,7 +103,7 @@ public struct UltralightDump: Sendable {
     ///     `dump.cardInfo.type`, so a dump is never written onto a different product.
     /// - Throws: ``NFCError/invalidParameter(_:)`` when a page to restore is not
     ///   4 bytes or the card types differ. Nothing is written in that case.
-    public func restore(dump: MemoryDump, map: UltralightMemoryMap, target: CardInfo? = nil) async throws {
+    open func restore(dump: MemoryDump, map: UltralightMemoryMap, target: CardInfo? = nil) async throws {
         if let target, target.type != dump.cardInfo.type {
             throw NFCError.invalidParameter(
                 "The dump is from a \(dump.cardInfo.type.description) but the tag is a \(target.type.description)"
@@ -118,14 +121,14 @@ public struct UltralightDump: Sendable {
     }
 
     /// User data pages only: not pages 0-3, the dynamic lock or configuration pages.
-    private static func isRestorable(_ page: UInt8, map: UltralightMemoryMap) -> Bool {
+    open class func isRestorable(_ page: UInt8, map: UltralightMemoryMap) -> Bool {
         guard map.isUserDataPage(page) else { return false }
         if let configStart = map.configStart, page >= configStart { return false }
         if let lockStart = map.dynamicLockStart, page == lockStart { return false }
         return true
     }
 
-    private func parseUltralightCAccessConfiguration(
+    open func parseUltralightCAccessConfiguration(
         from pages: [MemoryDump.Page]
     ) throws -> UltralightCAccessConfiguration {
         guard

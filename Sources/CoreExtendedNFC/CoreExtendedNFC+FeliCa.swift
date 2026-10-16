@@ -61,7 +61,7 @@ public extension CoreExtendedNFC {
             .readAttributeInfo()
     }
 
-    private static func felicaTransport(_ transport: any NFCTagTransport) throws -> any FeliCaTagTransporting {
+    static func felicaTransport(_ transport: any NFCTagTransport) throws -> any FeliCaTagTransporting {
         guard let felicaTransport = transport as? any FeliCaTagTransporting else {
             throw NFCError.unsupportedOperation("FeliCa operations require a FeliCa transport")
         }

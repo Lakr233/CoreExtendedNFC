@@ -37,23 +37,23 @@ public enum NFCLogConfiguration: Sendable {
     }
 }
 
-/// Internal shorthand for logging throughout the library.
-enum NFCLog {
-    static func debug(_ message: @autoclosure () -> String, source: String) {
+/// Shorthand for logging through ``NFCLogConfiguration/logger``.
+public enum NFCLog {
+    public static func debug(_ message: @autoclosure () -> String, source: String) {
         NFCLogConfiguration.logger?.log(.debug, message(), source: source)
     }
 
-    static func info(_ message: @autoclosure () -> String, source: String) {
+    public static func info(_ message: @autoclosure () -> String, source: String) {
         NFCLogConfiguration.logger?.log(.info, message(), source: source)
     }
 
-    static func error(_ message: @autoclosure () -> String, source: String) {
+    public static func error(_ message: @autoclosure () -> String, source: String) {
         NFCLogConfiguration.logger?.log(.error, message(), source: source)
     }
 
     /// A value read from the card (balance, station code, …) for a log line: the value
     /// itself only when ``NFCLogConfiguration/logPayloads`` is on, `<redacted>` otherwise.
-    static func cardValue(
+    public static func cardValue(
         _ value: some CustomStringConvertible,
         logPayloads: Bool = NFCLogConfiguration.logPayloads
     ) -> String {

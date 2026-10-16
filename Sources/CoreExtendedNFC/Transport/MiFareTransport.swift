@@ -2,31 +2,28 @@ import CoreNFC
 import Foundation
 
 /// Transport adapter wrapping `NFCMiFareTag`.
-public final class MiFareTransport: NFCTagTransport, @unchecked Sendable {
-    private let tag: NFCMiFareTag
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class MiFareTransport: NFCTagTransport, @unchecked Sendable {
+    public let tag: NFCMiFareTag
     /// Set by `NFCSessionManager`: once the user cancels the session, failures are
     /// reported as `NFCError.userCanceled`.
-    private let terminationMonitor: SessionTerminationMonitor?
+    public let terminationMonitor: SessionTerminationMonitor?
 
-    public var identifier: Data {
+    open var identifier: Data {
         tag.identifier
     }
 
-    public var mifareFamily: NFCMiFareFamily {
+    open var mifareFamily: NFCMiFareFamily {
         tag.mifareFamily
     }
 
-    public init(tag: NFCMiFareTag) {
-        self.tag = tag
-        terminationMonitor = nil
-    }
-
-    init(tag: NFCMiFareTag, terminationMonitor: SessionTerminationMonitor?) {
+    public init(tag: NFCMiFareTag, terminationMonitor: SessionTerminationMonitor? = nil) {
         self.tag = tag
         self.terminationMonitor = terminationMonitor
     }
 
-    public func send(_ data: Data) async throws -> Data {
+    open func send(_ data: Data) async throws -> Data {
         NFCLog.rawCommand(data, family: .mifare, source: "MiFare")
         let response = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.sendMiFareCommand(commandPacket: data)
@@ -35,7 +32,7 @@ public final class MiFareTransport: NFCTagTransport, @unchecked Sendable {
         return response
     }
 
-    public func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+    open func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
         NFCLog.apduCommand(apdu, source: "MiFare")
         let nfcAPDU = NFCISO7816APDU(
             instructionClass: apdu.cla,

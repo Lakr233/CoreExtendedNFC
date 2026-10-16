@@ -32,7 +32,7 @@ public enum CardIdentifier {
         return UInt16(bytes[bytes.startIndex + 1]) << 8 | UInt16(bytes[bytes.startIndex])
     }
 
-    private static func identify(atqaValue: UInt16, sak: UInt8, atqaBytes atqa: Data) -> CardType {
+    public static func identify(atqaValue: UInt16, sak: UInt8, atqaBytes atqa: Data) -> CardType {
 
         // Match the most specific ATQA+SAK combinations first.
         // Reference: NXP AN10833 "MIFARE Type Identification Procedure"

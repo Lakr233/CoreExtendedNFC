@@ -188,7 +188,8 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         )
     }
 
-    private func inferredCapabilities() -> [CardCapability] {
+    /// Capabilities implied by the card family and facts, used when ``capabilities`` is empty.
+    public func inferredCapabilities() -> [CardCapability] {
         switch cardInfo.type.family {
         case .mifareClassic, .mifarePlus, .jewelTopaz:
             return [.identificationOnly]

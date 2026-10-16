@@ -312,7 +312,7 @@ public enum PACEHandler {
     /// - CAN/PIN/PUK: `K_π = KDF_π(password)` with the password encoded as ISO-8859-1.
     ///
     /// - Throws: `NFCError.secureMessagingError` when a CAN/PIN/PUK cannot be encoded as ISO-8859-1.
-    static func derivePasswordKey(
+    public static func derivePasswordKey(
         password: String,
         keyReference: KeyReference,
         mode: SMEncryptionMode
@@ -341,7 +341,7 @@ public enum PACEHandler {
     ///
     /// KSenc = KDF(sharedSecret, 1)
     /// KSmac = KDF(sharedSecret, 2)
-    static func derivePACESessionKeys(
+    public static func derivePACESessionKeys(
         sharedSecret: Data,
         mode: SMEncryptionMode
     ) -> (ksEnc: Data, ksMac: Data) {
@@ -359,7 +359,7 @@ public enum PACEHandler {
     /// - AES: AES-CMAC (RFC 4493) over the unpadded input — CMAC pads internally —
     ///   truncated to 8 bytes.
     /// - 3DES: ISO/IEC 9797-1 MAC algorithm 3 over the Method 2 padded input.
-    static func computeAuthToken(
+    public static func computeAuthToken(
         ksMac: Data,
         publicKeyOther: Data,
         oid: Data,
@@ -380,14 +380,14 @@ public enum PACEHandler {
         }
     }
 
-    private static func encodeDynamicAuthenticationData(tag: UInt8, value: Data) -> Data {
+    public static func encodeDynamicAuthenticationData(tag: UInt8, value: Data) -> Data {
         ASN1Parser.encodeTLV(tag: 0x7C, value: ASN1Parser.encodeTLV(tag: UInt(tag), value: value))
     }
 
     // MARK: - Response Parsing
 
     /// Parse tag 0x80 from a Dynamic Authentication Data (7C) response.
-    private static func parseTag80FromDynamicAuth(_ data: Data) throws -> Data {
+    public static func parseTag80FromDynamicAuth(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
             throw NFCError.secureMessagingError("PACE: Missing 0x7C wrapper in response")
@@ -400,7 +400,7 @@ public enum PACEHandler {
     }
 
     /// Parse tag 0x81 (map nonce public key) from Dynamic Authentication Data.
-    static func parseTag81FromDynamicAuth(_ data: Data) throws -> Data {
+    public static func parseTag81FromDynamicAuth(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
             throw NFCError.secureMessagingError("PACE: Missing 0x7C wrapper in response")
@@ -413,7 +413,7 @@ public enum PACEHandler {
     }
 
     /// Parse tag 0x82 (chip mapping public key) from Dynamic Authentication Data.
-    static func parseTag82FromDynamicAuth(_ data: Data) throws -> Data {
+    public static func parseTag82FromDynamicAuth(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
             throw NFCError.secureMessagingError("PACE: Missing 0x7C wrapper in response")
@@ -426,7 +426,7 @@ public enum PACEHandler {
     }
 
     /// Parse tag 0x84 (chip ephemeral public key) from Dynamic Authentication Data.
-    static func parseTag84FromDynamicAuth(_ data: Data) throws -> Data {
+    public static func parseTag84FromDynamicAuth(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
             throw NFCError.secureMessagingError("PACE: Missing 0x7C wrapper in response")
@@ -439,7 +439,7 @@ public enum PACEHandler {
     }
 
     /// Parse tag 0x86 (authentication token) from Dynamic Authentication Data.
-    static func parseTag86FromDynamicAuth(_ data: Data) throws -> Data {
+    public static func parseTag86FromDynamicAuth(_ data: Data) throws -> Data {
         let nodes = try ASN1Parser.parseTLV(data)
         guard let wrapper = nodes.first(where: { $0.tag == 0x7C }) else {
             throw NFCError.secureMessagingError("PACE: Missing 0x7C wrapper in response")
@@ -452,7 +452,7 @@ public enum PACEHandler {
     }
 }
 
-private extension SecurityProtocol {
+public extension SecurityProtocol {
     var isGenericMapping: Bool {
         switch self {
         case .paceDHGM3DESCBCCBC, .paceDHGMAESCBCCMAC128,

@@ -13,10 +13,15 @@ public enum CoreExtendedNFC {
     /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
     ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
     ///   usually stay silent then.
+    ///
+    /// - Parameters:
+    ///   - message: The alert message shown during NFC scanning.
+    ///   - manager: The session manager that runs the scan. Pass your own instance,
+    ///     or a subclass, to customize the session; it is returned unchanged.
     public static func scan(
-        message: String? = nil
+        message: String? = nil,
+        manager: NFCSessionManager = NFCSessionManager()
     ) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager) {
-        let manager = NFCSessionManager()
         let (info, transport) = try await manager.scan(message: message)
 
         do {
@@ -30,10 +35,16 @@ public enum CoreExtendedNFC {
     }
 
     /// Scan and automatically dump the card's full memory.
+    ///
+    /// - Parameters:
+    ///   - message: The alert message shown during NFC scanning.
+    ///   - manager: The session manager that runs the scan. Pass your own instance,
+    ///     or a subclass, to customize the session. It is invalidated before returning.
     public static func scanAndDump(
-        message: String? = nil
+        message: String? = nil,
+        manager: NFCSessionManager = NFCSessionManager()
     ) async throws -> (CardInfo, MemoryDump) {
-        let (info, transport, manager) = try await scan(message: message)
+        let (info, transport, manager) = try await scan(message: message, manager: manager)
 
         // Non-operable cards (Classic, etc.) — return identification only
         guard info.type.isOperableOnIOS else {
@@ -75,6 +86,9 @@ public enum CoreExtendedNFC {
     ///   - mrzKey: The MRZ key string (use ``MRZKeyGenerator/computeMRZKey(documentNumber:dateOfBirth:dateOfExpiry:)``).
     ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
     ///   - message: The alert message shown during NFC scanning.
+    ///   - manager: The session manager that runs the scan. Pass your own instance,
+    ///     or a subclass, to customize the session. It is invalidated before returning.
+    ///   - onProgress: Called with each progress message, which is also shown on the NFC sheet.
     /// - Returns: A ``PassportModel`` with all parsed data.
     /// - Throws: ``NFCError``. When the user dismisses the NFC sheet or the calling task
     ///   is cancelled, the error's ``Swift/Error/isNFCCancellation`` is `true`; apps
@@ -85,9 +99,9 @@ public enum CoreExtendedNFC {
         performActiveAuth: Bool = true,
         trustAnchorsDER: [Data] = [],
         message: String? = nil,
+        manager: NFCSessionManager = NFCSessionManager(),
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> PassportModel {
-        let manager = NFCSessionManager()
         let (_, transport) = try await manager.scan(for: [.iso14443], message: message ?? String(localized: "Hold your iPhone near your passport", bundle: .module))
 
         do {

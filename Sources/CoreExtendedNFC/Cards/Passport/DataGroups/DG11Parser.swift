@@ -21,8 +21,8 @@ import Foundation
 /// - 0x5F16: Proof of Citizenship (image)
 /// - 0x5F17: Other Travel Document Numbers
 /// - 0x5F18: Custody Information
-enum DG11Parser {
-    private static let tagMapping: [(UInt, String)] = [
+public enum DG11Parser {
+    public static let tagMapping: [(UInt, String)] = [
         (0x5F0E, "fullName"),
         (0x5F0F, "otherNames"),
         (0x5F10, "personalNumber"),
@@ -37,7 +37,7 @@ enum DG11Parser {
         (0x5F18, "custodyInfo"),
     ]
 
-    static func parse(_ data: Data) throws -> [String: String] {
+    public static func parse(_ data: Data) throws -> [String: String] {
         let nodes = try ASN1Parser.parseTLV(data)
 
         guard let dg11Node = nodes.first(where: { $0.tag == 0x6B }) else {

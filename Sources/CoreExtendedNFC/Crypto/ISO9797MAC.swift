@@ -9,7 +9,7 @@ import Foundation
 public enum ISO9797MAC {
     /// Compute an 8-byte MAC over a message already padded with ISO 9797-1 Method 2.
     /// Key must be 16 bytes.
-    static func mac(key: Data, message: Data) throws -> Data {
+    public static func mac(key: Data, message: Data) throws -> Data {
         guard key.count == 16 else {
             throw NFCError.cryptoError("ISO 9797 MAC requires 16-byte key, got \(key.count)")
         }

@@ -12,8 +12,8 @@ import Foundation
 ///   5F36 <len> <Unicode version>   (e.g., "040000")
 ///   5C   <len> <DG tag list>       (e.g., 61 75 = DG1, DG2)
 /// ```
-enum COMParser {
-    static func parse(_ data: Data) throws -> (ldsVersion: String, unicodeVersion: String, dataGroups: [DataGroupId]) {
+public enum COMParser {
+    public static func parse(_ data: Data) throws -> (ldsVersion: String, unicodeVersion: String, dataGroups: [DataGroupId]) {
         let nodes = try ASN1Parser.parseTLV(data)
 
         guard let comNode = nodes.first(where: { $0.tag == 0x60 }) else {
@@ -47,7 +47,7 @@ enum COMParser {
         return (ldsVersion, unicodeVersion, dataGroups)
     }
 
-    private static func tagToDataGroupId(_ tag: UInt) -> DataGroupId? {
+    public static func tagToDataGroupId(_ tag: UInt) -> DataGroupId? {
         for dgId in DataGroupId.allCases {
             if dgId.tlvTag == tag {
                 return dgId

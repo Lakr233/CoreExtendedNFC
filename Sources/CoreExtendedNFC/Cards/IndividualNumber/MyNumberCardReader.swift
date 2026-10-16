@@ -6,8 +6,10 @@ import Foundation
 /// - Token info: SELECT JPKI AP -> SELECT EF 0006 -> READ BINARY(20)
 /// - Individual number: SELECT card-info-input-support AP -> SELECT EF 0011
 ///   -> VERIFY(PIN) -> SELECT EF 0001 -> READ BINARY(17)
-public struct MyNumberCardReader: Sendable {
-    let transport: any ISO7816TagTransporting
+///
+/// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
+open class MyNumberCardReader: @unchecked Sendable {
+    public let transport: any ISO7816TagTransporting
 
     public init(transport: any ISO7816TagTransporting) {
         self.transport = transport
@@ -18,7 +20,7 @@ public struct MyNumberCardReader: Sendable {
     /// Throws ``NFCError/invalidParameter(_:)`` when `items` is empty or the PIN is not
     /// 4 digits, and ``NFCError/pinRequired(_:)`` when `.individualNumber` is requested
     /// without `cardInfoInputSupportPIN`.
-    public func read(
+    open func read(
         items: [MyNumberCardItem] = [.tokenInfo],
         cardInfoInputSupportPIN: String? = nil
     ) async throws -> MyNumberCardData {
@@ -50,7 +52,7 @@ public struct MyNumberCardReader: Sendable {
     }
 
     /// Read JPKI token info (`EF 0006`).
-    public func readTokenInfo() async throws -> String {
+    open func readTokenInfo() async throws -> String {
         try await selectDF(MyNumberCardConstants.jpkiAID)
         try await selectEF(MyNumberCardConstants.jpkiTokenEFID)
         let response = try await readBinary(length: MyNumberCardConstants.tokenLength)
@@ -76,7 +78,7 @@ public struct MyNumberCardReader: Sendable {
     ///
     /// Official EF 0001 payload layout:
     /// `[0x10, 0x01, 0x0C, 12 ASCII digits, trailer(2 bytes)]` (17 bytes total).
-    public func readIndividualNumber(cardInfoInputSupportPIN: String) async throws -> String {
+    open func readIndividualNumber(cardInfoInputSupportPIN: String) async throws -> String {
         let pinData = try validateCardInfoInputSupportPIN(cardInfoInputSupportPIN)
 
         try await selectDF(MyNumberCardConstants.cardInfoInputSupportAID)
@@ -108,7 +110,7 @@ public struct MyNumberCardReader: Sendable {
     /// Query remaining PIN attempts for a specific PIN domain.
     ///
     /// The card returns `63Cx` for empty VERIFY in this flow, where `x` is remaining attempts.
-    public func lookupRemainingPINAttempts(for pinType: MyNumberPINType) async throws -> Int {
+    open func lookupRemainingPINAttempts(for pinType: MyNumberPINType) async throws -> Int {
         let (aid, efid) = pinAttemptSelector(for: pinType)
 
         try await selectDF(aid)
@@ -126,19 +128,19 @@ public struct MyNumberCardReader: Sendable {
 
     /// Retry counter from a `63Cx` status (ISO/IEC 7816-4 §5.6: `63Cx` = counter
     /// `x`). `6300` and other `63xx` warnings carry no counter.
-    static func retryCounter(_ response: ResponseAPDU) -> Int? {
+    open class func retryCounter(_ response: ResponseAPDU) -> Int? {
         guard response.sw1 == 0x63, response.sw2 & 0xF0 == 0xC0 else { return nil }
         return Int(response.sw2 & 0x0F)
     }
 
     /// `63C0` (no tries left), `6983` (authentication method blocked) or
     /// `6984` (reference data not usable).
-    static func isPINBlocked(_ response: ResponseAPDU) -> Bool {
+    open class func isPINBlocked(_ response: ResponseAPDU) -> Bool {
         if retryCounter(response) == 0 { return true }
         return response.sw1 == 0x69 && (response.sw2 == 0x83 || response.sw2 == 0x84)
     }
 
-    static func verificationError(for response: ResponseAPDU) -> NFCError {
+    open class func verificationError(for response: ResponseAPDU) -> NFCError {
         if isPINBlocked(response) {
             return .pinVerificationFailed(remainingAttempts: 0)
         }
@@ -151,9 +153,9 @@ public struct MyNumberCardReader: Sendable {
         return .unexpectedStatusWord(response.sw1, response.sw2)
     }
 
-    // MARK: - Private
+    // MARK: - Steps
 
-    private func selectDF(_ aid: Data) async throws {
+    open func selectDF(_ aid: Data) async throws {
         let response = try await transport.sendAPDUWithChaining(CommandAPDU(
             cla: 0x00,
             ins: 0xA4,
@@ -167,12 +169,12 @@ public struct MyNumberCardReader: Sendable {
         try requireSuccess(response)
     }
 
-    private func selectEF(_ fileID: Data) async throws {
+    open func selectEF(_ fileID: Data) async throws {
         let response = try await transport.sendAPDUWithChaining(.selectEF(id: fileID))
         try requireSuccess(response)
     }
 
-    private func verify(_ pinData: Data) async throws -> ResponseAPDU {
+    open func verify(_ pinData: Data) async throws -> ResponseAPDU {
         try await transport.sendAPDUWithChaining(CommandAPDU(
             cla: 0x00,
             ins: 0x20,
@@ -182,19 +184,19 @@ public struct MyNumberCardReader: Sendable {
         ))
     }
 
-    private func readBinary(length: UInt8) async throws -> ResponseAPDU {
+    open func readBinary(length: UInt8) async throws -> ResponseAPDU {
         let response = try await transport.sendAPDUWithChaining(.readBinary(offset: 0, length: length))
         try requireSuccess(response)
         return response
     }
 
-    private func requireSuccess(_ response: ResponseAPDU) throws {
+    open func requireSuccess(_ response: ResponseAPDU) throws {
         guard response.isSuccess else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
     }
 
-    private func validateCardInfoInputSupportPIN(_ pin: String) throws -> Data {
+    open func validateCardInfoInputSupportPIN(_ pin: String) throws -> Data {
         let bytes = Data(pin.utf8)
         guard bytes.count == 4, bytes.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
             throw NFCError.invalidParameter("`cardInfoInputSupportPIN` must be exactly 4 digits")
@@ -202,7 +204,7 @@ public struct MyNumberCardReader: Sendable {
         return bytes
     }
 
-    private func pinAttemptSelector(for pinType: MyNumberPINType) -> (Data, Data) {
+    open func pinAttemptSelector(for pinType: MyNumberPINType) -> (Data, Data) {
         switch pinType {
         case .digitalSignature:
             (MyNumberCardConstants.jpkiAID, MyNumberCardConstants.remainingDigitalSignaturePINEFID)
@@ -215,7 +217,7 @@ public struct MyNumberCardReader: Sendable {
         }
     }
 
-    private static func parseIndividualNumber(_ data: Data) -> String? {
+    open class func parseIndividualNumber(_ data: Data) -> String? {
         if data.count == Int(MyNumberCardConstants.individualNumberLength),
            data.first == MyNumberCardConstants.individualNumberHeaderByte
         {
@@ -240,7 +242,7 @@ public struct MyNumberCardReader: Sendable {
         return nil
     }
 
-    private static func parseOfficialIndividualNumberPayload(_ data: Data) -> String? {
+    open class func parseOfficialIndividualNumberPayload(_ data: Data) -> String? {
         let bytes = [UInt8](data)
         let requiredCount = 1 + 1 + 1 + MyNumberCardConstants.individualNumberDigitsCount + MyNumberCardConstants.individualNumberTrailerCount
         guard bytes.count == requiredCount else { return nil }
