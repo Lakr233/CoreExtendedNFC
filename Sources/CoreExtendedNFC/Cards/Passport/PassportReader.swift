@@ -15,20 +15,21 @@ open class PassportReader: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - mrzKey: The MRZ key string for BAC authentication.
-    ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
+    ///   - dataGroups: Which data groups to read (default: EF.COM, DG1, DG2, EF.SOD).
     ///   - performActiveAuth: Whether to attempt Active Authentication if DG15 is available.
-    ///   - trustAnchorsDER: DER-encoded CSCA certificates. Without them passive
-    ///     authentication can at best report `.fallback` (signature not chained to a CSCA).
+    ///   - trustAnchorsDER: DER-encoded CSCA certificates. Without them Passive
+    ///     Authentication can at best report `.fallback` (Document Signer certificate
+    ///     not validated to a trusted CSCA).
     ///   - onProgress: Optional callback for localized progress messages (suitable for
     ///     the system NFC sheet).
     ///
     /// When `dataGroups` contains `.com` but not `.sod` and EF.COM omits a requested data
     /// group, the SOD is read as the authoritative index before that data group is
-    /// skipped; the SOD is then part of the returned model and passive authentication
+    /// skipped; the SOD is then part of the returned model and Passive Authentication
     /// runs on it.
     ///
     /// The returned `activeAuthResult` has status `.verified` only when the DG15 key is
-    /// authenticated by fully verified passive authentication; a valid signature over an
+    /// authenticated by fully verified Passive Authentication; a valid signature over an
     /// unauthenticated key is `.verifiedUnauthenticatedKey`.
     /// - Returns: A `PassportModel` with all parsed data.
     /// - Throws: The first read error when nothing could be read, or when DG1 was
@@ -314,7 +315,7 @@ open class PassportReader: @unchecked Sendable {
 
     /// Send `apdu`, turning a plain (unprotected) "file unavailable" status word into
     /// ``NFCError/dataGroupNotAvailable(_:)``. Chips commonly answer those errors without
-    /// secure messaging.
+    /// Secure Messaging.
     open func sendMappingUnavailable(
         _ apdu: CommandAPDU,
         transport: any NFCTagTransport,
@@ -517,8 +518,8 @@ open class PassportReader: @unchecked Sendable {
     ///
     /// Covers AA being disabled, DG15 missing and AA not completing, then defers to
     /// ``PassportSecurityStageResult/activeAuthentication(_:passiveAuthentication:)``:
-    /// `.succeeded` only when passive authentication is fully verified (SOD chained to a
-    /// trusted CSCA) and the DG15 hash matched.
+    /// `.succeeded` only when Passive Authentication is fully verified (Document Signer
+    /// certificate validated to a trusted CSCA) and the DG15 hash matched.
     open class func activeAuthenticationStage(
         requested: Bool,
         publicKeyPresent: Bool,

@@ -111,22 +111,22 @@
         }
       }
     },
-    "FeliCa block read failed (status %@)." : {
+    "FeliCa block read failed (status flags %@)." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FeliCa 块读取失败（状态 %@）。"
+            "value" : "FeliCa 块读取失败（状态标志 %@）。"
           }
         }
       }
     },
-    "FeliCa block write failed (status %@)." : {
+    "FeliCa block write failed (status flags %@)." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FeliCa 块写入失败（状态 %@）。"
+            "value" : "FeliCa 块写入失败（状态标志 %@）。"
           }
         }
       }
@@ -253,12 +253,12 @@
         }
       }
     },
-    "Secure messaging failed: %@" : {
+    "Secure Messaging failed: %@" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "安全报文失败：%@"
+            "value" : "安全报文处理失败：%@"
           }
         }
       }
@@ -353,12 +353,12 @@
         }
       }
     },
-    "The card returned status %@%@." : {
+    "The card returned status word %@%@." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "卡片返回状态 %1$@%2$@。"
+            "value" : "卡片返回状态字 %1$@%2$@。"
           }
         }
       }

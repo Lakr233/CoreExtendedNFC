@@ -1,8 +1,8 @@
 import Foundation
 
 public extension PassportModel {
-    /// Build a model from raw data group bytes, with the same parsers and passive
-    /// authentication that ``PassportReader`` applies after a chip read.
+    /// Build a model from raw data group bytes, with the same parsers and Passive
+    /// Authentication that ``PassportReader`` applies after a chip read.
     ///
     /// Use it for data groups that did not come straight from a read, for example ones
     /// loaded from a file or a database. Every field is derived from the bytes passed
@@ -12,7 +12,7 @@ public extension PassportModel {
     /// `securityInfos`; DG15 `activeAuthPublicKey`; the SOD `sod`. A data group that is
     /// missing or does not parse leaves its field `nil` (or empty). No NFC is involved.
     ///
-    /// Passive authentication runs on the SOD and the data groups, as in
+    /// Passive Authentication runs on the SOD and the data groups, as in
     /// ``reverifyPassiveAuthentication(trustAnchorsDER:)``, unless
     /// `performPassiveAuthentication` is `false`. It verifies a CMS signature with
     /// OpenSSL, so keep it off the main thread. `activeAuthResult` is `nil`:
@@ -28,11 +28,11 @@ public extension PassportModel {
     ///   - rawDataGroups: Raw data group bytes (including their TLV wrapper), as in
     ///     ``rawDataGroups``.
     ///   - cardAccessRaw: Raw EF.CardAccess bytes, parsed into ``cardAccess``.
-    ///   - performPassiveAuthentication: Whether to run passive authentication. When
+    ///   - performPassiveAuthentication: Whether to run Passive Authentication. When
     ///     `false`, `passiveAuthResult` is `nil` and its stage is `.skipped`; run it later
     ///     with ``reverifyingSecurity(trustAnchorsDER:)``.
-    ///   - trustAnchorsDER: DER-encoded CSCA certificates; empty skips chain validation,
-    ///     so passive authentication is at best ``PassiveAuthenticationStatus/signatureVerified``.
+    ///   - trustAnchorsDER: DER-encoded CSCA certificates; empty skips certification path validation,
+    ///     so Passive Authentication is at best ``PassiveAuthenticationStatus/signatureVerified``.
     ///   - dataGroupReadStatus: Per-data-group read outcomes to keep, if any.
     init(
         rawDataGroups: [DataGroupId: Data],
@@ -124,7 +124,7 @@ extension PassportModel {
         let securityInfos = rawDataGroups[.dg14].flatMap { try? DG14Parser.parse($0) }
         let activeAuthPublicKey = rawDataGroups[.dg15].flatMap { try? DG15Parser.parse($0) }
 
-        // SOD — Security Object Document, then Passive Authentication against it
+        // EF.SOD — Document Security Object, then Passive Authentication against it
         let sodContent = rawDataGroups[.sod].flatMap { try? SODParser.parse($0) }
         let passiveAuthResult: PassiveAuthenticationResult? = if performPassiveAuthentication, let sodContent {
             SODParser.verifyPassiveAuthentication(

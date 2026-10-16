@@ -94,7 +94,7 @@ public enum CoreExtendedNFC {
     ///
     /// - Parameters:
     ///   - mrzKey: The MRZ key string (use ``MRZKeyGenerator/computeMRZKey(documentNumber:dateOfBirth:dateOfExpiry:)``).
-    ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
+    ///   - dataGroups: Which data groups to read (default: EF.COM, DG1, DG2, EF.SOD).
     ///   - message: The alert message shown during NFC scanning.
     ///   - manager: The session manager that runs the scan. Pass your own instance,
     ///     or a subclass, to customize the session. It is invalidated before returning.
@@ -145,9 +145,9 @@ public enum CoreExtendedNFC {
     /// - Parameters:
     ///   - transport: A connected ISO 14443 (ISO 7816) transport to the document's chip.
     ///   - mrzKey: The MRZ key string (use ``MRZKeyGenerator/computeMRZKey(documentNumber:dateOfBirth:dateOfExpiry:)``).
-    ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
+    ///   - dataGroups: Which data groups to read (default: EF.COM, DG1, DG2, EF.SOD).
     ///   - performActiveAuth: Whether to attempt Active Authentication if DG15 is available.
-    ///   - trustAnchorsDER: DER-encoded CSCA certificates used to validate the SOD signer.
+    ///   - trustAnchorsDER: DER-encoded CSCA certificates used to validate the Document Signer certificate.
     ///   - onProgress: Called with each localized progress message.
     /// - Returns: A ``PassportModel`` with all parsed data.
     /// - Throws: ``NFCError`` or `CancellationError`.

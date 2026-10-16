@@ -464,7 +464,7 @@ class NDEFExternalEditorViewController: NDEFEditorViewController {
         stackView.addArrangedSubviewWithMargin(dataView) { $0.top = 8; $0.bottom = 8 }
         stackView.addArrangedSubview(SeparatorView())
 
-        addSectionFooter(String(localized: "NFC Forum External Type Record. Uses a reverse-domain type identifier."))
+        addSectionFooter(String(localized: "NFC Forum External Type Record. The type is a domain name, a colon and a type name, for example example.com:mytype."))
         if payloadText.isHex {
             addSectionFooter(String(localized: "Binary data is shown and edited as hexadecimal bytes."))
         }

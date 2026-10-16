@@ -149,7 +149,7 @@ extension PassportDetailViewController {
         case .succeeded:
             return String(localized: "Verified against a trusted CSCA")
         case .fallback:
-            return String(localized: "Hashes match; signer not chained to a trusted CSCA")
+            return String(localized: "Hashes match; Document Signer certificate not validated to a trusted CSCA")
         case .notSupported:
             return String(localized: "No SOD available")
         default:
@@ -162,7 +162,7 @@ extension PassportDetailViewController {
         case .fullyVerified:
             String(localized: "Verified against a trusted CSCA")
         case .signatureVerified:
-            String(localized: "Hashes and signature valid; signer not chained to a trusted CSCA")
+            String(localized: "Hashes and signature valid; Document Signer certificate not validated to a trusted CSCA")
         case .dataGroupHashesVerified, .signatureNotVerified:
             String(localized: "Hashes match; signature not verified")
         case .hashMismatch:
@@ -176,7 +176,7 @@ extension PassportDetailViewController {
         case .signatureInvalid:
             String(localized: "SOD signature invalid")
         case .trustChainInvalid:
-            String(localized: "Signer certificate not trusted")
+            String(localized: "Document Signer certificate not trusted")
         }
     }
 

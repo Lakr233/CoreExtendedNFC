@@ -169,7 +169,7 @@ extension NFCError: LocalizedError {
         case let .invalidResponse(data):
             String(localized: "The tag sent an invalid response (\(data.count) bytes).", bundle: .module)
         case let .unexpectedStatusWord(sw1, sw2):
-            String(localized: "The card returned status \(Self.hexByte(sw1))\(Self.hexByte(sw2)).", bundle: .module)
+            String(localized: "The card returned status word \(Self.hexByte(sw1))\(Self.hexByte(sw2)).", bundle: .module)
         case let .responseChainTooLong(maxFrames):
             String(localized: "The card kept sending response frames past the limit of \(maxFrames).", bundle: .module)
         case let .applicationNotFound(aid):
@@ -204,13 +204,13 @@ extension NFCError: LocalizedError {
         case let .desfireError(status):
             String(localized: "DESFire error: \(status.description).", bundle: .module)
         case let .felicaBlockReadFailed(statusFlag):
-            String(localized: "FeliCa block read failed (status \(Self.hexStatus(statusFlag))).", bundle: .module)
+            String(localized: "FeliCa block read failed (status flags \(Self.hexStatus(statusFlag))).", bundle: .module)
         case let .felicaBlockWriteFailed(statusFlag):
-            String(localized: "FeliCa block write failed (status \(Self.hexStatus(statusFlag))).", bundle: .module)
+            String(localized: "FeliCa block write failed (status flags \(Self.hexStatus(statusFlag))).", bundle: .module)
         case let .bacFailed(reason):
             String(localized: "Basic Access Control failed: \(reason)", bundle: .module)
         case let .secureMessagingError(reason):
-            String(localized: "Secure messaging failed: \(reason)", bundle: .module)
+            String(localized: "Secure Messaging failed: \(reason)", bundle: .module)
         case let .dataGroupNotAvailable(name):
             String(localized: "Data group not available: \(name)", bundle: .module)
         case let .dataGroupParseFailed(reason):

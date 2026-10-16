@@ -89,6 +89,6 @@ class CRCCalculatorViewController: StackScrollController {
             value: dataWithCrcB.map { String(format: "%02X", $0) }.joined(separator: " ")
         )
 
-        addSectionFooter(String(localized: "CRC computed per ISO/IEC 14443-3 using polynomial 0x8408."))
+        addSectionFooter(String(localized: "CRC computed per ISO/IEC 14443-3 using polynomial x^16 + x^12 + x^5 + 1 (0x1021, reflected 0x8408)."))
     }
 }

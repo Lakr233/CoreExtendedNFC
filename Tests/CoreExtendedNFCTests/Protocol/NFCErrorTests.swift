@@ -102,6 +102,10 @@ struct NFCErrorTests {
             "The dump is malformed: %@",
             "Hold your iPhone near your My Number card",
             "Detected %@",
+            "The card returned status word %@%@.",
+            "FeliCa block read failed (status flags %@).",
+            "FeliCa block write failed (status flags %@).",
+            "Secure Messaging failed: %@",
         ] {
             let translated = bundle.localizedString(forKey: key, value: "<missing>", table: nil)
             #expect(translated != "<missing>" && translated != key, "\(key)")

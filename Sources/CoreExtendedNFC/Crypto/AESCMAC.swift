@@ -1,6 +1,6 @@
 import Foundation
 
-/// AES-CMAC per RFC 4493 for ICAO 9303 AES-based secure messaging.
+/// AES-CMAC per RFC 4493 for ICAO 9303 AES-based Secure Messaging.
 /// Uses AES-ECB from `CryptoUtils`.
 /// References: NIST SP 800-38B, RFC 4493.
 /// https://www.rfc-editor.org/rfc/rfc4493

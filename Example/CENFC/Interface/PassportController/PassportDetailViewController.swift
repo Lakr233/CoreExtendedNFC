@@ -338,7 +338,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
             addInfoRow(
                 icon: "doc.badge.gearshape",
                 title: String(localized: "LDS Version"),
-                description: String(localized: "Logical Data Structure version from the COM data group."),
+                description: String(localized: "Logical Data Structure version from EF.COM."),
                 value: ldsVersion
             )
         }
@@ -353,7 +353,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         addInfoRow(
             icon: "square.stack.3d.up",
             title: String(localized: "Available Data Groups"),
-            description: String(localized: "Data groups present on the chip as advertised by COM."),
+            description: String(localized: "Data groups listed in EF.COM."),
             value: record.dataGroupsSummary
         )
         if let unread = Self.unreadDataGroupsSummary(record.passport) {

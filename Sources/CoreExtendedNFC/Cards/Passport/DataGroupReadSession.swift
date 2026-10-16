@@ -3,18 +3,18 @@ import Foundation
 /// Bookkeeping for the data group loop of `PassportReader.readPassport`.
 ///
 /// A data group the chip reports as absent or protected is marked unavailable and the
-/// loop goes on. When secure messaging ends (MAC failure, SM status word, interrupted
+/// loop goes on. When Secure Messaging ends (MAC failure, SM status word, interrupted
 /// exchange), the remaining data groups are marked not read and everything read so far
 /// is kept. Session loss and cancellation propagate.
 public struct DataGroupReadSession: Sendable {
     public let transport: SecureMessagingTransport
     public private(set) var rawDataGroups: [DataGroupId: Data] = [:]
     public private(set) var status: [DataGroupId: PassportDataGroupReadResult] = [:]
-    /// Data groups listed in EF.COM, once COM was read and listed at least one.
+    /// Data groups listed in EF.COM, once EF.COM was read and listed at least one.
     public private(set) var listedInCOM: Set<DataGroupId>?
     /// Data groups the SOD has a hash for, once the SOD was read and listed at least one.
     public private(set) var listedInSOD: Set<DataGroupId>?
-    /// Why secure messaging ended, once it has.
+    /// Why Secure Messaging ended, once it has.
     public private(set) var secureMessagingEnded: String?
     /// First error that cost a data group (anything but "not available").
     public private(set) var firstFailure: (any Error)?
@@ -27,7 +27,7 @@ public struct DataGroupReadSession: Sendable {
     ///
     /// Either index listing `dgId` is enough. Only the SOD hash list, the authoritative
     /// index (ICAO 9303-10 §4.6.1), can rule a data group out: EF.COM may be incomplete,
-    /// so a COM that omits `dgId` without a known SOD gives `nil`. An index that was not
+    /// so an EF.COM that omits `dgId` without a known SOD gives `nil`. An index that was not
     /// read, could not be parsed or lists nothing is unknown, never "lists nothing".
     public func isListed(_ dgId: DataGroupId) -> Bool? {
         if listedInCOM?.contains(dgId) == true || listedInSOD?.contains(dgId) == true { return true }
@@ -44,7 +44,7 @@ public struct DataGroupReadSession: Sendable {
         return !listedInCOM.contains(dgId)
     }
 
-    /// Record that secure messaging ended outside a data group read (e.g. during AA).
+    /// Record that Secure Messaging ended outside a data group read (e.g. during AA).
     public mutating func markSecureMessagingEnded(_ reason: String) {
         if secureMessagingEnded == nil { secureMessagingEnded = reason }
     }

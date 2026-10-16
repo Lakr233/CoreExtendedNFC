@@ -1,6 +1,6 @@
 import Foundation
 
-/// Parsed SOD (Security Object Document) data.
+/// Parsed Document Security Object (EF.SOD) data.
 ///
 /// The SOD contains a CMS (PKCS#7) SignedData structure with:
 /// - LDS Security Object: hash algorithm + hash values for each DataGroup

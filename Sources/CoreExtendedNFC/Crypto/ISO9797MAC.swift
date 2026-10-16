@@ -1,7 +1,7 @@
 import Foundation
 
 /// ISO/IEC 9797-1 MAC Algorithm 3 (Retail MAC) used by ICAO 9303 BAC and
-/// 3DES-based secure messaging.
+/// 3DES-based Secure Messaging.
 ///
 /// Reference: ISO/IEC 9797-1:2011, Algorithm 3
 /// Cross-ref: JMRTD Util.mac() in Util.java

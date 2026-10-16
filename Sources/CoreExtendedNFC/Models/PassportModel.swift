@@ -9,13 +9,13 @@ public struct PassportModel: Sendable, Codable, Equatable {
     /// Raw EF.CardAccess bytes.
     public let cardAccessRaw: Data?
 
-    /// LDS version from COM data group (e.g., "0107").
+    /// LDS version from EF.COM (e.g., "0107").
     public let ldsVersion: String?
 
-    /// Unicode version from COM data group.
+    /// Unicode version from EF.COM.
     public let unicodeVersion: String?
 
-    /// List of data groups available on the chip (from COM).
+    /// List of data groups available on the chip (from EF.COM).
     public let availableDataGroups: [DataGroupId]
 
     /// Parsed MRZ data from DG1.
@@ -39,22 +39,22 @@ public struct PassportModel: Sendable, Codable, Equatable {
     /// Raw DG14 security info bytes.
     public let securityInfoRaw: Data?
 
-    /// Parsed DG15 active authentication public key.
+    /// Parsed DG15 Active Authentication public key.
     public let activeAuthPublicKey: ActiveAuthenticationPublicKey?
 
-    /// Raw DG15 active authentication public key bytes.
+    /// Raw DG15 Active Authentication public key bytes.
     public let activeAuthPublicKeyRaw: Data?
 
-    /// Parsed SOD (Security Object Document) content.
+    /// Parsed Document Security Object (EF.SOD) content.
     public let sod: SODContent?
 
     /// Raw SOD bytes.
     public let sodRaw: Data?
 
-    /// Passive authentication result (hash verification).
+    /// Passive Authentication result (hash verification).
     public let passiveAuthResult: PassiveAuthenticationResult?
 
-    /// Active authentication result (chip genuineness verification).
+    /// Active Authentication result (chip genuineness verification).
     public let activeAuthResult: ActiveAuthenticationResult?
 
     /// Raw data group bytes indexed by `DataGroupId`.
@@ -139,26 +139,26 @@ public struct PassportModel: Sendable, Codable, Equatable {
         self.dataGroupReadStatus = dataGroupReadStatus
     }
 
-    /// Run passive authentication again from this model's raw bytes.
+    /// Run Passive Authentication again from this model's raw bytes.
     ///
     /// Use it for a model that did not come straight from ``PassportReader`` (for example
     /// one decoded from a file): its stored `passiveAuthResult` and `securityReport` are
     /// whatever the file says. This re-parses the SOD (`sodRaw`, else
     /// `rawDataGroups[.sod]`), re-hashes every raw data group and verifies the SOD's CMS
-    /// signature; with `trustAnchorsDER` (DER CSCA certificates) it also validates the
-    /// signer certificate's chain. No NFC is involved.
+    /// signature; with `trustAnchorsDER` (DER CSCA certificates) it also runs certification
+    /// path validation of the Document Signer certificate. No NFC is involved.
     ///
-    /// Only passive authentication can be repeated offline. BAC/PACE, Chip Authentication
+    /// Only Passive Authentication can be repeated offline. BAC/PACE, Chip Authentication
     /// and Active Authentication are challenge–response protocols with the chip, so their
     /// stored results cannot be re-checked; ``reverifyingSecurity(trustAnchorsDER:)``
-    /// re-judges a stored Active Authentication result against a new passive
-    /// authentication result. Fields such as `mrz` or `faceImageData` are
+    /// re-judges a stored Active Authentication result against a new Passive
+    /// Authentication result. Fields such as `mrz` or `faceImageData` are
     /// not tied to this result; callers that show them should re-parse them from
     /// `rawDataGroups`.
     ///
-    /// - Parameter trustAnchorsDER: DER-encoded CSCA certificates; empty skips chain validation.
+    /// - Parameter trustAnchorsDER: DER-encoded CSCA certificates; empty skips certification path validation.
     /// - Returns: `.sodNotAvailable` without SOD bytes, `.sodParseFailed` when they do not
-    ///   parse, otherwise the full passive authentication result. Map it to a stage with
+    ///   parse, otherwise the full Passive Authentication result. Map it to a stage with
     ///   ``PassportSecurityStageResult/passiveAuthentication(_:sodPresent:)``.
     public func reverifyPassiveAuthentication(trustAnchorsDER: [Data] = []) -> PassiveAuthenticationResult {
         guard let sodData = sodRaw ?? rawDataGroups[.sod] else {
@@ -176,12 +176,12 @@ public struct PassportModel: Sendable, Codable, Equatable {
 }
 
 extension PassportModel {
-    /// A copy with passive authentication re-run from the raw bytes and Active
+    /// A copy with Passive Authentication re-run from the raw bytes and Active
     /// Authentication re-judged against it.
     ///
     /// The Active Authentication challenge–response cannot be repeated offline, but
-    /// whether its stored result proves the chip genuine depends on passive
-    /// authentication, so both are re-derived together: `passiveAuthResult` becomes
+    /// whether its stored result proves the chip genuine depends on Passive
+    /// Authentication, so both are re-derived together: `passiveAuthResult` becomes
     /// ``reverifyPassiveAuthentication(trustAnchorsDER:)``, `activeAuthResult` is
     /// re-classified with ``ActiveAuthenticationResult/classified(by:)``, and the report's
     /// `passiveAuthentication` and `activeAuthentication` stages are rebuilt. The other
@@ -241,7 +241,7 @@ public enum PassportDataGroupReadState: String, Sendable, Equatable, Codable {
     /// Selected, but the file could not be read completely (short read, bad header);
     /// no partial bytes are kept.
     case failed
-    /// Not read because secure messaging ended earlier in the session.
+    /// Not read because Secure Messaging ended earlier in the session.
     case notRead
 }
 
@@ -277,13 +277,15 @@ public struct PassportSecurityStageResult: Sendable, Equatable, Codable {
         self.detail = detail
     }
 
-    /// Stage result for a passive authentication outcome.
+    /// Stage result for a Passive Authentication outcome.
     ///
     /// - `.succeeded` only for ``PassiveAuthenticationStatus/fullyVerified``: hashes match, the SOD
-    ///   signature verifies and its signer chains to a supplied CSCA (ICAO 9303-11 §5.1).
-    /// - `.fallback` when the hashes match but the signature is not chained to a CSCA
-    ///   (``PassiveAuthenticationStatus/signatureVerified`` without anchors, or no signature check).
-    /// - `.failed` for an invalid signature, a broken trust chain, a hash mismatch, an
+    ///   signature verifies and the Document Signer certificate passes certification path
+    ///   validation to a supplied CSCA (ICAO 9303-11 §5.1).
+    /// - `.fallback` when the hashes match but the Document Signer certificate is not validated
+    ///   to a trusted CSCA (``PassiveAuthenticationStatus/signatureVerified`` without anchors, or
+    ///   no signature check).
+    /// - `.failed` for an invalid signature, a failed certification path validation, a hash mismatch, an
     ///   unparseable SOD or an unsupported hash algorithm.
     /// - `.skipped` when no data group the SOD covers was compared; `.notSupported`
     ///   when there was no SOD.
@@ -329,29 +331,29 @@ public struct PassportSecurityStageResult: Sendable, Equatable, Codable {
         case .fullyVerified:
             return PassportSecurityStageResult(
                 status: .succeeded,
-                detail: "\(compared) data group hashes match, the SOD signature is valid and its signer chains to a trusted CSCA."
+                detail: "\(compared) data group hashes match, the EF.SOD signature is valid and the Document Signer certificate is validated to a trusted CSCA."
             )
         case .signatureVerified:
             return PassportSecurityStageResult(
                 status: .fallback,
-                detail: "\(compared) data group hashes match and the SOD signature is valid, but the signature is "
-                    + "not chained to a CSCA (no trust anchors were supplied)."
+                detail: "\(compared) data group hashes match and the EF.SOD signature is valid, but the Document Signer "
+                    + "certificate is not validated to a CSCA (no trust anchors were supplied)."
             )
         case .signatureNotVerified, .dataGroupHashesVerified:
             return PassportSecurityStageResult(
                 status: .fallback,
-                detail: "\(compared) data group hashes match the SOD, but the SOD signature was not verified "
-                    + "and is not chained to a CSCA."
+                detail: "\(compared) data group hashes match EF.SOD, but the EF.SOD signature was not verified "
+                    + "and the Document Signer certificate is not validated to a CSCA."
             )
         case .signatureInvalid:
             return PassportSecurityStageResult(
                 status: .failed,
-                detail: "The SOD signature is invalid; the data group hashes cannot be trusted."
+                detail: "The EF.SOD signature is invalid; the data group hashes cannot be trusted."
             )
         case .trustChainInvalid:
             return PassportSecurityStageResult(
                 status: .failed,
-                detail: "The SOD signature is valid, but its signer certificate does not chain to a supplied CSCA."
+                detail: "The EF.SOD signature is valid, but certification path validation of the Document Signer certificate to the supplied CSCAs failed."
             )
         case .hashMismatch, .sodNotAvailable, .sodParseFailed, .unsupportedHashAlgorithm:
             return PassportSecurityStageResult(
@@ -363,19 +365,20 @@ public struct PassportSecurityStageResult: Sendable, Equatable, Codable {
 }
 
 extension PassportSecurityStageResult {
-    /// Stage result for an Active Authentication outcome, judged against passive
-    /// authentication.
+    /// Stage result for an Active Authentication outcome, judged against Passive
+    /// Authentication.
     ///
     /// A valid signature only proves the chip holds the private key matching DG15; it
     /// proves the chip genuine only when DG15 itself is authenticated (ICAO 9303-11 §6.1,
     /// §5.1). So:
-    /// - `.succeeded` only for a valid signature when passive authentication is
+    /// - `.succeeded` only for a valid signature when Passive Authentication is
     ///   ``PassiveAuthenticationStatus/fullyVerified`` and the DG15 hash matched.
     /// - `.failed` for an invalid signature or a failed command, and for a valid signature
     ///   whose DG15 does not match its hash in the SOD (DG15 was altered).
     /// - `.fallback` for a valid signature over a DG15 that is not authenticated: no trust
     ///   anchors (``PassiveAuthenticationStatus/signatureVerified``; a clone can self-sign its SOD),
-    ///   a broken trust chain, DG15 not covered by the SOD, or no passive authentication.
+    ///   a failed certification path validation, DG15 not covered by the SOD, or no
+    ///   Passive Authentication.
     /// - `.notSupported` for an unsupported key or signature format; `.skipped` when
     ///   `activeAuthentication` is `nil` (AA did not run).
     public static func activeAuthentication(
@@ -403,8 +406,8 @@ extension PassportSecurityStageResult {
             return PassportSecurityStageResult(
                 status: .fallback,
                 detail: "\(result.details). The chip signed the challenge with the DG15 key, but DG15 is not "
-                    + "authenticated by an SOD signature chained to a trusted CSCA (DG15 hash verified: "
-                    + "\(dg15Hash == true), passive authentication: \(paStatus)), so this does not prove the "
+                    + "authenticated by an EF.SOD whose Document Signer certificate is validated to a trusted CSCA "
+                    + "(DG15 hash verified: \(dg15Hash == true), Passive Authentication: \(paStatus)), so this does not prove the "
                     + "chip is genuine."
             )
         case .notImplemented, .unsupportedKeyType:
@@ -441,14 +444,15 @@ public struct PassportSecurityReport: Sendable, Equatable, Codable {
     }
 }
 
-/// Result of active authentication.
+/// Result of Active Authentication.
 ///
 /// `success` and `status` describe different things:
 /// - `success` is the cryptographic outcome only: the chip signed the challenge with the
 ///   private key matching the DG15 public key.
 /// - `status` says what that proves. ``ActiveAuthenticationStatus/verified`` is used only when DG15
-///   itself is authenticated (its hash matches an SOD whose signature chains to a trusted
-///   CSCA). A valid signature over an unauthenticated DG15 is
+///   itself is authenticated (its hash matches an EF.SOD whose signature verifies and whose
+///   Document Signer certificate is validated to a trusted CSCA). A valid signature over
+///   an unauthenticated DG15 is
 ///   ``ActiveAuthenticationStatus/verifiedUnauthenticatedKey``: a clone can carry its own key pair
 ///   and a self-signed SOD and still produce it.
 ///
@@ -470,14 +474,14 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
     }
 
     /// Whether the chip produced a valid signature with the DG15 key, whether or not
-    /// that key is authenticated by passive authentication.
+    /// that key is authenticated by Passive Authentication.
     public var signatureIsValid: Bool {
         status == .verified || status == .verifiedUnauthenticatedKey
     }
 
     /// This result with `status` re-derived against `passiveAuthentication`: a valid
     /// signature is ``ActiveAuthenticationStatus/verified`` only when DG15 is authenticated by
-    /// fully verified passive authentication, otherwise
+    /// fully verified Passive Authentication, otherwise
     /// ``ActiveAuthenticationStatus/verifiedUnauthenticatedKey``. Other statuses are unchanged.
     public func classified(by passiveAuthentication: PassiveAuthenticationResult?) -> ActiveAuthenticationResult {
         guard signatureIsValid else { return self }
@@ -487,8 +491,9 @@ public struct ActiveAuthenticationResult: Sendable, Equatable, Codable {
         return ActiveAuthenticationResult(success: success, details: details, status: status)
     }
 
-    /// DG15 is authenticated only when its hash matches the SOD and the SOD signature
-    /// chains to a trusted CSCA (ICAO 9303-11 §5.1, §6.1).
+    /// DG15 is authenticated only when its hash matches the EF.SOD, the EF.SOD signature
+    /// verifies and the Document Signer certificate is validated to a trusted CSCA
+    /// (ICAO 9303-11 §5.1, §6.1).
     public static func isDG15Authenticated(by passiveAuthentication: PassiveAuthenticationResult?) -> Bool {
         passiveAuthentication?.status == .fullyVerified
             && passiveAuthentication?.dataGroupHashResults[.dg15] == true
@@ -501,12 +506,12 @@ public typealias ActiveAuthStatus = ActiveAuthenticationStatus
 /// Active Authentication verification status.
 public enum ActiveAuthenticationStatus: String, Sendable, Codable {
     /// The signature is valid and the DG15 key is authenticated by fully verified
-    /// passive authentication, so the chip is genuine. ``PassportReader`` reports a
+    /// Passive Authentication, so the chip is genuine. ``PassportReader`` reports a
     /// valid signature over an unauthenticated key as ``verifiedUnauthenticatedKey``.
     case verified
-    /// The signature is valid, but DG15 is not authenticated by fully verified passive
-    /// authentication (no trust anchors, broken trust chain, DG15 not covered or not
-    /// matching the SOD). This does not prove the chip is genuine.
+    /// The signature is valid, but DG15 is not authenticated by fully verified Passive
+    /// Authentication (no trust anchors, failed certification path validation, DG15 not
+    /// covered or not matching the SOD). This does not prove the chip is genuine.
     case verifiedUnauthenticatedKey
     /// Verification completed but signature is invalid.
     case failed

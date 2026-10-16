@@ -71,7 +71,7 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
     private let ksMac: Data
     /// Send Sequence Counter. Only read or mutated while `exchangeGate` is held.
     private var ssc: Data
-    /// Cipher suite of this secure messaging session.
+    /// Cipher suite of this Secure Messaging session.
     public let mode: SMEncryptionMode
     /// Serializes command/response pairs so concurrent callers cannot desynchronize the SSC.
     private let exchangeGate = AsyncExchangeGate()
@@ -83,14 +83,14 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
     /// when that exchange was protected. Only read or mutated while `exchangeGate` is held.
     private var previousPlainStatusWord: UInt16?
 
-    /// Whether an earlier failed exchange ended this secure messaging session.
+    /// Whether an earlier failed exchange ended this Secure Messaging session.
     public var isSessionEnded: Bool {
         get async {
             await sessionEndedReason != nil
         }
     }
 
-    /// Why this secure messaging session ended, or `nil` while it is still usable.
+    /// Why this Secure Messaging session ended, or `nil` while it is still usable.
     public var sessionEndedReason: String? {
         get async {
             await exchangeGate.acquire()
@@ -128,7 +128,7 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
     /// consume two consecutive SSC values.
     ///
     /// - Throws: `NFCError.unexpectedStatusWord` when the chip answers with a plain
-    ///   status word (no secure messaging data objects). Both SSC steps are still
+    ///   status word (no Secure Messaging data objects). Both SSC steps are still
     ///   consumed, so the caller may try another command; ICAO-strict chips end the
     ///   session there (ICAO 9303-11 §9.8), and the next command then fails.
     ///   `NFCError.secureMessagingError` when the response cannot be authenticated, or
@@ -274,7 +274,7 @@ open class SecureMessagingTransport: NFCTagTransport, @unchecked Sendable {
 
     // MARK: - Unprotect (Verify MAC + Decrypt incoming response)
 
-    /// Unprotect a secure messaging response: verify DO'8E MAC, then decrypt DO'87/DO'85.
+    /// Unprotect a Secure Messaging response: verify DO'8E MAC, then decrypt DO'87/DO'85.
     ///
     /// ICAO 9303-11 §9.8 makes DO'99 and DO'8E mandatory in every protected response, and
     /// ISO/IEC 7816-4 §10.2 requires verifying the checksum before using any data object.
@@ -452,7 +452,7 @@ extension SecureMessagingTransport: CustomStringConvertible, CustomDebugStringCo
     }
 }
 
-/// FIFO async mutual exclusion used to keep secure messaging exchanges strictly sequential.
+/// FIFO async mutual exclusion used to keep Secure Messaging exchanges strictly sequential.
 ///
 /// Unlike an actor, the gate stays held across suspension points, so a second
 /// `sendAPDU` cannot interleave between protect/send/unprotect of the first.

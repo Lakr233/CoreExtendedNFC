@@ -37,7 +37,7 @@ public extension CoreExtendedNFC {
 
         case .passport:
             throw NFCError.unsupportedOperation(
-                "Use readPassport() for eMRTD chips; the generic dump flow does not enter BAC or secure messaging."
+                "Use readPassport() for eMRTD chips; the generic dump flow does not run BAC, PACE or Secure Messaging."
             )
 
         default:

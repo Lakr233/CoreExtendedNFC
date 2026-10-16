@@ -30,7 +30,7 @@ class TLVParserViewController: StackScrollController {
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "text.book.closed"),
             menu: UIMenu(title: String(localized: "Examples"), children: [
-                UIAction(title: String(localized: "NDEF App Select Response")) { [weak self] _ in
+                UIAction(title: String(localized: "NDEF Tag Application SELECT Response")) { [weak self] _ in
                     self?.hexInputView.text = "6F 0A 84 07 D2 76 00 00 85 01 01"
                     self?.rebuildResults()
                 },

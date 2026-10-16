@@ -9,7 +9,7 @@ import Foundation
 /// - 3DES (`id-CA-*-3DES-CBC-CBC`): MSE:Set KAT `00 22 41 A6` with `91 <PK_PCD> [84 <keyID>]`.
 /// - AES (`id-CA-*-AES-CBC-CMAC-*`): MSE:Set AT `00 22 41 A4` with `80 <OID> [84 <keyID>]`,
 ///   then GENERAL AUTHENTICATE `00 86 00 00` with `7C { 80 <PK_PCD> }`.
-/// - Afterwards both sides restart secure messaging with `KDF(K, 1)`, `KDF(K, 2)` and SSC = 0.
+/// - Afterwards both sides restart Secure Messaging with `KDF(K, 1)`, `KDF(K, 2)` and SSC = 0.
 ///
 /// References: ICAO 9303 Part 11 §6.2, BSI TR-03110, JMRTD `ChipAuthenticationHandler`.
 public enum ChipAuthenticationHandler {
@@ -17,7 +17,7 @@ public enum ChipAuthenticationHandler {
     ///
     /// Ephemeral ECDH key agreement is not implemented yet. A GENERAL AUTHENTICATE or
     /// MSE:Set KAT carrying a public key would make the chip switch to session keys this
-    /// library cannot derive, which would break the current secure messaging session.
+    /// library cannot derive, which would break the current Secure Messaging session.
     /// This method therefore only selects the CA protocol (AES variants) and returns `nil`,
     /// keeping the current BAC/PACE session intact.
     ///

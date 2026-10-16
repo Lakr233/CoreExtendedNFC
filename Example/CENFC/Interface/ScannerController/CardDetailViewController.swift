@@ -212,7 +212,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "doc.plaintext",
                 title: String(localized: "ATS FSCI"),
-                description: String(localized: "Frame Size for Proximity Coupling Device Integer. The largest frame the card accepts."),
+                description: String(localized: "Frame Size for proximity Card Integer (FSCI). The largest frame the card can receive."),
                 value: "\(String(localized: "\(String(ats.fsci)) (max \(String(ats.maxFrameSize)) bytes)"))"
             )
             if let ta = ats.ta {
@@ -227,7 +227,7 @@ class CardDetailViewController: StackScrollController {
                 addInfoRow(
                     icon: "timer",
                     title: String(localized: "ATS TB"),
-                    description: String(localized: "Interface byte encoding frame waiting time and startup guard time."),
+                    description: String(localized: "Interface byte encoding the frame waiting time integer (FWI) and start-up frame guard time integer (SFGI)."),
                     value: String(format: "0x%02X", tb)
                 )
             }
@@ -252,7 +252,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "doc.text",
                 title: String(localized: "Historical Bytes"),
-                description: String(localized: "Manufacturer-defined data returned during anticollision or selection."),
+                description: String(localized: "Historical bytes from the ATS (answer to RATS), defined by the card manufacturer."),
                 value: hist.hexDump
             )
         }

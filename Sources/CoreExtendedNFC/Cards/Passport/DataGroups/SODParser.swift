@@ -4,7 +4,7 @@ import Foundation
     import OpenSSL
 #endif
 
-/// Parser for SOD (Security Object Document).
+/// Parser for the Document Security Object (EF.SOD).
 ///
 /// TLV wrapper tag: 0x77
 /// Contains a CMS SignedData structure wrapping the LDS Security Object.

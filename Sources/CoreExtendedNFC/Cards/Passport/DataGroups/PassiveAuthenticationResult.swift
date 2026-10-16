@@ -1,6 +1,6 @@
 import Foundation
 
-/// Result of passive authentication verification.
+/// Result of Passive Authentication verification.
 public struct PassiveAuthenticationResult: Sendable, Equatable, Codable {
     /// Whether hash verification passed for each data group.
     public let dataGroupHashResults: [DataGroupId: Bool]
@@ -17,16 +17,16 @@ public struct PassiveAuthenticationResult: Sendable, Equatable, Codable {
         dataGroupHashResults.filter { !$0.value }.map(\.key)
     }
 
-    /// Whether the document signer certificate was found in SOD.
+    /// Whether the Document Signer certificate (DSC) was found in the EF.SOD.
     public let hasCertificate: Bool
 
     /// CMS/PKCS#7 signature verification result, if attempted.
     public let cmsSignatureValid: Bool?
 
-    /// DSC trust-chain verification result against provided CSCA anchors, if attempted.
+    /// Result of certification path validation from the DSC to a provided CSCA, if attempted.
     public let trustChainValid: Bool?
 
-    /// Overall passive authentication status.
+    /// Overall Passive Authentication status.
     public let status: PassiveAuthenticationStatus
 
     public init(
@@ -47,35 +47,43 @@ public struct PassiveAuthenticationResult: Sendable, Equatable, Codable {
 @available(*, deprecated, renamed: "PassiveAuthenticationStatus")
 public typealias PassiveAuthStatus = PassiveAuthenticationStatus
 
-/// Passive authentication status.
+/// Passive Authentication status.
 ///
-/// Full passive authentication combines CMS signature validation on the SOD with
-/// data-group hash verification. Hash comparison is always available here; CMS and
-/// trust-chain validation depend on OpenSSL support.
+/// Full Passive Authentication (ICAO 9303-11 §5.1) combines data group hash
+/// verification against the Document Security Object (EF.SOD), verification of its
+/// CMS signature with the embedded Document Signer certificate (DSC), and
+/// certification path validation from that DSC to a trusted CSCA. Hashes are
+/// always compared; the signature and certificate path are checked with OpenSSL,
+/// and the certificate path only when CSCA trust anchors are supplied.
 public enum PassiveAuthenticationStatus: String, Sendable, Codable {
-    /// Data group hashes verified successfully against SOD.
-    /// - Important: This does NOT mean full passive authentication is complete.
-    ///   The SOD signature itself has NOT been verified against the DSC/CSCA.
-    ///   A cloned chip could present matching hashes with a forged SOD.
+    /// Data group hashes verified successfully against the EF.SOD.
+    /// - Important: This does NOT mean full Passive Authentication is complete.
+    ///   The EF.SOD signature itself has NOT been verified, and no Document Signer
+    ///   certificate was validated to a CSCA. A cloned chip could present matching
+    ///   hashes with a forged EF.SOD. Not produced by the current verifier, which
+    ///   reports ``signatureNotVerified`` instead; kept for decoding older results.
     case dataGroupHashesVerified
     /// Some or all data group hashes failed.
     case hashMismatch
-    /// SOD could not be parsed.
+    /// The EF.SOD could not be parsed.
     case sodParseFailed
-    /// SOD was not read from the chip.
+    /// The EF.SOD was not read from the chip.
     case sodNotAvailable
-    /// Hash algorithm in SOD is not recognized/supported.
+    /// The hash algorithm in the EF.SOD is not recognized or not supported.
     case unsupportedHashAlgorithm
-    /// SOD signature verification not yet implemented.
-    /// Hash comparison was done but the CMS signature was not verified.
+    /// Data group hashes match, but the EF.SOD CMS signature could not be verified
+    /// (the EF.SOD carries no signer certificate or signature, or OpenSSL is unavailable).
     case signatureNotVerified
-    /// SOD CMS signature verified successfully against the embedded DSC.
-    /// Trust chain validation against CSCA is still out of scope.
+    /// Data group hashes match and the EF.SOD CMS signature verifies with the embedded
+    /// Document Signer certificate. No CSCA trust anchors were supplied, so the
+    /// certificate was not validated to a trusted CSCA.
     case signatureVerified
-    /// SOD CMS signature verification was attempted and failed.
+    /// The EF.SOD CMS signature was checked and is invalid.
     case signatureInvalid
-    /// SOD CMS signature verified and DSC trust chain validated against provided anchors.
+    /// Data group hashes match, the EF.SOD CMS signature verifies, and certification
+    /// path validation from the Document Signer certificate to a supplied CSCA succeeded.
     case fullyVerified
-    /// SOD CMS signature verified, but DSC trust validation failed.
+    /// The EF.SOD CMS signature verifies, but certification path validation from the
+    /// Document Signer certificate to the supplied CSCAs failed.
     case trustChainInvalid
 }

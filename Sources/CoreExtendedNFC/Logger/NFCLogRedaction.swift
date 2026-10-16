@@ -142,7 +142,7 @@ public enum NFCLogRedaction {
         return command == desfireAdditionalFrame && !(data ?? Data()).isEmpty
     }
 
-    /// Whether `apdu` is protected by secure messaging (ISO/IEC 7816-4 §5.4.1:
+    /// Whether `apdu` is protected by Secure Messaging (ISO/IEC 7816-4 §5.4.1:
     /// CLA bits b4-b3 non-zero for interindustry classes, `11` otherwise), or is a
     /// GET RESPONSE continuing such a command.
     public static func isSecureMessaging(_ apdu: CommandAPDU) -> Bool {

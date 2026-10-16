@@ -107,7 +107,7 @@ public enum ISO14443 {
 
 /// Parsed ATS (Answer To Select) information.
 public struct ATSInfo: Sendable, Equatable, Codable {
-    /// Frame Size Code Integer.
+    /// Frame Size for proximity Card Integer (FSCI): the largest frame the card can receive.
     public let fsci: UInt8
     /// TA: data rate capabilities.
     public let ta: UInt8?

@@ -76,10 +76,10 @@ struct PassportAuthenticationStageTests {
 
         let signatureOnly = stage(.signatureVerified)
         #expect(signatureOnly.status == .fallback)
-        #expect(signatureOnly.detail.contains("not chained to a CSCA"))
+        #expect(signatureOnly.detail.contains("not validated to a CSCA"))
         let hashesOnly = stage(.signatureNotVerified)
         #expect(hashesOnly.status == .fallback)
-        #expect(hashesOnly.detail.contains("not chained to a CSCA"))
+        #expect(hashesOnly.detail.contains("not validated to a CSCA"))
 
         #expect(stage(.signatureInvalid).status == .failed)
         #expect(stage(.trustChainInvalid).status == .failed)

@@ -7,11 +7,13 @@ import Foundation
 public extension SODParser {
     // MARK: - Passive Authentication (Hash Verification)
 
-    /// Verify data group hashes against the hashes stored in SOD.
+    /// Verify data group hashes against the hashes stored in the EF.SOD.
     ///
-    /// - Important: This only verifies that computed DG hashes match the SOD-stored hashes.
-    ///   It does NOT verify the SOD's CMS signature or the certificate trust chain.
-    ///   Full passive authentication requires OpenSSL or equivalent for CMS verification.
+    /// - Important: This only verifies that computed DG hashes match the EF.SOD-stored hashes.
+    ///   It does NOT verify the EF.SOD's CMS signature or perform certification path
+    ///   validation of the Document Signer certificate. Use
+    ///   ``verifyPassiveAuthentication(sodContent:rawDataGroups:trustAnchorsDER:)`` for
+    ///   full Passive Authentication.
     ///
     /// - Parameters:
     ///   - sodContent: Parsed SOD content with expected hashes.
@@ -89,7 +91,8 @@ public extension SODParser {
         )
     }
 
-    /// Verify passive authentication using both DG hashes and CMS signature when available.
+    /// Run Passive Authentication: DG hashes, the EF.SOD CMS signature, and, when CSCA
+    /// trust anchors are supplied, certification path validation of the Document Signer certificate.
     static func verifyPassiveAuthentication(
         sodContent: SODContent,
         rawDataGroups: [DataGroupId: Data],

@@ -1,6 +1,6 @@
 import Foundation
 
-/// ISO/IEC 9797-1 Method 2 padding used by ICAO 9303 secure messaging.
+/// ISO/IEC 9797-1 Method 2 padding used by ICAO 9303 Secure Messaging.
 /// Reference: ISO/IEC 9797-1:2011, Padding Method 2.
 public enum ISO9797Padding {
     /// Append `0x80`, then `0x00` bytes until the result is a multiple of `blockSize`.
@@ -23,7 +23,7 @@ public enum ISO9797Padding {
 
     /// Remove ISO/IEC 9797-1 Method 2 padding, throwing when the padding is malformed.
     ///
-    /// Secure messaging plaintext must always carry Method 2 padding, so a missing
+    /// Secure Messaging plaintext must always carry Method 2 padding, so a missing
     /// `0x80` marker or a padding run longer than one block means the cryptogram is corrupt.
     public static func strictUnpad(_ data: Data, blockSize: Int) throws -> Data {
         guard !data.isEmpty, data.count % blockSize == 0,

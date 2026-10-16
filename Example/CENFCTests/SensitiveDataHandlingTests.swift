@@ -297,7 +297,7 @@ struct PassportSecurityTextTests {
         let rows = PassportDetailViewController.securityRows(for: PassportRecord(from: passport))
         #expect(rows.allSatisfy { $0.value != detail })
         #expect(rows.first { $0.isPassiveAuthentication }?.value
-            == String(localized: "Hashes match; signer not chained to a trusted CSCA"))
+            == String(localized: "Hashes match; Document Signer certificate not validated to a trusted CSCA"))
         #expect(rows.first { $0.title == String(localized: "BAC") }?.value == String(localized: "Failed"))
 
         let imported = PassportDetailViewController.securityRows(
