@@ -21,21 +21,37 @@
 <h1>Scan and dump</h1>
 <p class="lede">Use the top-level API when the app owns the NFC session. Keep the returned session alive while sending commands through the transport.</p>
 <h2 id="scan">Scan</h2>
-<pre><code class="language-swift">let (info, transport, session) = try await CoreExtendedNFC.scan()
-defer { session.invalidate() }
+<pre><code class="language-swift">do {
+    let (info, transport, session) = try await CoreExtendedNFC.scan()
+    defer { session.invalidate() }
+    // ...
+} catch where error.isNFCCancellation {
+    // The user dismissed the sheet (NFCError.userCanceled) or the task was cancelled.
+}
 </code></pre>
+<p>When the user dismisses the NFC sheet, <code>scan()</code> throws <code>NFCError.userCanceled</code>, and later failures on that session's transport are reported the same way. Only one scan may be pending per <code>NFCSessionManager</code>; another call throws <code>NFCError.scanInProgress</code>. See <a href="../api/errors.html">Errors</a>.</p>
 <h2 id="identification-refinement">Identification refinement</h2>
 <p><code>scan()</code> first maps the CoreNFC tag family into a coarse <code>CardType</code>, then refines that result with family-specific probes where iOS exposes safe commands.</p>
 <p>For MIFARE Type 2 tags, CoreNFC may only expose an unknown MIFARE family. If the coarse result looks like MIFARE Classic, CoreExtendedNFC validates the Type 2 manufacturer pages with <code>READ 0x30 0x00</code> and the UID BCC bytes before retrying the Ultralight / NTAG <code>GET_VERSION</code> path. Real MIFARE Classic cards remain identification-only because iOS does not expose Crypto1 authentication.</p>
+<p>Other refinements: Ultralight C is recognized by a 16-byte answer to <code>READ 0x2B</code> (no authentication is attempted; an Ultralight C with page <code>2B</code> read-protected stays generic Ultralight). NTAG210 and NTAG212 are recognized from GET_VERSION. FeliCa system code <code>88B4</code> is split into Lite and Lite-S by reading block <code>0x90</code>, which only Lite-S has. ATQA <code>0304</code> with SAK <code>20</code> is DESFire with a random UID. Other SAK <code>20</code>, <code>28</code> and <code>38</code> cards start as generic ISO 7816 (<code>.smartMX</code>) and are probed for DESFire, Type 4 and eMRTD.</p>
 <h2 id="dump">Dump</h2>
 <pre><code class="language-swift">let (info, dump) = try await CoreExtendedNFC.scanAndDump()
 print(dump.summary.userSummary)
 </code></pre>
+<p>Some dumps are partial by design. Check <code>dump.capabilities</code> for <code>.partiallyReadable</code> and read <code>dump.facts</code>:</p>
+<ul>
+<li><strong>Ultralight / NTAG</strong>: reading stops at the first page the tag refuses (AUTH0 read protection). Pages read so far are kept, an <code>Unauthenticated Boundary</code> fact names the page, and capabilities become <code>authenticationRequired</code> + <code>partiallyReadable</code>. Ultralight C key pages 44-47 are never read.</li>
+<li><strong>ISO 15693</strong>: READ SINGLE BLOCK takes a one-byte address, so tags with more than 256 blocks are dumped up to block 255. A <code>Blocks Read</code> fact such as <code>256 of 2048</code> is added, and the dump is marked <code>partiallyReadable</code>. Tags that do not report their memory size throw <code>unsupportedOperation</code>.</li>
+<li><strong>DESFire</strong>: free-access files only, keyed by AID + file ID. Protected applications and files are skipped and counted.</li>
+<li><strong>FeliCa</strong>: the Type 3 NDEF area plus up to 4 blocks per discovered plain service. <strong>Type 4</strong>: the CC and NDEF files.</li>
+</ul>
+<p>Cancelling the task stops a dump between pages, blocks or files with <code>CancellationError</code>.</p>
 <h2 id="export">Export</h2>
 <pre><code class="language-swift">let json = try CoreExtendedNFC.exportJSON(dump: dump)
 let flipper = try CoreExtendedNFC.exportFlipperNFC(dump: dump)
 let artifacts = try CoreExtendedNFC.exportAll(dump: dump)
 </code></pre>
+<p>The Flipper, Proxmark3 MFU and libnfc MFD formats store exactly 4 bytes per Type 2 page. Their exports throw <code>NFCError.malformedDump</code> when any page has another length (for example a hand-edited or decoded dump) rather than padding or truncating it.</p>
 <nav class="pager"><span class="parent"><a href="index.html">Guide</a></span><a class="next" href="ndef.html">NDEF</a></nav>
 <footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer>
 </main>

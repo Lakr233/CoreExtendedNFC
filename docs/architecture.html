@@ -3,11 +3,19 @@
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="index.html">CoreExtendedNFC</a><a href="index.html">Overview</a><a href="guide/index.html">Guide</a><a href="api/index.html">API</a><a href="architecture.html" aria-current="page">Architecture</a><a href="build.html">Build</a><a href="research/index.html">Research</a></nav>
 <main><h1>Architecture</h1><p class="lede">CoreExtendedNFC keeps CoreNFC at the transport edge. Card protocols, models, crypto helpers, and parsers are pure Swift logic.</p>
 <pre><code class="language-text">Sources/CoreExtendedNFC/
-├── Transport/          CoreNFC tag wrappers and NFCSessionManager
-├── Protocol/           ISO 14443, APDU, passport APDUs, ASN.1, errors
+├── Transport/          CoreNFC tag wrappers, NFCSessionManager, CoreNFC error mapping
+├── Protocol/           ISO 14443, card ID + refinement, APDU + exchange, ASN.1, NDEF, errors
 ├── Cards/              Family-specific command, parser, reader, and dump logic
-├── Crypto/             AES-CMAC, ISO 9797 MAC, key derivation, padding, hashing
+│   ├── MiFareUltralight/, NTAG/, DESFire/, FeliCa/, ISO15693/, Type4/
+│   ├── IndividualNumber/   Japanese My Number card
+│   ├── Transit/            Japan IC, Octopus, Singapore CEPAS, KS X 6924, T-Union
+│   └── Passport/           PACE, BAC, Secure Messaging, CA, AA, data-group parsers
+├── Crypto/             AES-CMAC, ISO 9797 MAC, key derivation, padding, hashing, secret redaction
+├── Concurrency/        Lock-protected shared state
+├── Logger/             NFCLogger, log store, payload redaction
 ├── Models/             Card identity, dumps, NDEF, MRZ, passport, My Number
+├── Resources/          Localized strings
 └── Utilities/          Hex, bytes, parity, and small data helpers</code></pre>
-<table><thead><tr><th>Layer</th><th>CoreNFC import</th></tr></thead><tbody><tr><td><code>Transport/</code></td><td>yes</td></tr><tr><td><code>Protocol/</code></td><td>no</td></tr><tr><td><code>Cards/</code></td><td>no</td></tr><tr><td><code>Models/</code></td><td>no</td></tr><tr><td><code>Crypto/</code></td><td>no</td></tr><tr><td><code>Utilities/</code></td><td>no</td></tr></tbody></table>
+<table><thead><tr><th>Layer</th><th>CoreNFC import</th></tr></thead><tbody><tr><td><code>Transport/</code></td><td>yes</td></tr><tr><td><code>Protocol/</code></td><td>no</td></tr><tr><td><code>Cards/</code></td><td>no</td></tr><tr><td><code>Models/</code></td><td>no</td></tr><tr><td><code>Crypto/</code></td><td>no</td></tr><tr><td><code>Logger/</code></td><td>no</td></tr><tr><td><code>Concurrency/</code></td><td>no</td></tr><tr><td><code>Utilities/</code></td><td>no</td></tr></tbody></table>
+<p>The package depends on <a href="https://github.com/Lakr233/openssl-spm">openssl-spm</a>. OpenSSL is imported only by the passport code (<code>PACEHandler</code>, <code>ActiveAuthenticationVerifier</code>, <code>SODParser</code>) for elliptic-curve PACE, Active Authentication signatures, and CMS / certificate-chain verification.</p>
 <footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

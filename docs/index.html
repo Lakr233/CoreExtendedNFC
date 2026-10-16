@@ -26,17 +26,17 @@
 
 <h2 id="capabilities">Capabilities</h2>
 <ul>
-<li>Card identification from ATQA, SAK, ATS, FeliCa system code, ISO 15693 metadata, and ISO 7816 application hints.</li>
-<li>Memory operations for Ultralight, NTAG, DESFire, FeliCa Type 3, ISO 15693, and Type 4 NDEF tags.</li>
-<li>Passport and eMRTD reading with BAC, Secure Messaging, data-group parsing, Passive Authentication, and Active Authentication.</li>
-<li>Transit-card readers for Japan IC, Hong Kong Octopus, China T-Union, and Korea KS X 6924 paths.</li>
+<li>Card identification from ATQA, SAK, ATS, FeliCa system code, ISO 15693 metadata, and ISO 7816 application hints, refined by safe probes (Ultralight C, NTAG210/212, DESFire EV1-EV3, FeliCa Lite / Lite-S).</li>
+<li>Memory operations for Ultralight, NTAG, DESFire (read-only), FeliCa Type 3, ISO 15693, and Type 4 NDEF tags.</li>
+<li>Passport and eMRTD reading with PACE (ECDH Generic Mapping on NIST curves) or BAC, Secure Messaging, data-group parsing, Passive Authentication against caller-supplied CSCA certificates, and Active Authentication.</li>
+<li>Transit-card readers for Japan IC, Hong Kong Octopus, Singapore CEPAS, China T-Union, and Korea KS X 6924 paths.</li>
 <li>Japan My Number card token reads, protected individual-number reads, and PIN-attempt lookup.</li>
 <li>Dump export and import for hex, JSON, Flipper NFC, Proxmark3 MFU, libnfc MFD, and raw binary formats.</li>
 </ul>
 
 <h2 id="install">Install</h2>
 <pre><code class="language-swift">dependencies: [
-    .package(url: "https://github.com/Lakr233/CoreExtendedNFC.git", from: "0.1.0"),
+    .package(url: "https://github.com/Lakr233/CoreExtendedNFC.git", from: "1.1.2"),
 ],
 targets: [
     .target(name: "App", dependencies: [
@@ -56,27 +56,28 @@ let (info, dump) = try await CoreExtendedNFC.scanAndDump()
 print(dump.exportHex())
 
 let passport = try await CoreExtendedNFC.readPassport(
-    mrzKey: "L898902C&lt;3640812512041598",
-    dataGroups: [.dg1, .dg2]
+    mrzKey: "L898902C&lt;369080619406236",
+    dataGroups: [.com, .dg1, .dg2, .sod]
 )
 </code></pre>
+<p>The package depends on <a href="https://github.com/Lakr233/openssl-spm">openssl-spm</a> for passport cryptography; SwiftPM resolves it automatically. Failures are thrown as <code>NFCError</code>; see <a href="api/errors.html">Errors</a>.</p>
 
 <h2 id="supported-cards">Supported cards</h2>
 <table>
 <thead><tr><th>Family</th><th>Identify</th><th>Read</th><th>Write</th><th>Dump</th></tr></thead>
 <tbody>
-<tr><td>MIFARE Ultralight / EV1</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
-<tr><td>NTAG 213 / 215 / 216</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
-<tr><td>MIFARE DESFire EV1-EV3</td><td>yes</td><td>yes</td><td>free-access files</td><td>yes</td></tr>
+<tr><td>MIFARE Ultralight / EV1 / C</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td>NTAG 210 / 212 / 213 / 215 / 216</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td>MIFARE DESFire EV1-EV3</td><td>yes</td><td>yes</td><td>no</td><td>free-access files</td></tr>
 <tr><td>FeliCa Type 3 NDEF</td><td>yes</td><td>yes</td><td>yes</td><td>partial</td></tr>
-<tr><td>ISO 15693 / Type 5</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td>ISO 15693 / Type 5</td><td>yes</td><td>yes</td><td>yes</td><td>blocks 0-255</td></tr>
 <tr><td>Type 4 NDEF / ISO 7816</td><td>yes</td><td>yes</td><td>yes</td><td>partial</td></tr>
 <tr><td>eMRTD / ePassport</td><td>yes</td><td>yes</td><td>no</td><td>workflow-specific</td></tr>
 <tr><td>My Number card</td><td>yes</td><td>yes</td><td>no</td><td>token data</td></tr>
 <tr><td>MIFARE Classic 1K / 4K</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
 </tbody>
 </table>
-<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 parity-bit authentication.</p>
+<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 parity-bit authentication. DESFire has no write API. ISO 15693 tags with more than 256 blocks are dumped up to block 255 and marked partially readable.</p>
 
 <h2 id="where-next">Where next</h2>
 <ul class="hub-list">

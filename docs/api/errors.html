@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Errors</title><link rel="stylesheet" href="../styles.css"></head>
+<body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="../guide/index.html">Guide</a><a href="index.html" aria-current="page">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="../research/index.html">Research</a></nav>
+<main><h1>Errors</h1><p class="lede">Every failure the library throws is an <code>NFCError</code>. It is <code>Sendable</code>, <code>Equatable</code> and a <code>LocalizedError</code> with localized descriptions, so apps can match on cases instead of message text.</p>
+<h2 id="cancellation">Cancellation</h2>
+<pre><code class="language-swift">do {
+    let (info, dump) = try await CoreExtendedNFC.scanAndDump()
+} catch where error.isNFCCancellation {
+    // User dismissed the sheet, task cancelled, or the app ended the scan: stay silent.
+} catch {
+    showAlert(error.localizedDescription)
+}</code></pre>
+<p><code>Error.isNFCCancellation</code> is <code>true</code> for <code>NFCError.userCanceled</code>, <code>CancellationError</code> and <code>NFCError.sessionInvalidatedByCaller</code>. <code>NFCError.isUserCancellation</code> is <code>true</code> only for <code>.userCanceled</code>. After the user dismisses the sheet, later session-loss failures from that session's transports are reported as <code>.userCanceled</code>. <code>NFCSessionManager.wasCanceledByUser</code> covers a failure that raced the cancel.</p>
+<h2 id="cases">Cases</h2>
+<table><thead><tr><th>Case</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>nfcNotAvailable</code></td><td>The device has no NFC tag reading.</td></tr>
+<tr><td><code>sessionTimeout</code></td><td>The reader session hit the system time limit.</td></tr>
+<tr><td><code>tagConnectionLost</code></td><td>The tag left the field or stopped answering.</td></tr>
+<tr><td><code>tagNotSupported</code></td><td>No flow exists for this card: no dump flow, no NDEF path, NDEF formatting on Type 3/4, or a transit card no reader recognizes.</td></tr>
+<tr><td><code>sessionInvalidated(String)</code></td><td>The session ended for a reason without a dedicated case; the text is the system's description.</td></tr>
+<tr><td><code>userCanceled</code></td><td>The user dismissed the NFC sheet.</td></tr>
+<tr><td><code>systemBusy</code></td><td>Another reader session holds the NFC hardware.</td></tr>
+<tr><td><code>sessionInvalidatedByCaller</code></td><td>The app ended a pending scan with <code>invalidate()</code> or <code>invalidate(errorMessage:)</code>.</td></tr>
+<tr><td><code>scanInProgress</code></td><td><code>scan</code> was called while another scan on the same <code>NFCSessionManager</code> was still waiting for a tag.</td></tr>
+<tr><td><code>crcMismatch</code></td><td>A tag response failed its RF frame CRC.</td></tr>
+<tr><td><code>checksumMismatch</code></td><td>A checksum carried in card data did not match, for example the FeliCa Type 3 attribute block.</td></tr>
+<tr><td><code>invalidResponse(Data)</code></td><td>The tag's response was malformed or too short.</td></tr>
+<tr><td><code>unexpectedStatusWord(UInt8, UInt8)</code></td><td>An ISO 7816 status word the operation does not accept.</td></tr>
+<tr><td><code>responseChainTooLong(maxFrames:)</code></td><td>The card kept asking for more response frames (<code>61xx</code>, <code>91AF</code>) past the limit.</td></tr>
+<tr><td><code>applicationNotFound(aid:)</code></td><td>SELECT by AID was answered with "not found" (<code>6A82</code>, <code>6A86</code>, <code>6999</code>, ...). See <code>ResponseAPDU.isApplicationNotFound</code>.</td></tr>
+<tr><td><code>iso15693Error(code:)</code></td><td>An ISO 15693 error code other than <code>0x12</code> / <code>0x14</code> (block locked), for example <code>0x10</code> block not available.</td></tr>
+<tr><td><code>authenticationFailed</code></td><td>Authentication with the tag failed.</td></tr>
+<tr><td><code>pinVerificationFailed(remainingAttempts:)</code></td><td>VERIFY was refused or the PIN is blocked; <code>0</code> when blocked, <code>nil</code> when the card did not say.</td></tr>
+<tr><td><code>pinRequired(MyNumberPINType)</code></td><td>The operation needs this PIN but none was supplied.</td></tr>
+<tr><td><code>writeFailed(page:)</code></td><td>The tag did not acknowledge a page write.</td></tr>
+<tr><td><code>tagLocked</code></td><td>The tag or block denies writing: Type 2/4/5 CC write access, ISO 15693 codes <code>0x12</code> / <code>0x14</code>, Type 4 UPDATE BINARY <code>6982</code> / <code>6985</code>.</td></tr>
+<tr><td><code>irreversibleWriteRefused(page:)</code></td><td>A write that would irreversibly change an OTP or lock page was refused before anything was sent. The Ultralight page guard currently still throws <code>unsupportedOperation</code>.</td></tr>
+<tr><td><code>tagNotNDEFFormatted</code></td><td>No NDEF Capability Container or NDEF application; format the tag first.</td></tr>
+<tr><td><code>ndefMessageNotFound</code></td><td>The tag is NDEF formatted but holds no readable NDEF message TLV.</td></tr>
+<tr><td><code>ndefCapacityExceeded(required:capacity:)</code></td><td>The encoded message does not fit the tag's NDEF area.</td></tr>
+<tr><td><code>desfireError(DESFireStatus)</code></td><td>A DESFire native status other than success.</td></tr>
+<tr><td><code>felicaBlockReadFailed(statusFlag:)</code> / <code>felicaBlockWriteFailed(statusFlag:)</code></td><td>A FeliCa block command returned a non-zero status flag.</td></tr>
+<tr><td><code>bacFailed(String)</code></td><td>BAC or the eMRTD application SELECT failed.</td></tr>
+<tr><td><code>secureMessagingError(String)</code></td><td>Secure messaging or PACE failed.</td></tr>
+<tr><td><code>dataGroupNotAvailable(String)</code> / <code>dataGroupParseFailed(String)</code></td><td>An eMRTD file is absent or protected, or could not be parsed.</td></tr>
+<tr><td><code>cryptoError(String)</code></td><td>A cryptographic operation failed.</td></tr>
+<tr><td><code>notOperableOnIOS(CardType)</code></td><td>iOS cannot operate this card type, for example MIFARE Classic.</td></tr>
+<tr><td><code>unsupportedOperation(String)</code></td><td>The operation does not apply to this transport or card, or the library refused it.</td></tr>
+<tr><td><code>invalidParameter(String)</code></td><td>An argument is out of range or malformed, for example a DESFire AID that is not 3 bytes.</td></tr>
+<tr><td><code>malformedDump(String)</code></td><td>A memory dump being exported or imported is malformed or inconsistent.</td></tr>
+</tbody></table>
+<nav class="pager"><a class="prev" href="models.html">Models</a><span class="parent"><a href="index.html">API</a></span></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

@@ -4,13 +4,30 @@
 <main><h1>Card commands</h1><p class="lede">Lower-level command objects are useful when an app needs explicit control after <code>scan()</code> returns a connected transport.</p>
 <pre><code class="language-swift">let commands = UltralightCommands(transport: transport)
 let pages = try await commands.readPages(startPage: 4)
-try await commands.writePage(4, data: Data([0x01, 0x02, 0x03, 0x04]))
+try await commands.writePage(4, data: Data([0x01, 0x02, 0x03, 0x04]),
+                             memoryMap: UltralightMemoryMap.forType(info.type))
 
 let desfire = DESFireCommands(transport: transport)
 let version = try await desfire.getVersion()
 let aids = try await desfire.getApplicationIDs()
 
 let select = CommandAPDU.select(aid: passportAID)
-let response = try await iso7816Transport.sendAPDU(select)</code></pre>
+let response = try await iso7816Transport.sendAPDU(select)
+if response.isApplicationNotFound { /* the card does not carry this AID */ }
+
+let security = ISO15693SecurityManager(transport: iso15693Transport)
+try await security.configureAFI(0x01, permanentlyLock: false)</code></pre>
+<h2 id="ultralight-writes">Ultralight / NTAG write guard</h2>
+<p><code>writePage(_:data:memoryMap:allowIrreversible:)</code> and <code>compatibilityWrite</code> refuse writes that may be irreversible unless <code>allowIrreversible</code> is <code>true</code>. Pages 0-2 (UID and static lock bytes) are always refused. Page 3 (OTP / Capability Container) is refused unless the value is a standard read/write NDEF CC (<code>E1 1x xx 00</code>). With a <code>memoryMap</code>, every page outside the product's user data area (dynamic lock, CFG, PWD/PACK, Ultralight C key pages) is refused too. Without one, only pages 0-3 are checked. A refused write currently throws <code>NFCError.unsupportedOperation</code> before anything is sent. <code>allowIrreversible: true</code> can permanently lock or brick the tag.</p>
+<h2 id="iso15693">ISO 15693 security</h2>
+<p><code>ISO15693SecurityManager.configureAFI(_:permanentlyLock:)</code> and <code>configureDSFID(_:permanentlyLock:)</code> write the value, and send LOCK AFI / LOCK DSFID only when <code>permanentlyLock</code> is <code>true</code>. That lock is irreversible. The older <code>lock:</code> overloads are deprecated. <code>ISO15693SystemInfo.dsfid</code>, <code>afi</code> and <code>icReference</code> are optional and are <code>nil</code> when the tag does not report them. Tag error codes <code>0x12</code> / <code>0x14</code> (block locked) are thrown as <code>NFCError.tagLocked</code>; other ISO/IEC 15693-3 error codes are thrown as <code>NFCError.iso15693Error(code:)</code>.</p>
+<h2 id="desfire">DESFire</h2>
+<p><code>getVersion()</code> maps the hardware major version to EV1 (<code>0x01</code>), EV2 (<code>0x12</code>, <code>0x22</code>, <code>0x42</code>) or EV3 (<code>0x33</code>). File settings include Transaction MAC files (type <code>0x05</code>). The library has no DESFire write API. The automatic dump reads every free-access file and keys each one by <code>AID (3 bytes) ‖ file ID (1 byte)</code>, so equal file IDs in different applications stay distinct. Applications and files that need authentication are skipped and counted. Transaction MAC files are counted but not read.</p>
+<h2 id="apdu">APDUs</h2>
+<p><code>CommandAPDU</code> encodes short APDUs, and switches to extended length automatically when the command data exceeds 255 bytes or more than 256 response bytes are expected (Nc up to 65535, Ne up to 65536). <code>APDUExchange.transmit(_:maxGetResponseFrames:retryOnWrongLength:using:)</code> resolves <code>6Cxx</code> (re-issue with the corrected Le) and <code>61xx</code> (GET RESPONSE chaining). It throws <code>NFCError.responseChainTooLong(maxFrames:)</code> after <code>defaultMaxGetResponseFrames</code> (256) follow-ups.</p>
+<h2 id="type4">Type 4</h2>
+<p><code>Type4CC</code> parses both the NDEF File Control TLV (T4T 2.0, 2-byte NLEN) and the Extended NDEF File Control TLV (T4T 3.0, T = <code>06h</code>, 4-byte ENLEN). <code>maxNDEFFileSize</code> carries the full size, and <code>ndefLengthFieldSize</code> is 2 or 4. Writes split the length header by MLc and refuse NDEF files larger than 32 KB. UPDATE BINARY answered with <code>6982</code> / <code>6985</code>, or a CC that denies write access, throws <code>NFCError.tagLocked</code>.</p>
+<h2 id="identification">Identification</h2>
 <table><thead><tr><th>Type</th><th>Use</th></tr></thead><tbody><tr><td><code>CardIdentifier</code></td><td>ATQA and SAK card-family classification.</td></tr><tr><td><code>ISO14443</code></td><td>CRC_A, CRC_B, and ATS parsing.</td></tr><tr><td><code>ASN1Parser</code></td><td>BER-TLV parsing for eMRTD and card payloads.</td></tr></tbody></table>
+<p>ATQA <code>0344</code> or <code>0304</code> (random 4-byte UID) with SAK <code>20</code> is classified as DESFire. Any other ATQA with SAK <code>20</code>, and SAK <code>28</code> / <code>38</code> (ISO 14443-4 with Classic emulation), is reported as <code>.smartMX</code>, a generic ISO 7816 card that <code>refineCardInfo</code> probes for DESFire, Type 4 and eMRTD. Refinement also detects Ultralight C (a 16-byte answer to <code>READ 2B</code>, no authentication attempted), NTAG210/212 from GET_VERSION, and FeliCa Lite vs Lite-S on system code <code>88B4</code> (only Lite-S answers a read of block <code>0x90</code>).</p>
 <nav class="pager"><a class="prev" href="core.html">Core API</a><a class="next" href="models.html">Models</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

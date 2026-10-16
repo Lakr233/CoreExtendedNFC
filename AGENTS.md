@@ -4,7 +4,7 @@
 
 A Swift Package that provides NFC protocol-layer logic for iOS. CoreNFC handles RF transport; this library provides card identification, command construction, memory models, passport/eMRTD reading, and dump orchestration.
 
-Zero external dependencies. Swift 6.2 strict concurrency. iOS 15+.
+One external dependency: `openssl-spm` (OpenSSL), imported only by the passport code (PACE, Active Authentication, SOD/CMS verification). Swift 6.2 strict concurrency. iOS 15+.
 
 This project is iOS-only. Do not add `#if canImport(CoreNFC)` or macOS compatibility shims. Validation should target iOS builds only.
 
@@ -35,7 +35,7 @@ Sources/CoreExtendedNFC/
 │   ├── FeliCa/            Type 3 NDEF, frame assembly
 │   ├── ISO15693/          Block read/write, system info
 │   ├── Type4/             NDEF via ISO 7816 SELECT/READ BINARY
-│   └── Passport/          BAC, PACE, CA, AA, SM, DG parsers (13 files)
+│   └── Passport/          BAC, PACE, CA, AA, SM; DG parsers in DataGroups/
 │
 ├── Crypto/             AES-CMAC, ISO 9797 MAC, key derivation, padding, hashing
 ├── Models/             CardType, CardInfo, MemoryDump, AccessBits, MRZ, Passport
@@ -96,14 +96,16 @@ AF chaining: keep sending `[0x90, 0xAF, 0x00, 0x00, 0x00]` until SW2 != 0xAF.
 
 ```
 MRZ input → MRZKeyGenerator (ICAO 9303 Part 3, weights 7,3,1)
-         → BAC key derivation (ICAO 9303 Part 11 Appendix D)
-         → Secure Messaging (DO'87/DO'99/DO'8E, ISO 9797-1 MAC)
-         → Read DG1 (MRZ), DG2 (face), DG14 (security info), DG15 (AA key), SOD
-         → Passive Authentication (RFC 5652 CMS, hash verification)
-         → Active Authentication (INTERNAL AUTHENTICATE, ICAO 9303 Part 11 §9.2)
+         → EF.CardAccess → PACE (ECDH Generic Mapping, NIST P-256/384/521, OpenSSL)
+           or BAC key derivation (ICAO 9303 Part 11 Appendix D) as fallback
+         → Secure Messaging (DO'87/DO'99/DO'8E, ISO 9797-1 MAC or AES-CMAC)
+         → Read COM + SOD (index), DG1 (MRZ, mandatory), DG2 (face), DG14, DG15 (AA key), EAC DG3/DG4 last
+         → Passive Authentication (RFC 5652 CMS, hash verification, CSCA chain via trustAnchorsDER)
+         → Active Authentication (INTERNAL AUTHENTICATE, ICAO 9303 Part 11 §6.1);
+           succeeded only with fully verified PA and a matching DG15 hash
 ```
 
-PACE and Chip Authentication stubs exist but ECDH key agreement is not yet implemented.
+PACE supports ECDH Generic Mapping on NIST curves only; other mappings fall back to BAC. Chip Authentication is parsed from DG14 but not performed (its ECDH key agreement is not implemented).
 
 ## Standards Referenced in Code
 
