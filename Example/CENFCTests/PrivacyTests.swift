@@ -12,9 +12,10 @@ private func makeTemporaryDirectory() throws -> URL {
 }
 
 private func makePassport(succeeded: Bool) throws -> PassportModel {
-    let mrz = try MRZData(
-        mrzString: "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<L898902C36UTO7408122F1204159ZE184226B<<<<<10"
-    )
+    let mrzString = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<L898902C36UTO7408122F1204159ZE184226B<<<<<10"
+    let mrz = try MRZData(mrzString: mrzString)
+    // Imported records re-parse DG1, so it has to hold the same MRZ.
+    let dg1 = ASN1Parser.encodeTLV(tag: 0x61, value: ASN1Parser.encodeTLV(tag: 0x5F1F, value: Data(mrzString.utf8)))
     let ok = PassportSecurityStageResult(status: .succeeded, detail: "")
     return PassportModel(
         ldsVersion: nil, unicodeVersion: nil,
@@ -25,7 +26,7 @@ private func makePassport(succeeded: Bool) throws -> PassportModel {
         activeAuthPublicKey: nil, activeAuthPublicKeyRaw: nil,
         sod: nil, sodRaw: nil,
         passiveAuthResult: nil, activeAuthResult: nil,
-        rawDataGroups: [.dg1: Data([0x61])],
+        rawDataGroups: [.dg1: dg1],
         securityReport: succeeded
             ? PassportSecurityReport(
                 cardAccess: ok, pace: ok, bac: ok,
@@ -151,7 +152,18 @@ struct PassportImportTests {
         let rows = PassportDetailViewController.securityRows(for: imported)
         #expect(rows.count == 6)
         #expect(rows.allSatisfy { $0.icon != "checkmark.circle.fill" })
-        #expect(rows.allSatisfy { $0.value == String(localized: "Imported, not re-verified") })
+        #expect(rows.filter { !$0.isPassiveAuthentication }.allSatisfy {
+            $0.value == String(localized: "Imported, not re-verified")
+        })
+        // Passive Authentication is re-run from the bytes; this file has no SOD.
+        #expect(rows.first { $0.isPassiveAuthentication }?.value == String(localized: "Verifying…"))
+        let reverified = imported.reverifiedPassiveAuthentication()
+        #expect(reverified.status == .notSupported)
+        let reverifiedRows = PassportDetailViewController.securityRows(
+            for: imported,
+            reverifiedPassiveAuthentication: reverified
+        )
+        #expect(reverifiedRows.allSatisfy { $0.icon != "checkmark.circle.fill" })
 
         // A record read from the chip still shows its results.
         let chipRows = PassportDetailViewController.securityRows(for: record)

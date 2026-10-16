@@ -28,6 +28,11 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
     private var decodeTask: Task<Void, Never>?
     /// Marks where the photo section goes once the image has been decoded.
     private let facePlaceholder = UIView()
+    /// Passive authentication re-run for an imported record; `nil` until it finishes.
+    private var reverifiedPassiveAuthentication: PassportSecurityStageResult?
+    private var reverifyTask: Task<Void, Never>?
+    /// The Passive Authentication row, replaced once re-verification finishes.
+    private weak var passiveAuthenticationRow: UIView?
 
     private var previewDirectoryURL: URL {
         Self.previewDirectory(for: record.id)
@@ -63,6 +68,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
 
     deinit {
         decodeTask?.cancel()
+        reverifyTask?.cancel()
         // deinit is nonisolated; only touch Sendable state here.
         try? FileManager.default.removeItem(at: Self.previewDirectory(for: record.id))
     }
@@ -76,6 +82,40 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         enableExtendedEdge()
         setupExportButton()
         startDecodingPreviews()
+        startReverifyingImportedRecord()
+    }
+
+    /// Re-runs passive authentication for an imported record off the main thread
+    /// (cached per record for the app's lifetime), then updates its row.
+    private func startReverifyingImportedRecord() {
+        guard record.isImported, reverifiedPassiveAuthentication == nil else { return }
+        let record = record
+        reverifyTask = Task { [weak self] in
+            let result = await PassportReverificationCache.shared.passiveAuthentication(for: record)
+            guard !Task.isCancelled, let self else { return }
+            reverifiedPassiveAuthentication = result
+            replacePassiveAuthenticationRow()
+        }
+    }
+
+    private func replacePassiveAuthenticationRow() {
+        guard let oldRow = passiveAuthenticationRow,
+              let index = stackView.arrangedSubviews.firstIndex(of: oldRow),
+              let row = Self.securityRows(
+                  for: record,
+                  reverifiedPassiveAuthentication: reverifiedPassiveAuthentication
+              ).first(where: { $0.isPassiveAuthentication })
+        else { return }
+        let firstNewIndex = stackView.arrangedSubviews.count
+        addSecurityRow(row)
+        let added = Array(stackView.arrangedSubviews[firstNewIndex...])
+        // `addInfoRow` appends the row and a separator; the old row keeps its own separator.
+        added.dropFirst().forEach { $0.removeFromSuperview() }
+        if let newRow = added.first {
+            stackView.insertArrangedSubview(newRow, at: index)
+            passiveAuthenticationRow = newRow
+        }
+        oldRow.removeFromSuperview()
     }
 
     /// Decodes DG2/DG7 (often JPEG 2000) once, off the main thread, then fills in the photo.
@@ -262,21 +302,32 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
     private func buildSecuritySection() {
         addSectionHeader(String(localized: "Security Report"))
 
-        for row in Self.securityRows(for: record) {
-            addInfoRow(
-                icon: row.icon,
-                title: row.title,
-                description: String(localized: "Security mechanism status and result detail."),
-                value: row.value,
-                isDestructive: row.isDestructive
-            )
+        if record.isImported, reverifiedPassiveAuthentication == nil {
+            reverifiedPassiveAuthentication = PassportReverificationCache.shared.cachedResult(for: record)
+        }
+        for row in Self.securityRows(for: record, reverifiedPassiveAuthentication: reverifiedPassiveAuthentication) {
+            let firstNewIndex = stackView.arrangedSubviews.count
+            addSecurityRow(row)
+            if row.isPassiveAuthentication {
+                passiveAuthenticationRow = stackView.arrangedSubviews[firstNewIndex]
+            }
         }
 
         if record.isImported {
-            addSectionFooter(String(localized: "This record was imported from a file. Its security results come from the file and were not re-verified on this device, so none of them are shown as passed. Read the chip again to verify it."))
+            addSectionFooter(String(localized: "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. BAC, PACE, Chip and Active Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully."))
         } else {
             addSectionFooter(String(localized: "ICAO 9303 security mechanism results. BAC authenticates the reader using MRZ data. Passive Authentication verifies data group hashes against the SOD. Active Authentication proves the chip is genuine."))
         }
+    }
+
+    private func addSecurityRow(_ row: SecurityRow) {
+        addInfoRow(
+            icon: row.icon,
+            title: row.title,
+            description: String(localized: "Security mechanism status and result detail."),
+            value: row.value,
+            isDestructive: row.isDestructive
+        )
     }
 
     /// One line of the security report as shown on screen.
@@ -285,25 +336,52 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         let value: String
         let icon: String
         let isDestructive: Bool
+        var isPassiveAuthentication = false
     }
 
     /// The security report rows for `record`.
     ///
     /// A record imported from a file carries whatever security results its
-    /// author wrote, and BAC, PACE, Chip and Active Authentication can only be
-    /// proven against the physical chip. Imported records therefore show every
-    /// stage as "not re-verified" instead of the stored result.
-    static func securityRows(for record: PassportRecord) -> [SecurityRow] {
+    /// author wrote. BAC, PACE, Chip and Active Authentication can only be
+    /// proven against the physical chip, so imported records show those stages
+    /// as "not re-verified" instead of the stored result. Passive Authentication
+    /// only needs the bytes, so for imported records it shows
+    /// `reverifiedPassiveAuthentication` (from
+    /// ``PassportRecord/reverifiedPassiveAuthentication()``), or "Verifying" while
+    /// that is still `nil`. The file's own PA result is never shown.
+    static func securityRows(
+        for record: PassportRecord,
+        reverifiedPassiveAuthentication: PassportSecurityStageResult? = nil
+    ) -> [SecurityRow] {
         let report = record.passport.securityReport
-        let stages: [(String, PassportSecurityStageResult)] = [
-            (String(localized: "Card Access"), report.cardAccess),
-            (String(localized: "PACE"), report.pace),
-            (String(localized: "BAC"), report.bac),
-            (String(localized: "Chip Authentication"), report.chipAuthentication),
-            (String(localized: "Passive Authentication"), report.passiveAuthentication),
-            (String(localized: "Active Authentication"), report.activeAuthentication),
+        let stages: [(title: String, stage: PassportSecurityStageResult, isPassiveAuthentication: Bool)] = [
+            (String(localized: "Card Access"), report.cardAccess, false),
+            (String(localized: "PACE"), report.pace, false),
+            (String(localized: "BAC"), report.bac, false),
+            (String(localized: "Chip Authentication"), report.chipAuthentication, false),
+            (String(localized: "Passive Authentication"), report.passiveAuthentication, true),
+            (String(localized: "Active Authentication"), report.activeAuthentication, false),
         ]
-        return stages.map { title, stage in
+        return stages.map { title, stage, isPassiveAuthentication in
+            if record.isImported, isPassiveAuthentication {
+                guard let reverified = reverifiedPassiveAuthentication else {
+                    return SecurityRow(
+                        title: title,
+                        value: String(localized: "Verifying…"),
+                        icon: "circle.dotted",
+                        isDestructive: false,
+                        isPassiveAuthentication: true
+                    )
+                }
+                let (icon, isDestructive) = securityIcon(for: reverified.status)
+                return SecurityRow(
+                    title: title,
+                    value: reverified.detail.isEmpty ? statusTitle(reverified.status) : reverified.detail,
+                    icon: icon,
+                    isDestructive: isDestructive,
+                    isPassiveAuthentication: true
+                )
+            }
             if record.isImported {
                 return SecurityRow(
                     title: title,
@@ -317,7 +395,8 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
                 title: title,
                 value: stage.detail.isEmpty ? statusTitle(stage.status) : stage.detail,
                 icon: icon,
-                isDestructive: isDestructive
+                isDestructive: isDestructive,
+                isPassiveAuthentication: isPassiveAuthentication
             )
         }
     }

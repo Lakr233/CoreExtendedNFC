@@ -7633,18 +7633,34 @@
         }
       }
     },
-    "This record was imported from a file. Its security results come from the file and were not re-verified on this device, so none of them are shown as passed. Read the chip again to verify it." : {
+    "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. BAC, PACE, Chip and Active Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This record was imported from a file. Its security results come from the file and were not re-verified on this device, so none of them are shown as passed. Read the chip again to verify it."
+            "value" : "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. BAC, PACE, Chip and Active Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此记录从文件导入。其安全检查结果来自文件，未在本设备上重新验证，因此均不显示为通过。如需验证，请重新读取芯片。"
+            "value" : "此记录从文件导入。被动认证会在本设备上根据文件中的数据组重新运行；由于没有受信任的 CSCA 证书，最多只能确认哈希值和 SOD 签名。BAC、PACE、芯片认证和主动认证需要实体芯片，因此未重新验证。个人信息由文件中的数据组解析得到。再次读取芯片可完整验证。"
+          }
+        }
+      }
+    },
+    "Verifying…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifying…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在验证…"
           }
         }
       }
