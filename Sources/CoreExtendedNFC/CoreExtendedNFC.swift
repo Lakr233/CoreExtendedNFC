@@ -177,6 +177,14 @@ public enum CoreExtendedNFC {
     /// - Type 2 (Ultralight/NTAG): writes CC to page 3 and clears user pages.
     /// - Type 5 (ISO 15693): writes a fresh CC to block 0 and clears the data area.
     /// - Type 4 and Type 3: CC is managed by tag firmware and cannot be formatted via commands.
+    ///
+    /// - Warning: Formatting is destructive and, on Type 2 tags, partly irreversible.
+    ///   It erases the user pages, and page 3 (the CC) is one-time programmable:
+    ///   its bits are OR-ed into the current value and can never be cleared, so
+    ///   a tag whose page 3 already holds other bits keeps them and may end up
+    ///   with an unusable CC. This is the only library path that writes page 3
+    ///   with the irreversible opt-in; ``writeNDEF(_:info:transport:)`` never
+    ///   writes page 3.
     public static func formatNDEF(
         info: CardInfo,
         transport: any NFCTagTransport
@@ -435,103 +443,62 @@ public enum CoreExtendedNFC {
         guard let iso15693Transport = transport as? any ISO15693TagTransporting else {
             throw NFCError.unsupportedOperation("ISO 15693 dump requires an ISO 15693 transport")
         }
-
-        let systemInfo = try await iso15693Transport.getSystemInfo()
-        try requireKnownMemorySize(systemInfo)
-        // READ SINGLE BLOCK takes a one-byte block address (ISO/IEC 15693-3), so larger
-        // tags are dumped up to block 255 and the truncation is recorded as a fact.
-        let readableBlockCount = min(systemInfo.blockCount, NDEFTagMapping.type5SingleByteAddressableBlocks)
-        let isTruncated = readableBlockCount < systemInfo.blockCount
-        // Get Multiple Block Security Status is optional (ISO/IEC 15693-3 §10.4.13), and
-        // a tag may stay silent instead of answering with an error. CoreNFC reports that
-        // silence with the same transceive codes (100/101) as a removed tag, so it is not
-        // taken as final here: the mandatory block reads below fail on block 0 if the
-        // tag is really gone.
-        let lockStatuses: [Bool]
-        do {
-            lockStatuses = try await iso15693Transport.getBlockSecurityStatus(
-                range: NSRange(location: 0, length: readableBlockCount)
-            )
-        } catch where !isSessionTerminating(error) || isMissingTagResponse(error) {
-            lockStatuses = Array(repeating: false, count: readableBlockCount)
-        }
-
-        var blocks: [MemoryDump.Block] = []
-        for blockNumber in 0 ..< readableBlockCount {
-            try Task.checkCancellation()
-            guard let blockIndex = UInt8(exactly: blockNumber) else {
-                throw NFCError.unsupportedOperation("ISO 15693 dump currently supports up to 256 blocks per session")
-            }
-            let data = try await iso15693Transport.readBlock(blockIndex)
-            let payload = Data(data.prefix(systemInfo.blockSize))
-            blocks.append(
-                .init(
-                    number: blockNumber,
-                    data: payload,
-                    locked: lockStatuses.indices.contains(blockNumber) ? lockStatuses[blockNumber] : false
-                )
-            )
-        }
-
-        let ndefMessage = NDEFTagMapping.extractType5Message(from: blocks)
-
-        return MemoryDump(
-            cardInfo: info,
-            blocks: blocks,
-            ndefMessage: ndefMessage,
-            facts: [
-                .init(key: "Block Size", value: "\(systemInfo.blockSize) bytes"),
-                .init(key: "Blocks", value: "\(systemInfo.blockCount)"),
-                isTruncated
-                    ? .init(key: "Blocks Read", value: "\(readableBlockCount) of \(systemInfo.blockCount) (blocks above 255 need extended commands)")
-                    : nil,
-                systemInfo.dsfid.map { .init(key: "DSFID", value: String(format: "0x%02X", $0), monospaced: true) },
-                systemInfo.afi.map { .init(key: "AFI", value: String(format: "0x%02X", $0), monospaced: true) },
-                systemInfo.icReference.map { .init(key: "IC Reference", value: String(format: "0x%02X", $0), monospaced: true) },
-                ndefMessage.map { .init(key: "NDEF Bytes", value: "\($0.count)") },
-            ].compactMap(\.self),
-            capabilities: isTruncated ? [.partiallyReadable] : [.readable]
-        )
+        // Blocks above 255 are read with the extended commands; a tag that rejects
+        // them is dumped up to block 255 and the truncation is recorded as a fact.
+        return try await ISO15693Reader(transport: iso15693Transport).readAllBlocks(info: info)
     }
 
     /// Read the NDEF message of a Type 5 tag without dumping the whole tag.
     ///
     /// Reads the CC from block 0, then only the blocks covering the T5T_Area announced
-    /// by MLEN (NFC Forum T5T 1.0 §4.3.1 / §7.3), bounded by the single-byte addressable
-    /// blocks, so tags with more than 256 blocks can be read.
+    /// by MLEN (NFC Forum T5T 1.0 §4.3.1 / §7.3). Blocks from 256 on are read with
+    /// EXTENDED READ SINGLE BLOCK; when the tag rejects it the read stops there, so a
+    /// message that ends past block 255 is then reported as not found.
     private static func readType5NDEF(
         transport: any ISO15693TagTransporting
     ) async throws -> Data {
         let systemInfo = try await transport.getSystemInfo()
         try requireKnownMemorySize(systemInfo)
         let blockSize = systemInfo.blockSize
-        let addressableBlocks = min(systemInfo.blockCount, NDEFTagMapping.type5SingleByteAddressableBlocks)
+        let reader = ISO15693Reader(transport: transport)
 
         var blocks: [MemoryDump.Block] = []
         var leadingBytes = Data()
-        func readNextBlock() async throws {
+        var extendedRejected = false
+        /// Read the next block; `false` when no further block can be read.
+        func readNextBlock() async throws -> Bool {
             try Task.checkCancellation()
             let number = blocks.count
-            guard number < addressableBlocks, let address = UInt8(exactly: number) else {
-                throw NFCError.ndefMessageNotFound
+            guard number < systemInfo.blockCount, !extendedRejected else { return false }
+            let raw: Data
+            if number < ISO15693Reader.singleByteAddressableBlocks {
+                raw = try await reader.readBlock(at: number)
+            } else if let data = try await reader.extendedReadIfSupported(number) {
+                raw = data
+            } else {
+                extendedRejected = true
+                return false
             }
-            let data = try await Data(transport.readBlock(address).prefix(blockSize))
+            let data = Data(raw.prefix(blockSize))
             blocks.append(.init(number: number, data: data))
             leadingBytes.append(data)
+            return true
         }
 
-        try await readNextBlock()
+        guard try await readNextBlock() else {
+            throw NFCError.ndefMessageNotFound
+        }
         guard let ccLength = NDEFTagMapping.type5FormattedCCLength(leadingBytes: leadingBytes) else {
             throw NFCError.tagNotNDEFFormatted
         }
         while leadingBytes.count < ccLength {
-            try await readNextBlock()
+            guard try await readNextBlock() else { break }
         }
         let areaLength = NDEFTagMapping.type5DataAreaLength(leadingBytes: leadingBytes) ?? 0
-        let areaEnd = min(ccLength + areaLength, addressableBlocks * blockSize)
+        let areaEnd = min(ccLength + areaLength, systemInfo.blockCount * blockSize)
         let blocksNeeded = (areaEnd + blockSize - 1) / blockSize
         while blocks.count < blocksNeeded {
-            try await readNextBlock()
+            guard try await readNextBlock() else { break }
         }
 
         guard let payload = NDEFTagMapping.extractType5Message(from: blocks) else {
@@ -644,23 +611,77 @@ public enum CoreExtendedNFC {
             nextBlock += 1
         }
 
-        let writes = try NDEFTagMapping.type5NDEFWrites(
-            message: message,
-            leadingBytes: leadingBytes,
-            blockSize: systemInfo.blockSize,
-            blockCount: systemInfo.blockCount
-        )
-        // Resolve every block address before the first write so the tag is never
-        // left half-written by an unaddressable block.
-        let addressed = try writes.map { write in
-            guard let blockNumber = UInt8(exactly: write.block) else {
-                throw NFCError.unsupportedOperation("ISO 15693 writes beyond block 255 need extended commands")
-            }
-            return (blockNumber, write.data)
+        let writes: [(block: Int, data: Data)]
+        do {
+            writes = try NDEFTagMapping.type5NDEFWrites(
+                message: message,
+                leadingBytes: leadingBytes,
+                blockSize: systemInfo.blockSize,
+                blockCount: systemInfo.blockCount
+            )
+        } catch {
+            // The single-byte addressable area (blocks 0-255) is too small. Use the
+            // rest of a larger tag when it accepts the extended commands, probed with
+            // a read before anything is written.
+            guard systemInfo.blockCount > ISO15693Reader.singleByteAddressableBlocks,
+                  let extendedWrites = try? type5ExtendedNDEFWrites(
+                      message: message,
+                      leadingBytes: leadingBytes,
+                      blockSize: systemInfo.blockSize,
+                      blockCount: systemInfo.blockCount
+                  ),
+                  let lastBlock = extendedWrites.last?.block,
+                  try await ISO15693Reader(transport: transport).extendedReadIfSupported(lastBlock) != nil
+            else { throw error }
+            writes = extendedWrites
         }
-        for (blockNumber, data) in addressed {
+
+        let reader = ISO15693Reader(transport: transport)
+        for write in writes {
             try Task.checkCancellation()
-            try await transport.writeBlock(blockNumber, data: data)
+            try await reader.writeBlock(at: write.block, data: write.data)
+        }
+    }
+
+    /// Plan the block writes for `message` over the whole T5T_Area, including
+    /// blocks above 255 (written with EXTENDED WRITE SINGLE BLOCK).
+    ///
+    /// Same layout as ``NDEFTagMapping/type5NDEFWrites(message:leadingBytes:blockSize:blockCount:)``
+    /// (CC kept as read, NDEF TLV then terminator TLV, NFC Forum T5T 1.0 §4.3 / §7.5)
+    /// without the single-byte addressing bound.
+    private static func type5ExtendedNDEFWrites(
+        message: Data,
+        leadingBytes: Data,
+        blockSize: Int,
+        blockCount: Int
+    ) throws -> [(block: Int, data: Data)] {
+        let ccLength = try NDEFTagMapping.type5CCLength(firstBlock: leadingBytes)
+        let cc = Data(leadingBytes.prefix(ccLength))
+        guard cc.count == ccLength else {
+            throw NFCError.invalidResponse(leadingBytes)
+        }
+        let areaLength = NDEFTagMapping.type5DataAreaLength(leadingBytes: leadingBytes) ?? 0
+        let capacity = min(areaLength, max(0, blockCount * blockSize - ccLength))
+
+        var tlv = Data([0x03])
+        if message.count > 0xFE {
+            tlv.append(contentsOf: [0xFF, UInt8((message.count >> 8) & 0xFF), UInt8(message.count & 0xFF)])
+        } else {
+            tlv.append(UInt8(message.count))
+        }
+        tlv.append(message)
+        tlv.append(0xFE)
+        guard tlv.count <= capacity else {
+            throw NFCError.unsupportedOperation("NDEF message exceeds Type 5 user memory")
+        }
+
+        var area = cc + tlv
+        area.append(Data(repeating: 0x00, count: (blockSize - area.count % blockSize) % blockSize))
+        let firstBlock = ccLength / blockSize
+        let lastBlock = area.count / blockSize - 1
+        return (firstBlock ... lastBlock).map { block in
+            let offset = block * blockSize
+            return (block, Data(area[offset ..< offset + blockSize]))
         }
     }
 

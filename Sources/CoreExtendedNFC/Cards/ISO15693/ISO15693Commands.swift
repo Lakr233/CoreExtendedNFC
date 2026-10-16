@@ -15,6 +15,22 @@ public struct ISO15693SystemInfo: Sendable {
     public let blockCount: Int
     /// IC reference code, or `nil` when the tag did not report it (Info flags b4).
     public let icReference: UInt8?
+
+    public init(
+        uid: Data,
+        dsfid: UInt8?,
+        afi: UInt8?,
+        blockSize: Int,
+        blockCount: Int,
+        icReference: UInt8?
+    ) {
+        self.uid = uid
+        self.dsfid = dsfid
+        self.afi = afi
+        self.blockSize = blockSize
+        self.blockCount = blockCount
+        self.icReference = icReference
+    }
 }
 
 /// ISO 15693 tag reader operations.

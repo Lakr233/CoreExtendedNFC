@@ -123,7 +123,8 @@ struct ISO15693Tests {
     }
 
     @Test
-    func `readAllBlocks rejects more than 256 blocks instead of trapping`() async {
+    func `readAllBlocks truncates at block 255 when extended commands are unsupported`() async throws {
+        // MockISO15693Transport inherits the default extendedReadBlock, which throws.
         let transport = MockISO15693Transport(
             identifier: Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]),
             icManufacturerCode: 0x04,
@@ -138,9 +139,107 @@ struct ISO15693Tests {
             blocks: Array(repeating: Data(count: 4), count: 300),
             locked: Array(repeating: false, count: 300)
         )
-        await #expect(throws: NFCError.self) {
-            _ = try await ISO15693Reader(transport: transport).readAllBlocks(transport: transport)
+        let dump = try await ISO15693Reader(transport: transport).readAllBlocks()
+        #expect(dump.blocks.count == 256)
+        #expect(dump.capabilities == [.partiallyReadable])
+        #expect(dump.facts.contains { $0.key == "Blocks Read" && $0.value.hasPrefix("256 of 300") })
+        #expect(dump.cardInfo.type == .iso15693_generic)
+    }
+
+    // MARK: - Extended addressing (ISO/IEC 15693-3 commands 30h / 31h)
+
+    private static let largeTagUID = Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+
+    /// 300 blocks × 4 bytes with a 4-byte CC: MLEN = 149 (1192-byte T5T_Area).
+    private static func largeTag(extended: Bool) -> MemoryISO15693Transport {
+        let transport = MemoryISO15693Transport(blockCount: 300, supportsExtended: extended)
+        transport.memory[0] = Data([0xE1, 0x40, 149, 0x00])
+        return transport
+    }
+
+    /// A message whose NDEF TLV runs past block 260 (byte 1044).
+    private static let longMessage = NDEFMessage(records: [
+        NDEFRecord(typeNameFormat: .mimeMedia, type: Data("text/plain".utf8), payload: Data(repeating: 0x5A, count: 1100)),
+    ])
+
+    @Test
+    func `Dump reads blocks above 255 with extended commands`() async throws {
+        let transport = Self.largeTag(extended: true)
+        for block in 0 ..< 300 where block > 0 {
+            transport.memory[block] = Data(repeating: UInt8(truncatingIfNeeded: block), count: 4)
         }
+        let info = CardInfo(type: .iso15693_generic, uid: Self.largeTagUID)
+        let dump = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        #expect(dump.blocks.count == 300)
+        #expect(dump.blocks[299].data == Data(repeating: UInt8(299 & 0xFF), count: 4))
+        #expect(dump.capabilities == [.readable])
+        #expect(transport.extendedReads.first == 256)
+        #expect(!dump.facts.contains { $0.key == "Blocks Read" })
+    }
+
+    @Test
+    func `NDEF spanning block 260 round-trips with extended commands`() async throws {
+        let transport = Self.largeTag(extended: true)
+        let info = CardInfo(type: .iso15693_generic, uid: Self.largeTagUID)
+        try await CoreExtendedNFC.writeNDEF(Self.longMessage, info: info, transport: transport)
+        #expect(transport.extendedWrites.contains(260))
+        #expect(transport.memory[0] == Data([0xE1, 0x40, 149, 0x00]))
+
+        let read = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        #expect(read.data == Self.longMessage.data)
+        let dump = try await CoreExtendedNFC.dumpCard(info: info, transport: transport)
+        #expect(dump.parsedNDEFMessage?.data == Self.longMessage.data)
+    }
+
+    @Test
+    func `NDEF beyond block 255 stays bounded when extended commands are rejected`() async throws {
+        let info = CardInfo(type: .iso15693_generic, uid: Self.largeTagUID)
+
+        // Write: refused before any block is written.
+        let rejecting = Self.largeTag(extended: false)
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writeNDEF(Self.longMessage, info: info, transport: rejecting)
+        }
+        #expect(rejecting.writes.isEmpty)
+        #expect(rejecting.extendedWrites.isEmpty)
+
+        // Read: a message ending past block 255 is not found, and the dump is partial.
+        let written = Self.largeTag(extended: true)
+        try await CoreExtendedNFC.writeNDEF(Self.longMessage, info: info, transport: written)
+        written.supportsExtended = false
+        await #expect(throws: NFCError.self) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: written)
+        }
+        let dump = try await CoreExtendedNFC.dumpCard(info: info, transport: written)
+        #expect(dump.blocks.count == 256)
+        #expect(dump.capabilities == [.partiallyReadable])
+
+        // A short message on the same tag still works without extended commands.
+        let short = Self.largeTag(extended: false)
+        try await CoreExtendedNFC.writeNDEF(.uri("https://a.b"), info: info, transport: short)
+        let shortRead = try await CoreExtendedNFC.readNDEF(info: info, transport: short)
+        #expect(shortRead.data == NDEFMessage.uri("https://a.b").data)
+    }
+
+    @Test
+    func `Reader block helpers route by block number`() async throws {
+        let transport = Self.largeTag(extended: true)
+        let reader = ISO15693Reader(transport: transport)
+        try await reader.writeBlock(at: 255, data: Data([1, 2, 3, 4]))
+        try await reader.writeBlock(at: 256, data: Data([5, 6, 7, 8]))
+        #expect(transport.writes == [255])
+        #expect(transport.extendedWrites == [256])
+        #expect(try await reader.readBlock(at: 256) == Data([5, 6, 7, 8]))
+        await #expect(throws: NFCError.self) {
+            _ = try await reader.readBlock(at: 70000)
+        }
+    }
+
+    @Test
+    func `ISO15693SystemInfo has a public memberwise initializer`() {
+        let info = ISO15693SystemInfo(uid: Data([0xE0]), dsfid: nil, afi: 1, blockSize: 4, blockCount: 8, icReference: nil)
+        #expect(info.blockCount == 8)
+        #expect(info.dsfid == nil)
     }
 
     @Test
@@ -159,7 +258,7 @@ struct ISO15693Tests {
             blocks: (0 ..< 256).map { Data(repeating: UInt8($0), count: 4) },
             locked: Array(repeating: false, count: 256)
         )
-        let dump = try await ISO15693Reader(transport: transport).readAllBlocks(transport: transport)
+        let dump = try await ISO15693Reader(transport: transport).readAllBlocks()
         #expect(dump.blocks.count == 256)
         #expect(dump.blocks.last?.data == Data(repeating: 0xFF, count: 4))
     }
@@ -251,5 +350,70 @@ private final class MockISO15693SecurityTransport: ISO15693TagTransporting, @unc
     func keyUpdate(keyIdentifier: Int, message: Data) async throws -> ISO15693SecurityResponse {
         operations.append("keyUpdate:\(String(format: "%02X", keyIdentifier)):\(message.hexString)")
         return keyUpdateResponse
+    }
+}
+
+/// ISO 15693 tag with real memory: blocks 0-255 through READ/WRITE SINGLE BLOCK,
+/// all blocks through the extended commands when `supportsExtended` is `true`.
+private final class MemoryISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
+    let identifier = Data([0xE0, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+    let icManufacturerCode = 0x04
+    let blockCount: Int
+    var supportsExtended: Bool
+    var memory: [Int: Data] = [:]
+    var writes: [Int] = []
+    var extendedReads: [Int] = []
+    var extendedWrites: [Int] = []
+
+    init(blockCount: Int, supportsExtended: Bool) {
+        self.blockCount = blockCount
+        self.supportsExtended = supportsExtended
+    }
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    private func block(_ number: Int) -> Data {
+        memory[number] ?? Data(count: 4)
+    }
+
+    func readBlock(_ number: UInt8) async throws -> Data {
+        block(Int(number))
+    }
+
+    func writeBlock(_ number: UInt8, data: Data) async throws {
+        writes.append(Int(number))
+        memory[Int(number)] = data
+    }
+
+    func extendedReadBlock(_ number: UInt16) async throws -> Data {
+        // A tag without the extended commands answers with an error flag.
+        guard supportsExtended else { throw NFCError.invalidResponse(Data([0x01, 0x01])) }
+        guard Int(number) < blockCount else { throw NFCError.invalidResponse(Data([0x01, 0x10])) }
+        extendedReads.append(Int(number))
+        return block(Int(number))
+    }
+
+    func extendedWriteBlock(_ number: UInt16, data: Data) async throws {
+        guard supportsExtended else { throw NFCError.invalidResponse(Data([0x01, 0x01])) }
+        extendedWrites.append(Int(number))
+        memory[Int(number)] = data
+    }
+
+    func readBlocks(range _: NSRange) async throws -> [Data] {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func getSystemInfo() async throws -> ISO15693SystemInfo {
+        ISO15693SystemInfo(uid: identifier, dsfid: 0, afi: 0, blockSize: 4, blockCount: blockCount, icReference: 1)
+    }
+
+    func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
+        Array(repeating: false, count: range.length)
     }
 }
