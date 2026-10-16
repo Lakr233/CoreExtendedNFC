@@ -69,7 +69,8 @@ nonisolated struct PassportRecord: StoredRecord {
     ///   When that data group is missing or does not parse, the field is `nil`
     ///   and the screen shows nothing for it, rather than the file's unverified value.
     /// - DG11/DG12 details have no public parser and are not shown, so they are dropped.
-    /// - `passiveAuthResult` is dropped; ``reverifiedPassiveAuthentication()`` recomputes it.
+    /// - `passiveAuthResult` is dropped; ``reverifiedSecurity()`` recomputes it and
+    ///   re-judges the kept `activeAuthResult` against it.
     /// - COM metadata (LDS/Unicode version, data group list) is kept: EF.COM is
     ///   not covered by the SOD, so re-parsing it would not make it any more trustworthy.
     nonisolated static func reparsedFromRawDataGroups(_ passport: PassportModel) -> PassportModel {
@@ -129,8 +130,37 @@ nonisolated struct PassportRecord: StoredRecord {
     /// `.fallback` at best; a hash mismatch or bad signature is `.failed`, and a
     /// file without SOD is `.notSupported`. Uses OpenSSL: call it off the main thread.
     nonisolated func reverifiedPassiveAuthentication() -> PassportSecurityStageResult {
-        let sodPresent = (passport.sodRaw ?? passport.rawDataGroups[.sod]) != nil
-        return .passiveAuthentication(passport.reverifyPassiveAuthentication(), sodPresent: sodPresent)
+        reverifiedSecurity().passiveAuthentication
+    }
+
+    /// The security stages that can be re-derived offline for an imported record.
+    nonisolated struct ReverifiedSecurity: Equatable, Sendable {
+        /// Passive authentication re-run from the raw bytes.
+        let passiveAuthentication: PassportSecurityStageResult
+        /// The stored Active Authentication result re-judged against
+        /// ``passiveAuthentication``, or `nil` when the file holds no AA result
+        /// (its AA stage is then only what the file's author wrote).
+        let activeAuthentication: PassportSecurityStageResult?
+        /// The re-run passive authentication outcome, for a specific description.
+        let passiveAuthStatus: PassiveAuthStatus?
+    }
+
+    /// Passive authentication re-run from the raw bytes and the stored Active
+    /// Authentication result re-judged against it
+    /// (`PassportModel.reverifyingSecurity(trustAnchorsDER:)`).
+    ///
+    /// No CSCA trust anchors are configured, so neither stage can reach
+    /// `.succeeded`: a genuine file is `.fallback` at best. Uses OpenSSL: call it
+    /// off the main thread.
+    nonisolated func reverifiedSecurity() -> ReverifiedSecurity {
+        let reverified = passport.reverifyingSecurity(trustAnchorsDER: [])
+        return ReverifiedSecurity(
+            passiveAuthentication: reverified.securityReport.passiveAuthentication,
+            activeAuthentication: passport.activeAuthResult == nil
+                ? nil
+                : reverified.securityReport.activeAuthentication,
+            passiveAuthStatus: reverified.passiveAuthResult?.status
+        )
     }
 
     // MARK: - Display Helpers

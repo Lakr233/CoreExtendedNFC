@@ -118,6 +118,13 @@ class TransitBalanceViewController: StackScrollController {
 
     // MARK: - NFC Scan
 
+    /// The log line for a successful read. The log is kept and can be exported,
+    /// so it names the card type and transaction count but never the balance
+    /// or transaction amounts.
+    nonisolated static func readSucceededLogMessage(for balance: TransitBalance) -> String {
+        "Read succeeded: card=\(balance.cardName), transactions=\(balance.transactions.count)"
+    }
+
     private func performScan() {
         scanTask.run { [weak self] in
             await self?.scanCard()
@@ -134,10 +141,7 @@ class TransitBalanceViewController: StackScrollController {
                 // Transit detection must run before refinement changes the selected application.
                 manager.setAlertMessage(String(localized: "Reading..."))
                 let balance = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
-                AppLogStore.shared.info(
-                    "Read succeeded: balance=\(balance.balanceRaw) \(balance.currencyCode), transactions=\(balance.transactions.count)",
-                    source: "Transit"
-                )
+                AppLogStore.shared.info(Self.readSucceededLogMessage(for: balance), source: "Transit")
                 manager.setAlertMessage(String(localized: "Done"))
                 manager.invalidate()
 

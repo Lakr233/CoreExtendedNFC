@@ -429,8 +429,8 @@ class DumpViewController: ObjectListViewController<DumpStore>,
             message: String(localized: "Save card identification data (\(scanRecord.cardInfo.type.description)) to the Scanner store?"),
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: String(localized: "Save"), style: .default) { _ in
-            ScanStore.shared.upsert(scanRecord)
+        alert.addAction(UIAlertAction(title: String(localized: "Save"), style: .default) { [weak self] _ in
+            self?.importScanRecord(scanRecord)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Skip"), style: .cancel))
         presentQueued(alert)

@@ -87,6 +87,26 @@ class ScanStore: @MainActor ObjectListDataSource {
         }
     }
 
+    /// The stored record an import of `record` would replace: the one with the
+    /// same ID (the same exported record imported again) or the same stable
+    /// UID, or `nil` when the import simply adds a record.
+    ///
+    /// The import screens ask the user before replacing it.
+    func importConflict(for record: ScanRecord) -> ScanRecord? {
+        self.record(for: record.id) ?? self.record(withUID: record.cardInfo.uid)
+    }
+
+    /// Stores an imported record. With `replacingExisting`, it replaces the
+    /// record found by ``importConflict(for:)``; otherwise, or when there is
+    /// none, it is inserted at `index` (under a new ID when its ID is taken).
+    func importRecord(_ record: ScanRecord, replacingExisting: Bool, at index: Int = 0) {
+        if replacingExisting, let existing = importConflict(for: record) {
+            replace(existing.id, with: record)
+        } else {
+            insert(record, at: index)
+        }
+    }
+
     func sort(by comparator: (ScanRecord, ScanRecord) -> Bool) {
         records.sort(by: comparator)
         save()

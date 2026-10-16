@@ -3,13 +3,16 @@ import SPIndicator
 import UIKit
 
 class TextViewerController: UIViewController {
-    private let textView = UITextView()
+    let textView: UITextView
     /// Whether the text is personal data (a passport data group): the copy
-    /// button then uses ``SensitivePasteboard``.
+    /// button and the selection menu then use ``SensitivePasteboard``, and the
+    /// system Share / Look Up / Translate actions are not offered
+    /// (``SensitiveTextView``).
     let copiesSensitively: Bool
 
     init(title: String, text: String, copiesSensitively: Bool = false) {
         self.copiesSensitively = copiesSensitively
+        textView = copiesSensitively ? SensitiveTextView() : UITextView()
         super.init(nibName: nil, bundle: nil)
         self.title = title
         textView.text = text

@@ -7633,18 +7633,18 @@
         }
       }
     },
-    "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. BAC, PACE, Chip and Active Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully." : {
+    "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. A stored Active Authentication result is re-judged against that result; the challenge itself needs the chip and is not repeated. BAC, PACE and Chip Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. BAC, PACE, Chip and Active Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully."
+            "value" : "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. A stored Active Authentication result is re-judged against that result; the challenge itself needs the chip and is not repeated. BAC, PACE and Chip Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此记录从文件导入。被动认证会在本设备上根据文件中的数据组重新运行；由于没有受信任的 CSCA 证书，最多只能确认哈希值和 SOD 签名。BAC、PACE、芯片认证和主动认证需要实体芯片，因此未重新验证。个人信息由文件中的数据组解析得到。再次读取芯片可完整验证。"
+            "value" : "此记录从文件导入。被动认证会在本设备上根据文件中的数据组重新运行；由于没有受信任的 CSCA 证书，最多只能确认哈希值和 SOD 签名。文件中保存的主动认证结果会依据该结果重新判定；挑战应答本身需要芯片，不会重做。BAC、PACE 和芯片认证需要实体芯片，因此未重新验证。个人信息由文件中的数据组解析得到。再次读取芯片可完整验证。"
           }
         }
       }
@@ -7837,6 +7837,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "格式化会清除标签用户存储区中的所有内容，并写入一个新的空 NDEF 数据区。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Imported" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导入"
+          }
+        }
+      }
+    },
+    "When this record was imported from a file. The chip was not read on this device." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When this record was imported from a file. The chip was not read on this device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此记录从文件导入的时间。未在此设备上读取芯片。"
+          }
+        }
+      }
+    },
+    "Personal data parsed from DG1 (Machine Readable Zone) in the imported file. It was not read from a chip on this device." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal data parsed from DG1 (Machine Readable Zone) in the imported file. It was not read from a chip on this device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人数据解析自导入文件中的 DG1（机读区），并非在此设备上从芯片读取。"
+          }
+        }
+      }
+    },
+    "Verified against a trusted CSCA" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified against a trusted CSCA"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已通过受信任的 CSCA 验证"
+          }
+        }
+      }
+    },
+    "Hashes match; signer not chained to a trusted CSCA" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hashes match; signer not chained to a trusted CSCA"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "哈希一致；签名者未链接到受信任的 CSCA"
+          }
+        }
+      }
+    },
+    "No SOD available" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No SOD available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可用的 SOD"
+          }
+        }
+      }
+    },
+    "Hashes and signature valid; signer not chained to a trusted CSCA" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hashes and signature valid; signer not chained to a trusted CSCA"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "哈希与签名有效；签名者未链接到受信任的 CSCA"
+          }
+        }
+      }
+    },
+    "Hashes match; signature not verified" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hashes match; signature not verified"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "哈希一致；签名未验证"
+          }
+        }
+      }
+    },
+    "Data group hash mismatch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data group hash mismatch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据组哈希不一致"
+          }
+        }
+      }
+    },
+    "SOD could not be parsed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SOD could not be parsed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法解析 SOD"
+          }
+        }
+      }
+    },
+    "Unsupported hash algorithm" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsupported hash algorithm"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持的哈希算法"
+          }
+        }
+      }
+    },
+    "SOD signature invalid" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SOD signature invalid"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SOD 签名无效"
+          }
+        }
+      }
+    },
+    "Signer certificate not trusted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signer certificate not trusted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名者证书不受信任"
+          }
+        }
+      }
+    },
+    "Replace Scan Record?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Scan Record?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换扫描记录？"
+          }
+        }
+      }
+    },
+    "A record for this %@ card is already saved. Replacing it discards the saved record." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A record for this %@ card is already saved. Replacing it discards the saved record."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存这张 %@ 卡片的记录。替换将丢弃已保存的记录。"
           }
         }
       }

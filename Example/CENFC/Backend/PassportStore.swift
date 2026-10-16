@@ -10,8 +10,12 @@ class PassportStore {
 
     private(set) var records: [PassportRecord] = []
 
+    /// Re-verified passive authentication results, evicted when a record is removed or replaced.
+    let reverificationCache: PassportReverificationCache
+
     /// Creates a store backed by `fileURL`. The app uses ``shared``; tests pass a temporary file.
-    init(fileURL: URL) {
+    init(fileURL: URL, reverificationCache: PassportReverificationCache = .shared) {
+        self.reverificationCache = reverificationCache
         // Passport records hold DG1/DG2 personal data and the face image: keep
         // them out of iCloud and computer backups.
         file = RecordFileStore(fileURL: fileURL, source: "PassportStore", excludedFromBackup: true)
@@ -59,22 +63,28 @@ class PassportStore {
     /// record with the same document number (``importConflict(for:)``);
     /// otherwise, or when there is none, it is added (under a new ID when its ID
     /// is already taken).
-    func importRecord(_ record: PassportRecord, replacingExisting: Bool = true) {
-        if replacingExisting, let existing = importConflict(for: record) {
-            replace(existing.id, with: record)
+    ///
+    /// The stored record is dated `now`, the import time (the detail screen
+    /// shows it as "Imported"), not the scan date written in the file.
+    func importRecord(_ record: PassportRecord, replacingExisting: Bool = true, now: Date = Date()) {
+        let stamped = record.replacingID(record.id, date: now)
+        if replacingExisting, let existing = importConflict(for: stamped) {
+            replace(existing.id, with: stamped, date: now)
         } else {
-            add(record)
+            add(stamped)
         }
     }
 
     func remove(id: UUID) {
         records.removeAll { $0.id == id }
+        reverificationCache.evict(id)
         save()
     }
 
-    func replace(_ existingID: UUID, with record: PassportRecord) {
+    func replace(_ existingID: UUID, with record: PassportRecord, date: Date = Date()) {
         guard let index = records.firstIndex(where: { $0.id == existingID }) else { return }
-        records[index] = record.replacingID(existingID)
+        records[index] = record.replacingID(existingID, date: date)
+        reverificationCache.evict(existingID)
         save()
     }
 

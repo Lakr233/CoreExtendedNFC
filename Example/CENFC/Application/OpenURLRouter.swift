@@ -62,6 +62,8 @@ nonisolated enum OpenURLRouter {
     }
 
     private static func readData(from url: URL) throws -> Data {
-        try ImportFileReader.read(url)
+        // Only sniffing: the import screen the file is routed to reads it again
+        // and then deletes the Inbox copy.
+        try ImportFileReader.read(url, consumingInboxCopy: false)
     }
 }

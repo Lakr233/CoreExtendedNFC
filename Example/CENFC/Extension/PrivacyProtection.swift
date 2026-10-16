@@ -35,29 +35,41 @@ enum SensitivePasteboard {
 
 /// Covers the window while a ``PrivacySensitiveScreen`` is on screen and the
 /// scene is inactive (app switcher, Control Center, incoming call, NFC sheet).
+///
+/// The cover is a separate window at ``windowLevel``, above alerts, so an
+/// alert or sheet presented while the scene is inactive still ends up below it.
 @MainActor
 final class PrivacyCover {
-    private weak var coverView: UIView?
+    /// Above alerts and every modal presented in the app window.
+    static let windowLevel = UIWindow.Level.alert + 1
+
+    private(set) var coverWindow: UIWindow?
 
     var isShown: Bool {
-        coverView != nil
+        coverWindow != nil
     }
 
-    /// Covers `window` when it is showing a privacy-sensitive screen.
-    func show(in window: UIWindow) {
-        guard coverView == nil,
+    /// Covers the scene of `window` when it is showing a privacy-sensitive screen.
+    func show(over window: UIWindow) {
+        guard coverWindow == nil,
+              let scene = window.windowScene,
               let root = window.rootViewController,
               Self.isShowingSensitiveContent(root)
         else { return }
-        let cover = Self.makeCoverView()
-        window.addSubview(cover)
-        cover.snp.makeConstraints { $0.edges.equalToSuperview() }
-        coverView = cover
+        let cover = UIWindow(windowScene: scene)
+        cover.windowLevel = Self.windowLevel
+        let controller = UIViewController()
+        controller.view = Self.makeCoverView()
+        cover.rootViewController = controller
+        // Shown without becoming key, so focus returns to the app window.
+        cover.isHidden = false
+        coverWindow = cover
     }
 
     func hide() {
-        coverView?.removeFromSuperview()
-        coverView = nil
+        coverWindow?.isHidden = true
+        coverWindow?.rootViewController = nil
+        coverWindow = nil
     }
 
     /// Whether the visible part of the hierarchy under `controller` includes a

@@ -314,34 +314,44 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
 
     private func shareLogs() {
         do {
-            let result = try makeShareItems()
-            presentSheet(items: result.items, cleanup: result.cleanup)
+            let urls = try Self.writeExportFiles(AppLogStore.shared.exportArtifacts())
+            presentExportSheet(for: urls)
         } catch {
-            presentSheet(items: [AppLogStore.shared.exportText()])
+            presentTextSheet(AppLogStore.shared.exportText())
         }
     }
 
-    private func presentSheet(items: [Any], cleanup: (() -> Void)? = nil) {
-        let ac = UIActivityViewController(activityItems: items, applicationActivities: nil)
+    private func presentTextSheet(_ text: String) {
+        let ac = UIActivityViewController(activityItems: [text], applicationActivities: nil)
         if let popover = ac.popoverPresentationController {
             popover.sourceView = view
             popover.sourceRect = view.bounds
         }
-        ac.completionWithItemsHandler = { _, _, _, _ in cleanup?() }
         present(ac, animated: true)
     }
 
-    private func makeShareItems() throws -> (items: [Any], cleanup: () -> Void) {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CoreExtendedNFC-Logs-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let urls: [Any] = try AppLogStore.shared.exportArtifacts().map { artifact in
-            let url = directory.appendingPathComponent(artifact.suggestedFilename)
-            try artifact.data.write(to: url, options: .atomic)
-            return url
+    /// Writes the log export files into one ``ExportFileLocation`` directory with
+    /// complete file protection; ``presentExportSheet(for:barButtonItem:)``
+    /// removes them when the sheet closes, and a launch purges any left behind.
+    static func writeExportFiles(_ artifacts: [AppLogExportArtifact], id: UUID = UUID()) throws -> [URL] {
+        var urls: [URL] = []
+        do {
+            for artifact in artifacts {
+                let name = artifact.suggestedFilename as NSString
+                let url = try ExportFileLocation.url(
+                    for: id,
+                    baseName: name.deletingPathExtension,
+                    fallbackName: "cenfc-logs",
+                    pathExtension: name.pathExtension
+                )
+                try ExportFileLocation.write(artifact.data, to: url)
+                urls.append(url)
+            }
+        } catch {
+            ExportFileLocation.remove(urls)
+            throw error
         }
-        return (urls, { try? FileManager.default.removeItem(at: directory) })
+        return urls
     }
 
     // MARK: - Helpers

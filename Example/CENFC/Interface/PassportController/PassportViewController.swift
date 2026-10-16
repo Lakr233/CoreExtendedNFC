@@ -244,21 +244,59 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
         let records = selectedRecords()
         guard !records.isEmpty else { return }
 
-        let alert = UIAlertController(
-            title: String(localized: "Delete \(records.count) Record(s)?"),
-            message: String(localized: "This action cannot be undone."),
-            preferredStyle: .actionSheet
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "Delete"), style: .destructive) { [weak self] _ in
+        let alert = Self.makeDeleteConfirmation(count: records.count) { [weak self] in
             for record in records {
                 PassportStore.shared.remove(id: record.id)
             }
             self?.reloadSnapshot()
             self?.setEditing(false, animated: true)
-        })
-        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
+        }
         alert.popoverPresentationController?.barButtonItem = deleteBarButton
         present(alert, animated: true)
+    }
+
+    /// Asks before deleting passport records: they hold personal data that
+    /// cannot be recovered without reading the chip again.
+    static func makeDeleteConfirmation(
+        count: Int,
+        onDelete: @escaping () -> Void,
+        onCancel: @escaping () -> Void = {}
+    ) -> UIAlertController {
+        let alert = UIAlertController(
+            title: String(localized: "Delete \(count) Record(s)?"),
+            message: String(localized: "This action cannot be undone."),
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "Delete"), style: .destructive) { _ in
+            onDelete()
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel) { _ in
+            onCancel()
+        })
+        return alert
+    }
+
+    /// Confirms, then deletes the record with `id` (swipe and context menu).
+    fileprivate func confirmDelete(
+        _ id: UUID,
+        sourceView: UIView?,
+        completion: @escaping (Bool) -> Void = { _ in }
+    ) {
+        let alert = Self.makeDeleteConfirmation(count: 1, onDelete: { [weak self] in
+            PassportStore.shared.remove(id: id)
+            self?.reloadSnapshot()
+            completion(true)
+        }, onCancel: {
+            completion(false)
+        })
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = sourceView ?? view
+            if sourceView == nil {
+                popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        presentQueued(alert)
     }
 
     @objc private func exportSelected() {
@@ -417,10 +455,9 @@ extension PassportViewController: UITableViewDelegate {
     ) -> UISwipeActionsConfiguration? {
         guard !tableView.isEditing else { return nil }
         guard let recordID = dataSource.itemIdentifier(for: indexPath) else { return nil }
-        let delete = UIContextualAction(style: .destructive, title: String(localized: "Delete")) { [weak self] _, _, completion in
-            PassportStore.shared.remove(id: recordID)
-            self?.reloadSnapshot()
-            completion(true)
+        let delete = UIContextualAction(style: .destructive, title: String(localized: "Delete")) { [weak self] _, sourceView, completion in
+            guard let self else { return completion(false) }
+            confirmDelete(recordID, sourceView: sourceView, completion: completion)
         }
         delete.image = UIImage(systemName: "trash")
         return UISwipeActionsConfiguration(actions: [delete])
@@ -459,8 +496,7 @@ extension PassportViewController: UITableViewDelegate {
                     image: UIImage(systemName: "trash"),
                     attributes: [.destructive]
                 ) { [weak self] _ in
-                    PassportStore.shared.remove(id: recordID)
-                    self?.reloadSnapshot()
+                    self?.confirmDelete(recordID, sourceView: self?.tableView.cellForRow(at: indexPath))
                 },
             ])
         }

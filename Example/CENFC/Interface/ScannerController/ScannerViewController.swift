@@ -347,7 +347,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 guard let data else { return }
                 DispatchQueue.main.async {
                     guard let envelope = try? CardDocument.importEnvelope(from: data) else { return }
-                    ScanStore.shared.upsert(envelope.scanRecord, at: insertionIndex)
+                    self.importScanRecord(envelope.scanRecord, at: insertionIndex)
                     if let dump = envelope.dumpRecord, dump.hasMemoryData {
                         DumpStore.shared.add(dump)
                     }
@@ -441,7 +441,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 guard let data else { return }
                 DispatchQueue.main.async {
                     guard let envelope = try? CardDocument.importEnvelope(from: data) else { return }
-                    ScanStore.shared.upsert(envelope.scanRecord)
+                    self.importScanRecord(envelope.scanRecord)
                     if let dump = envelope.dumpRecord, dump.hasMemoryData {
                         DumpStore.shared.add(dump)
                     }
@@ -522,7 +522,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                 let envelope = try await ImportFileReader.readInBackground(url) { data in
                     try CardDocument.importEnvelope(from: data)
                 }
-                ScanStore.shared.upsert(envelope.scanRecord)
+                self.importScanRecord(envelope.scanRecord)
 
                 if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
                     promptSaveDump(dumpRecord)
