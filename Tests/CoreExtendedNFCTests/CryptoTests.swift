@@ -84,8 +84,9 @@ struct CryptoTests {
     }
 
     @Test
-    func `AES-ECB encrypt known vector — NIST FIPS 197 Appendix B`() throws {
-        // NIST FIPS 197, Appendix B: AES-128 ECB, key=all zeros, plaintext=all zeros
+    func `AES-ECB encrypt known vector — all-zero key and block`() throws {
+        // AES-128 ECB, key = all zeros, plaintext = all zeros (well-known value 66E94BD4…;
+        // not from FIPS 197 — the FIPS 197 Appendix B/C vectors are in Vectors/CryptoVectorTests.swift)
         // Reference: https://csrc.nist.gov/pubs/fips/197/final
         let key = Data(repeating: 0x00, count: 16)
         let plaintext = Data(repeating: 0x00, count: 16)
@@ -260,8 +261,8 @@ struct CryptoTests {
 
     @Test
     func `SHA-1 known value — NIST FIPS 180-4 example`() {
-        // SHA-1("abc") per NIST FIPS 180-4, Section B.1
-        // Reference: https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+        // SHA-1("abc") from the NIST CSRC examples for FIPS 180-4
+        // Reference: https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/SHA1.pdf
         let hash = HashUtils.sha1(Data("abc".utf8))
         let expected = Data([
             0xA9, 0x99, 0x3E, 0x36, 0x47, 0x06, 0x81, 0x6A,
@@ -273,8 +274,8 @@ struct CryptoTests {
 
     @Test
     func `SHA-256 known value — NIST FIPS 180-4 example`() {
-        // SHA-256("abc") per NIST FIPS 180-4, Section B.1
-        // Reference: https://csrc.nist.gov/pubs/fips/180-4/upd1/final
+        // SHA-256("abc") from the NIST CSRC examples for FIPS 180-4
+        // Reference: https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/SHA256.pdf
         let hash = HashUtils.sha256(Data("abc".utf8))
         let expected = Data([
             0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA,
