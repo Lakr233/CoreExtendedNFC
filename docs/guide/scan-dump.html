@@ -41,7 +41,7 @@ print(dump.summary.userSummary)
 <p>Some dumps are partial by design. Check <code>dump.capabilities</code> for <code>.partiallyReadable</code> and read <code>dump.facts</code>:</p>
 <ul>
 <li><strong>Ultralight / NTAG</strong>: reading stops at the first page the tag refuses (AUTH0 read protection). Pages read so far are kept, an <code>Unauthenticated Boundary</code> fact names the page, and capabilities become <code>authenticationRequired</code> + <code>partiallyReadable</code>. Ultralight C key pages 44-47 are never read.</li>
-<li><strong>ISO 15693</strong>: READ SINGLE BLOCK takes a one-byte address, so tags with more than 256 blocks are dumped up to block 255. A <code>Blocks Read</code> fact such as <code>256 of 2048</code> is added, and the dump is marked <code>partiallyReadable</code>. Tags that do not report their memory size throw <code>unsupportedOperation</code>.</li>
+<li><strong>ISO 15693</strong>: blocks 0-255 use READ SINGLE BLOCK; blocks from 256 on use EXTENDED READ SINGLE BLOCK. If the tag rejects the extended command, the dump stops at block 255, a <code>Blocks Read</code> fact such as <code>256 of 2048</code> is added, and the dump is marked <code>partiallyReadable</code>. Tags that do not report their memory size throw <code>unsupportedOperation</code>.</li>
 <li><strong>DESFire</strong>: free-access files only, keyed by AID + file ID. Protected applications and files are skipped and counted.</li>
 <li><strong>FeliCa</strong>: the Type 3 NDEF area plus up to 4 blocks per discovered plain service. <strong>Type 4</strong>: the CC and NDEF files.</li>
 </ul>

@@ -60,7 +60,7 @@ This library does.
 | My Number card (Japan)           |   yes    | yes  |  no   |  token  |
 | MIFARE Classic 1K/4K             |   yes    |  no  |  no   |   no    |
 
-> DESFire is read-only: there is no write API, and the dump reads only free-access files, keyed by AID + file ID (Transaction MAC files are listed but not read). FeliCa dumps cover the Type 3 NDEF area plus up to 4 blocks per plain service; Type 4 dumps cover the CC and NDEF files. ISO 15693 dumps stop at block 255 (single-byte addressing) and add a `Blocks Read` fact on larger tags. Ultralight / NTAG dumps stop at the first read-protected page (AUTH0) and keep what was readable. Classic is ID-only — iOS hardware can't do Crypto1.
+> DESFire is read-only: there is no write API, and the dump reads only free-access files, keyed by AID + file ID (Transaction MAC files are listed but not read). FeliCa dumps cover the Type 3 NDEF area plus up to 4 blocks per plain service; Type 4 dumps cover the CC and NDEF files. ISO 15693 blocks above 255 use the extended read command; tags that reject it are dumped up to block 255 with a `Blocks Read` fact. Ultralight / NTAG dumps stop at the first read-protected page (AUTH0) and keep what was readable. Classic is ID-only — iOS hardware can't do Crypto1.
 
 Real hardware coverage is tracked in [Tested Cards](docs/research/tested-cards.html).
 
@@ -108,7 +108,7 @@ let pages   = try await cmd.readPages(startPage: 4)
 // Pages 0-3 are always guarded; memoryMap also refuses lock / config / key pages.
 try await cmd.writePage(4, data: Data([0x01, 0x02, 0x03, 0x04]),
                         memoryMap: UltralightMemoryMap.forType(info.type))
-// Lock, OTP and configuration pages need allowIrreversible: true (this can brick the tag).
+// Lock, OTP and configuration pages throw .irreversibleWriteRefused unless allowIrreversible: true (this can brick the tag).
 let bulk    = try await cmd.fastRead(from: 4, to: 39)
 ```
 

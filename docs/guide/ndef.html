@@ -11,7 +11,7 @@ try await CoreExtendedNFC.writeNDEF(NDEFMessage(records: []), info: info, transp
 <p>Records that cannot be encoded are refused before anything is written. An empty message is written as <code>03 00 FE</code> on Type 2 and Type 5, NLEN = 0 on Type 4, and Ln = 0 on Type 3, which erases the tag.</p>
 <ul>
 <li><strong>Type 2</strong>: the CC on page 3 is read first. The tag must be NDEF formatted (CC0 = <code>E1h</code>, mapping major version 1) and grant write access, otherwise <code>tagNotNDEFFormatted</code> or <code>tagLocked</code> is thrown. Capacity is CC2 × 8 bytes, capped at the product's user memory. NTAG215/216 advertise less than their full user memory (CC2 <code>3Eh</code> / <code>6Dh</code>).</li>
-<li><strong>Type 5</strong>: the CC is read first and must be formatted (<code>E1h</code> / <code>E2h</code>, major version 1, write access granted). The message is bounded by MLEN × 8 bytes and by blocks 0-255. Only the blocks holding the NDEF TLV and its terminator are written; the CC and memory after the terminator are untouched.</li>
+<li><strong>Type 5</strong>: the CC is read first and must be formatted (<code>E1h</code> / <code>E2h</code>, major version 1, write access granted). The message is bounded by MLEN × 8 bytes. Blocks above 255 are read and written with the extended ISO 15693 commands; tags that reject them are limited to blocks 0-255. Only the blocks holding the NDEF TLV and its terminator are written; the CC and memory after the terminator are untouched.</li>
 <li><strong>Type 4</strong>: CC write access must be <code>00h</code>. Both NLEN (T4T 2.0) and ENLEN (T4T 3.0) NDEF files are supported, up to 32 KB.</li>
 </ul>
 <p>A message that does not fit throws <code>NFCError.ndefCapacityExceeded(required:capacity:)</code>.</p>

@@ -70,14 +70,14 @@ let passport = try await CoreExtendedNFC.readPassport(
 <tr><td>NTAG 210 / 212 / 213 / 215 / 216</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
 <tr><td>MIFARE DESFire EV1-EV3</td><td>yes</td><td>yes</td><td>no</td><td>free-access files</td></tr>
 <tr><td>FeliCa Type 3 NDEF</td><td>yes</td><td>yes</td><td>yes</td><td>partial</td></tr>
-<tr><td>ISO 15693 / Type 5</td><td>yes</td><td>yes</td><td>yes</td><td>blocks 0-255</td></tr>
+<tr><td>ISO 15693 / Type 5</td><td>yes</td><td>yes</td><td>yes</td><td>extended blocks when supported</td></tr>
 <tr><td>Type 4 NDEF / ISO 7816</td><td>yes</td><td>yes</td><td>yes</td><td>partial</td></tr>
 <tr><td>eMRTD / ePassport</td><td>yes</td><td>yes</td><td>no</td><td>workflow-specific</td></tr>
 <tr><td>My Number card</td><td>yes</td><td>yes</td><td>no</td><td>token data</td></tr>
 <tr><td>MIFARE Classic 1K / 4K</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
 </tbody>
 </table>
-<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 parity-bit authentication. DESFire has no write API. ISO 15693 tags with more than 256 blocks are dumped up to block 255 and marked partially readable.</p>
+<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 parity-bit authentication. DESFire has no write API. ISO 15693 tags with more than 256 blocks are read with extended commands; tags that reject them are dumped up to block 255 and marked partially readable.</p>
 
 <h2 id="where-next">Where next</h2>
 <ul class="hub-list">
