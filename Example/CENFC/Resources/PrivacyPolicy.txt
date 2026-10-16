@@ -1,6 +1,6 @@
 Privacy Policy
 
-Last updated: March 11, 2026
+Last updated: October 16, 2026
 
 Overview
 
@@ -24,21 +24,30 @@ Scanned data is never uploaded to any server, cloud service, or third party. No 
 
 Local Storage
 
-Scan records, NDEF records, and passport records that you choose to save are stored as files in the app's local document directory on your device. These files:
+Scan records, memory dumps, NDEF records, and passport records are stored as files in the app's local document directory on your device. Every successful card scan, memory dump, and passport read is saved automatically so it appears in the app's lists; NDEF records are saved when you create, scan, or import them. These files:
 
-- Remain entirely on your device
-- Are accessible only by this app (protected by iOS app sandbox)
-- Can be exported or deleted by you at any time
+- Remain on your device; the app never uploads them
+- Are accessible only by this app (protected by the iOS app sandbox)
+- Are protected by iOS Data Protection and cannot be read while your device is locked
+- Can be exported or deleted by you at any time (swipe a record or use Delete in edit mode)
 - Are automatically removed when you uninstall the app
+
+Scan, dump, and NDEF records are included in your device's iCloud or computer backups like other app data. Passport records are excluded from backups and never leave your device unless you export them yourself.
+
+Files you export are written to a temporary location, protected by iOS Data Protection, and deleted as soon as the share sheet closes. Exported passport files are named "Passport-" followed by a random identifier, without your name or document number. Data you copy from passport screens stays on this device (it is not shared through Universal Clipboard) and is cleared from the clipboard after two minutes.
 
 Sensitive Information
 
-When reading electronic travel documents (e-passports), the app may process sensitive personal information such as name, nationality, date of birth, and facial photograph as encoded in the document's chip. This information is:
+When reading electronic travel documents (e-passports), the app may process sensitive personal information such as name, nationality, date of birth, document number, and facial photograph as encoded in the document's chip. This information is:
 
 - Processed locally on your device only
 - Never transmitted over any network
-- Stored only if you explicitly choose to save the record
-- Protected by iOS data protection when stored
+- Saved automatically as a passport record after each successful read, so you can view it again later
+- Protected by iOS Data Protection and excluded from iCloud and computer backups
+- Hidden from the app switcher while a passport screen is open
+- Removed when you delete the record or uninstall the app
+
+The document number, date of birth, and date of expiry you type to unlock a chip are used only to authenticate with the chip and are not saved separately from the passport record. Passport records imported from a file are labelled as imported; their security checks are not shown as passed because they were not performed on your device.
 
 Encryption
 

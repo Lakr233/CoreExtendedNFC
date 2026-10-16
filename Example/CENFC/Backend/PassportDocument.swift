@@ -13,28 +13,38 @@ nonisolated enum PassportDocument {
         try PropertyListEncoder().encode(record)
     }
 
+    /// Writes `record` to a temporary file for the share sheet.
+    ///
+    /// The file name carries no personal data (no name, no document number):
+    /// it shows up in share targets, Files and AirDrop previews.
     static func exportToFile(_ record: PassportRecord) throws -> URL {
-        let docNum = record.passport.mrz?.documentNumber ?? ""
         let url = try ExportFileLocation.url(
             for: record.id,
-            baseName: docNum.isEmpty ? record.displayName : "\(record.displayName)_\(docNum)",
+            baseName: exportBaseName(for: record),
             fallbackName: "Passport",
             pathExtension: "cenfcpass"
         )
-        try export(record).write(to: url, options: .atomic)
+        try ExportFileLocation.write(export(record), to: url)
         return url
+    }
+
+    /// "Passport-1A2B3C4D": a neutral name derived from the record ID only.
+    static func exportBaseName(for record: PassportRecord) -> String {
+        "Passport-\(record.id.uuidString.prefix(8))"
     }
 
     // MARK: - Import
 
+    /// Decodes an exported record and marks it as imported.
+    ///
+    /// The security results in a file are whatever its author wrote, so they are
+    /// never shown as verified (see ``PassportRecord/Origin/imported``).
     static func importRecord(from data: Data) throws -> PassportRecord {
-        try PropertyListDecoder().decode(PassportRecord.self, from: data)
+        try PropertyListDecoder().decode(PassportRecord.self, from: data).markedImported()
     }
 
     static func importRecord(from url: URL) throws -> PassportRecord {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url)
+        let data = try ImportFileReader.read(url)
         return try importRecord(from: data)
     }
 }

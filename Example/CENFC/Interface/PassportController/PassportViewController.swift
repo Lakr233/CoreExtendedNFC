@@ -6,7 +6,7 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-class PassportViewController: UIViewController {
+class PassportViewController: UIViewController, PrivacySensitiveScreen {
     nonisolated enum Section { case main }
 
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -267,9 +267,7 @@ class PassportViewController: UIViewController {
 
         do {
             let fileURLs = try records.map { try PassportDocument.exportToFile($0) }
-            let activity = UIActivityViewController(activityItems: fileURLs, applicationActivities: nil)
-            activity.popoverPresentationController?.barButtonItem = exportSelectedBarButton
-            present(activity, animated: true)
+            presentExportSheet(for: fileURLs, barButtonItem: exportSelectedBarButton)
         } catch {
             presentErrorAlert(for: error)
         }
@@ -292,7 +290,7 @@ class PassportViewController: UIViewController {
                 || (record.passport.mrz?.documentNumber ?? "").localizedCaseInsensitiveContains(query)
         }
         AppLogStore.shared.debug(
-            "reloadSnapshot query='\(query)' total=\(PassportStore.shared.records.count) filtered=\(filtered.count) window=\(view.window != nil)",
+            "reloadSnapshot searching=\(!query.isEmpty) total=\(PassportStore.shared.records.count) filtered=\(filtered.count) window=\(view.window != nil)",
             source: "PassportReorder"
         )
         var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
@@ -337,13 +335,41 @@ class PassportViewController: UIViewController {
     }
 
     func importFile(at url: URL) {
-        do {
-            let record = try PassportDocument.importRecord(from: url)
+        Task {
+            do {
+                let record = try await ImportFileReader.readInBackground(url) { data in
+                    try PassportDocument.importRecord(from: data)
+                }
+                importRecord(record)
+            } catch {
+                presentErrorAlert(for: error)
+            }
+        }
+    }
+
+    /// Adds an imported record, asking first when it would replace a stored
+    /// record with the same document number.
+    private func importRecord(_ record: PassportRecord) {
+        guard let existing = PassportStore.shared.importConflict(for: record) else {
             PassportStore.shared.importRecord(record)
             reloadSnapshot()
-        } catch {
-            presentErrorAlert(for: error)
+            return
         }
+        let alert = UIAlertController(
+            title: String(localized: "Replace Passport Record?"),
+            message: String(localized: "A record for \(existing.displayName) with the same document number is already saved. Replacing it discards the saved record, including its security results from reading the chip."),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "Replace"), style: .destructive) { [weak self] _ in
+            PassportStore.shared.importRecord(record, replacingExisting: true)
+            self?.reloadSnapshot()
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "Keep Both"), style: .default) { [weak self] _ in
+            PassportStore.shared.importRecord(record, replacingExisting: false)
+            self?.reloadSnapshot()
+        })
+        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
+        presentQueued(alert)
     }
 
     // MARK: - Export
@@ -351,9 +377,7 @@ class PassportViewController: UIViewController {
     private func exportRecord(_ record: PassportRecord) {
         do {
             let fileURL = try PassportDocument.exportToFile(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = view
-            present(activity, animated: true)
+            presentExportSheet(for: [fileURL])
         } catch {
             presentErrorAlert(for: error)
         }
@@ -417,7 +441,7 @@ extension PassportViewController: UITableViewDelegate {
                     title: String(localized: "Copy Document Number"),
                     image: UIImage(systemName: "doc.on.doc")
                 ) { _ in
-                    UIPasteboard.general.string = record.passport.mrz?.documentNumber ?? ""
+                    SensitivePasteboard.copy(record.passport.mrz?.documentNumber ?? "")
                     SPIndicator.present(
                         title: String(localized: "Copied"),
                         preset: .done,
@@ -507,7 +531,7 @@ extension PassportViewController: UITableViewDragDelegate {
         }
         guard isShowingAllRecords else {
             AppLogStore.shared.warning(
-                "drag begin blocked by active search query='\(currentSearchText)'",
+                "drag begin blocked by active search",
                 source: "PassportReorder"
             )
             return []
@@ -548,7 +572,7 @@ extension PassportViewController: UITableViewDropDelegate {
         }
         guard isShowingAllRecords else {
             AppLogStore.shared.warning(
-                "drop update forbidden due to active search query='\(currentSearchText)'",
+                "drop update forbidden due to active search",
                 source: "PassportReorder"
             )
             return UITableViewDropProposal(operation: .forbidden)

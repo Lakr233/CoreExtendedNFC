@@ -67,8 +67,8 @@ final class RecordFileStore<Record: StoredRecord> {
     /// Why saving is refused, or `nil` when the store may write its file.
     private(set) var writeBlockedReason: String?
 
-    init(fileURL: URL, source: String) {
-        persistence = RecordFilePersistence(fileURL: fileURL)
+    init(fileURL: URL, source: String, excludedFromBackup: Bool = false) {
+        persistence = RecordFilePersistence(fileURL: fileURL, excludedFromBackup: excludedFromBackup)
         self.source = source
     }
 

@@ -122,8 +122,32 @@ class AppLogStore {
 }
 
 /// Bridges ``NFCLogger`` output from the library into ``AppLogStore``.
+///
+/// Debug messages carry raw APDUs and responses (card UIDs, transit history,
+/// authentication exchanges), so they are forwarded only in Debug builds;
+/// Release builds keep info and error messages only.
 nonisolated struct AppNFCLogBridge: NFCLogger {
+    /// Whether this build forwards ``LogLevel/debug`` messages.
+    static var forwardsDebugMessages: Bool {
+        #if DEBUG
+            true
+        #else
+            false
+        #endif
+    }
+
+    var includesDebugMessages = Self.forwardsDebugMessages
+
+    /// Whether a message at `level` reaches the in-app log.
+    static func shouldForward(_ level: LogLevel, includesDebugMessages: Bool) -> Bool {
+        switch level {
+        case .debug: includesDebugMessages
+        case .info, .error: true
+        }
+    }
+
     func log(_ level: LogLevel, _ message: String, source: String) {
+        guard Self.shouldForward(level, includesDebugMessages: includesDebugMessages) else { return }
         Task { @MainActor in
             switch level {
             case .debug:

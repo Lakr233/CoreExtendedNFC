@@ -112,28 +112,7 @@ class NDEFEditorViewController: StackScrollController {
             return
         }
 
-        nfcTask.run { [weak self] in
-            await self?.write(message)
-        }
-    }
-
-    private func write(_ message: NDEFMessage) async {
-        let manager = NFCSessionManager()
-        do {
-            let (coarseInfo, transport) = try await manager.scan(for: [.all])
-            // The screen may have been closed while the system sheet was up.
-            try Task.checkCancellation()
-            let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
-            manager.setAlertMessage(String(localized: "Writing NDEF…"))
-            try await CoreExtendedNFC.writeNDEF(message, info: info, transport: transport)
-            manager.setAlertMessage(String(localized: "Write complete"))
-            manager.invalidate()
-        } catch {
-            manager.invalidate(after: error)
-            if !presentNFCErrorAlertIfNeeded(for: error, session: manager) {
-                presentErrorAlert(for: error)
-            }
-        }
+        runNDEFTagOperation(.write(message, summary: nil), runner: nfcTask)
     }
 
     // MARK: - Shared UI helpers

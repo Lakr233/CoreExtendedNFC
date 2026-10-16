@@ -83,9 +83,7 @@ class DumpDetailViewController: StackScrollController {
     @objc private func exportTapped() {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = view
-            present(activity, animated: true)
+            presentExportSheet(for: [fileURL])
         } catch {
             presentErrorAlert(for: error, title: String(localized: "Export Error"))
         }

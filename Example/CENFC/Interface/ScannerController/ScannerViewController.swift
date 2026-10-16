@@ -205,9 +205,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
 
         do {
             let fileURLs = try records.map { try CardDocument.exportToFile($0) }
-            let activity = UIActivityViewController(activityItems: fileURLs, applicationActivities: nil)
-            activity.popoverPresentationController?.barButtonItem = exportSelectedBarButton
-            present(activity, animated: true)
+            presentExportSheet(for: fileURLs, barButtonItem: exportSelectedBarButton)
         } catch {
             presentErrorAlert(for: error)
         }
@@ -519,15 +517,19 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     }
 
     func importFile(at url: URL) {
-        do {
-            let envelope = try CardDocument.importEnvelope(from: url)
-            ScanStore.shared.upsert(envelope.scanRecord)
+        Task {
+            do {
+                let envelope = try await ImportFileReader.readInBackground(url) { data in
+                    try CardDocument.importEnvelope(from: data)
+                }
+                ScanStore.shared.upsert(envelope.scanRecord)
 
-            if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
-                promptSaveDump(dumpRecord)
+                if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
+                    promptSaveDump(dumpRecord)
+                }
+            } catch {
+                presentErrorAlert(for: error)
             }
-        } catch {
-            presentErrorAlert(for: error)
         }
     }
 
@@ -549,9 +551,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     private func exportRecord(_ record: ScanRecord) {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = view
-            present(activity, animated: true)
+            presentExportSheet(for: [fileURL])
         } catch {
             presentErrorAlert(for: error)
         }

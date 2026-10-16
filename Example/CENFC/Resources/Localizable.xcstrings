@@ -7600,6 +7600,230 @@
           }
         }
       }
+    },
+    "The file is too large to import (%@; the limit is %@)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file is too large to import (%@; the limit is %@)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件过大，无法导入（%@；上限为 %@）。"
+          }
+        }
+      }
+    },
+    "Imported, not re-verified" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported, not re-verified"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导入，未重新验证"
+          }
+        }
+      }
+    },
+    "This record was imported from a file. Its security results come from the file and were not re-verified on this device, so none of them are shown as passed. Read the chip again to verify it." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This record was imported from a file. Its security results come from the file and were not re-verified on this device, so none of them are shown as passed. Read the chip again to verify it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此记录从文件导入。其安全检查结果来自文件，未在本设备上重新验证，因此均不显示为通过。如需验证，请重新读取芯片。"
+          }
+        }
+      }
+    },
+    "Replace Passport Record?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace Passport Record?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换护照记录？"
+          }
+        }
+      }
+    },
+    "A record for %@ with the same document number is already saved. Replacing it discards the saved record, including its security results from reading the chip." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A record for %@ with the same document number is already saved. Replacing it discards the saved record, including its security results from reading the chip."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存一条证件号码相同的 %@ 的记录。替换将丢弃已保存的记录，包括读取芯片时得到的安全检查结果。"
+          }
+        }
+      }
+    },
+    "Replace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换"
+          }
+        }
+      }
+    },
+    "Keep Both" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Both"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留两者"
+          }
+        }
+      }
+    },
+    "Tag Not Formatted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tag Not Formatted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签未格式化"
+          }
+        }
+      }
+    },
+    "This tag has no NDEF data area yet. Format it for NDEF and then write the message?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This tag has no NDEF data area yet. Format it for NDEF and then write the message?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此标签尚无 NDEF 数据区。是否将其格式化为 NDEF 后再写入消息？"
+          }
+        }
+      }
+    },
+    "Format…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式化…"
+          }
+        }
+      }
+    },
+    "Format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式化"
+          }
+        }
+      }
+    },
+    "Format Tag?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format Tag?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式化标签？"
+          }
+        }
+      }
+    },
+    "Formatting erases everything stored in the tag's user memory and writes a new NDEF data area, then writes your message. This cannot be undone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formatting erases everything stored in the tag's user memory and writes a new NDEF data area, then writes your message. This cannot be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式化会清除标签用户存储区中的所有内容并写入新的 NDEF 数据区，然后写入你的消息。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Formatting erases everything stored in the tag's user memory and writes a new, empty NDEF data area. This cannot be undone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formatting erases everything stored in the tag's user memory and writes a new, empty NDEF data area. This cannot be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式化会清除标签用户存储区中的所有内容，并写入一个新的空 NDEF 数据区。此操作无法撤销。"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

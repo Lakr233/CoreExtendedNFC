@@ -87,9 +87,7 @@ class CardDetailViewController: StackScrollController {
     private func exportFile() {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
-            present(activity, animated: true)
+            presentExportSheet(for: [fileURL], barButtonItem: navigationItem.rightBarButtonItem)
         } catch {
             presentErrorAlert(for: error, title: String(localized: "Export Failed"))
         }

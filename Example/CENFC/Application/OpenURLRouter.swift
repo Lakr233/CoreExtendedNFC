@@ -62,12 +62,6 @@ nonisolated enum OpenURLRouter {
     }
 
     private static func readData(from url: URL) throws -> Data {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-        return try Data(contentsOf: url)
+        try ImportFileReader.read(url)
     }
 }

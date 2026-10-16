@@ -2,14 +2,42 @@ import CoreExtendedNFC
 import Foundation
 
 nonisolated struct PassportRecord: StoredRecord {
+    /// Where the record's data came from.
+    enum Origin: String, Codable, Sendable {
+        /// Read from a chip by this app; the security report reflects that read.
+        case chip
+        /// Imported from a file. Its security report was written by whoever made
+        /// the file and was not re-verified here.
+        case imported
+    }
+
     let id: UUID
     let date: Date
     let passport: PassportModel
+    let origin: Origin
 
-    init(from passport: PassportModel, id: UUID = UUID(), date: Date = Date()) {
+    init(from passport: PassportModel, id: UUID = UUID(), date: Date = Date(), origin: Origin = .chip) {
         self.id = id
         self.date = date
         self.passport = passport
+        self.origin = origin
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, passport, origin
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        passport = try container.decode(PassportModel.self, forKey: .passport)
+        // Records saved before the origin was tracked were all read from a chip.
+        origin = try container.decodeIfPresent(Origin.self, forKey: .origin) ?? .chip
+    }
+
+    var isImported: Bool {
+        origin == .imported
     }
 
     func withNewID() -> PassportRecord {
@@ -17,7 +45,12 @@ nonisolated struct PassportRecord: StoredRecord {
     }
 
     func replacingID(_ newID: UUID = UUID(), date newDate: Date = Date()) -> PassportRecord {
-        PassportRecord(from: passport, id: newID, date: newDate)
+        PassportRecord(from: passport, id: newID, date: newDate, origin: origin)
+    }
+
+    /// The same record, marked as imported from a file.
+    func markedImported() -> PassportRecord {
+        PassportRecord(from: passport, id: id, date: date, origin: .imported)
     }
 
     // MARK: - Display Helpers

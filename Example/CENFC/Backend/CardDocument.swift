@@ -34,7 +34,7 @@ nonisolated enum CardDocument {
             fallbackName: "Card",
             pathExtension: "cenfc"
         )
-        try exportDump(dump).write(to: url, options: .atomic)
+        try ExportFileLocation.write(exportDump(dump), to: url)
         return url
     }
 
@@ -47,9 +47,9 @@ nonisolated enum CardDocument {
             pathExtension: "cenfc"
         )
         if let dump {
-            try exportWithDump(scan: scan, dump: dump).write(to: url, options: .atomic)
+            try ExportFileLocation.write(exportWithDump(scan: scan, dump: dump), to: url)
         } else {
-            try exportScanOnly(scan).write(to: url, options: .atomic)
+            try ExportFileLocation.write(exportScanOnly(scan), to: url)
         }
         return url
     }
@@ -72,9 +72,7 @@ nonisolated enum CardDocument {
     }
 
     static func importEnvelope(from url: URL) throws -> CardDocumentEnvelope {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url)
+        let data = try ImportFileReader.read(url)
         return try importEnvelope(from: data)
     }
 

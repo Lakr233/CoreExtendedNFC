@@ -7,7 +7,7 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-class PassportDetailViewController: StackScrollController {
+class PassportDetailViewController: StackScrollController, PrivacySensitiveScreen {
     nonisolated struct PreviewPayload: Sendable {
         let fileData: Data
         let fileExtension: String
@@ -33,10 +33,16 @@ class PassportDetailViewController: StackScrollController {
         Self.previewDirectory(for: record.id)
     }
 
+    nonisolated static let previewRootDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("cenfc-passport-preview", isDirectory: true)
+
     nonisolated static func previewDirectory(for id: UUID) -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("cenfc-passport-preview", isDirectory: true)
-            .appendingPathComponent(id.uuidString, isDirectory: true)
+        previewRootDirectory.appendingPathComponent(id.uuidString, isDirectory: true)
+    }
+
+    /// Removes every extracted portrait/signature preview file.
+    nonisolated static func purgeAllPreviews() {
+        try? FileManager.default.removeItem(at: previewRootDirectory)
     }
 
     private let dateFormatter = DateFormatter().then {
@@ -126,9 +132,7 @@ class PassportDetailViewController: StackScrollController {
     @objc private func exportTapped() {
         do {
             let fileURL = try PassportDocument.exportToFile(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItem
-            present(activity, animated: true)
+            presentExportSheet(for: [fileURL], barButtonItem: navigationItem.rightBarButtonItem)
         } catch {
             presentErrorAlert(for: error, title: String(localized: "Export Error"))
         }
@@ -258,15 +262,64 @@ class PassportDetailViewController: StackScrollController {
     private func buildSecuritySection() {
         addSectionHeader(String(localized: "Security Report"))
 
-        let report = record.passport.securityReport
-        addSecurityRow(title: String(localized: "Card Access"), stage: report.cardAccess)
-        addSecurityRow(title: String(localized: "PACE"), stage: report.pace)
-        addSecurityRow(title: String(localized: "BAC"), stage: report.bac)
-        addSecurityRow(title: String(localized: "Chip Authentication"), stage: report.chipAuthentication)
-        addSecurityRow(title: String(localized: "Passive Authentication"), stage: report.passiveAuthentication)
-        addSecurityRow(title: String(localized: "Active Authentication"), stage: report.activeAuthentication)
+        for row in Self.securityRows(for: record) {
+            addInfoRow(
+                icon: row.icon,
+                title: row.title,
+                description: String(localized: "Security mechanism status and result detail."),
+                value: row.value,
+                isDestructive: row.isDestructive
+            )
+        }
 
-        addSectionFooter(String(localized: "ICAO 9303 security mechanism results. BAC authenticates the reader using MRZ data. Passive Authentication verifies data group hashes against the SOD. Active Authentication proves the chip is genuine."))
+        if record.isImported {
+            addSectionFooter(String(localized: "This record was imported from a file. Its security results come from the file and were not re-verified on this device, so none of them are shown as passed. Read the chip again to verify it."))
+        } else {
+            addSectionFooter(String(localized: "ICAO 9303 security mechanism results. BAC authenticates the reader using MRZ data. Passive Authentication verifies data group hashes against the SOD. Active Authentication proves the chip is genuine."))
+        }
+    }
+
+    /// One line of the security report as shown on screen.
+    nonisolated struct SecurityRow: Equatable, Sendable {
+        let title: String
+        let value: String
+        let icon: String
+        let isDestructive: Bool
+    }
+
+    /// The security report rows for `record`.
+    ///
+    /// A record imported from a file carries whatever security results its
+    /// author wrote, and BAC, PACE, Chip and Active Authentication can only be
+    /// proven against the physical chip. Imported records therefore show every
+    /// stage as "not re-verified" instead of the stored result.
+    static func securityRows(for record: PassportRecord) -> [SecurityRow] {
+        let report = record.passport.securityReport
+        let stages: [(String, PassportSecurityStageResult)] = [
+            (String(localized: "Card Access"), report.cardAccess),
+            (String(localized: "PACE"), report.pace),
+            (String(localized: "BAC"), report.bac),
+            (String(localized: "Chip Authentication"), report.chipAuthentication),
+            (String(localized: "Passive Authentication"), report.passiveAuthentication),
+            (String(localized: "Active Authentication"), report.activeAuthentication),
+        ]
+        return stages.map { title, stage in
+            if record.isImported {
+                return SecurityRow(
+                    title: title,
+                    value: String(localized: "Imported, not re-verified"),
+                    icon: "questionmark.circle",
+                    isDestructive: false
+                )
+            }
+            let (icon, isDestructive) = securityIcon(for: stage.status)
+            return SecurityRow(
+                title: title,
+                value: stage.detail.isEmpty ? statusTitle(stage.status) : stage.detail,
+                icon: icon,
+                isDestructive: isDestructive
+            )
+        }
     }
 
     // MARK: - Technical
@@ -362,7 +415,8 @@ class PassportDetailViewController: StackScrollController {
             ) { [weak self] _ in
                 let viewer = TextViewerController(
                     title: dgId.name,
-                    text: data.hexDumpFormatted
+                    text: data.hexDumpFormatted,
+                    copiesSensitively: true
                 )
                 self?.navigationController?.pushViewController(viewer, animated: true)
             })
@@ -425,7 +479,7 @@ class PassportDetailViewController: StackScrollController {
         do {
             cleanupPreviewArtifacts()
             try FileManager.default.createDirectory(at: previewDirectoryURL, withIntermediateDirectories: true)
-            try payload.fileData.write(to: url)
+            try payload.fileData.write(to: url, options: [.atomic, .completeFileProtection])
         } catch {
             AppLogStore.shared.error(
                 "Failed to write preview file for \(name): \(error.localizedDescription)",
@@ -579,22 +633,7 @@ class PassportDetailViewController: StackScrollController {
         stackView.addArrangedSubviewWithMargin(UIView())
     }
 
-    private func addSecurityRow(
-        title: String,
-        stage: PassportSecurityStageResult
-    ) {
-        let (icon, isDestructive) = securityIcon(for: stage.status)
-        let displayValue = stage.detail.isEmpty ? Self.statusTitle(stage.status) : stage.detail
-        addInfoRow(
-            icon: icon,
-            title: title,
-            description: String(localized: "Security mechanism status and result detail."),
-            value: displayValue,
-            isDestructive: isDestructive
-        )
-    }
-
-    private func securityIcon(for status: PassportSecurityStageStatus) -> (String, Bool) {
+    private static func securityIcon(for status: PassportSecurityStageStatus) -> (String, Bool) {
         switch status {
         case .succeeded: ("checkmark.circle.fill", false)
         case .failed: ("xmark.circle.fill", true)

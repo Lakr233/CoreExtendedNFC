@@ -194,9 +194,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
 
         do {
             let fileURLs = try records.map { try CardDocument.exportToFile($0) }
-            let activity = UIActivityViewController(activityItems: fileURLs, applicationActivities: nil)
-            activity.popoverPresentationController?.barButtonItem = exportSelectedBarButton
-            present(activity, animated: true)
+            presentExportSheet(for: fileURLs, barButtonItem: exportSelectedBarButton)
         } catch {
             presentErrorAlert(for: error)
         }
@@ -384,9 +382,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     private func exportRecord(_ record: DumpRecord) {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            let activity = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
-            activity.popoverPresentationController?.sourceView = view
-            present(activity, animated: true)
+            presentExportSheet(for: [fileURL])
         } catch {
             presentErrorAlert(for: error)
         }
@@ -402,22 +398,29 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     }
 
     private func importFile(at url: URL) {
-        do {
-            let envelope = try CardDocument.importEnvelope(from: url)
-
-            if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
-                DumpStore.shared.add(dumpRecord)
-            } else {
-                // Queued: the save prompt below appears after this alert is dismissed.
-                presentInfoAlert(
-                    title: String(localized: "No Dump Data"),
-                    message: String(localized: "This file does not contain memory dump data. It only has card identification info.")
-                )
+        Task {
+            do {
+                let envelope = try await ImportFileReader.readInBackground(url) { data in
+                    try CardDocument.importEnvelope(from: data)
+                }
+                importEnvelope(envelope)
+            } catch {
+                presentErrorAlert(for: error)
             }
-            promptSaveScan(envelope.scanRecord)
-        } catch {
-            presentErrorAlert(for: error)
         }
+    }
+
+    private func importEnvelope(_ envelope: CardDocumentEnvelope) {
+        if let dumpRecord = envelope.dumpRecord, dumpRecord.hasMemoryData {
+            DumpStore.shared.add(dumpRecord)
+        } else {
+            // Queued: the save prompt below appears after this alert is dismissed.
+            presentInfoAlert(
+                title: String(localized: "No Dump Data"),
+                message: String(localized: "This file does not contain memory dump data. It only has card identification info.")
+            )
+        }
+        promptSaveScan(envelope.scanRecord)
     }
 
     private func promptSaveScan(_ scanRecord: ScanRecord) {

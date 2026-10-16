@@ -9,6 +9,16 @@ import Foundation
 /// - Saving encodes and writes on a background actor so the main thread never
 ///   blocks on JSON encoding or disk I/O. Each save carries a generation number
 ///   and an older snapshot never overwrites a newer one.
+/// - Every file (the store and its corrupt backups) is written with
+///   `completeFileProtectionUnlessOpen`: unreadable while the device is locked,
+///   yet a save that finishes in a background task after the device locks
+///   still succeeds (creating a file is allowed under that class).
+/// - A store created with `excludedFromBackup` (the passport store: DG1/DG2
+///   personal data and the face image) marks its file and its backups as
+///   excluded from iCloud and computer backups after every write, because an
+///   atomic write replaces the file and drops the flag. The scan, dump and NDEF
+///   stores stay in backups so users do not lose their records when restoring
+///   a device; they hold card identifiers, not identity documents.
 nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
     struct LoadResult {
         let records: [Record]
@@ -31,11 +41,22 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
     }
 
     let fileURL: URL
+    let excludedFromBackup: Bool
     private let writer: RecordFileWriter
 
-    init(fileURL: URL) {
+    init(fileURL: URL, excludedFromBackup: Bool = false) {
         self.fileURL = fileURL
-        writer = RecordFileWriter(fileURL: fileURL)
+        self.excludedFromBackup = excludedFromBackup
+        writer = RecordFileWriter(fileURL: fileURL, excludedFromBackup: excludedFromBackup)
+    }
+
+    /// Data protection class of every file this type writes.
+    static var writingOptions: Data.WritingOptions {
+        RecordFileWriting.options
+    }
+
+    static func write(_ data: Data, to url: URL, excludedFromBackup: Bool) throws {
+        try RecordFileWriting.write(data, to: url, excludedFromBackup: excludedFromBackup)
     }
 
     static func documentsFile(named name: String) -> URL {
@@ -46,6 +67,7 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
     // MARK: - Load
 
     func load(now: Date = Date()) -> LoadResult {
+        applyStorageAttributesToExistingFile()
         let data: Data
         do {
             data = try Data(contentsOf: fileURL)
@@ -74,6 +96,22 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
             droppedCount: max(elements.count - records.count, 0),
             writeBlockedReason: backupURL == nil ? "could not decode file and backup failed" : nil
         )
+    }
+
+    /// Gives a file written by an older build the protection class and backup
+    /// exclusion that new writes get. Missing files and failures are ignored:
+    /// the next save writes the attributes anyway.
+    private func applyStorageAttributesToExistingFile() {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.completeUnlessOpen],
+            ofItemAtPath: fileURL.path
+        )
+        guard excludedFromBackup else { return }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableURL = fileURL
+        try? mutableURL.setResourceValues(values)
     }
 
     /// Whether `error` from reading the store file means the file does not exist yet.
@@ -117,7 +155,7 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
             .appendingPathComponent("\(stem).corrupt-\(formatter.string(from: now))-\(UUID().uuidString.prefix(8))")
             .appendingPathExtension("json")
         do {
-            try data.write(to: backupURL, options: .atomic)
+            try Self.write(data, to: backupURL, excludedFromBackup: excludedFromBackup)
             return backupURL
         } catch {
             return nil
@@ -143,17 +181,37 @@ nonisolated struct RecordFilePersistence<Record: Codable & Sendable>: Sendable {
 /// Serialises file writes for one store and drops snapshots older than the last one written.
 private actor RecordFileWriter {
     private let fileURL: URL
+    private let excludedFromBackup: Bool
     private var lastWrittenGeneration = Int.min
 
-    init(fileURL: URL) {
+    init(fileURL: URL, excludedFromBackup: Bool) {
         self.fileURL = fileURL
+        self.excludedFromBackup = excludedFromBackup
     }
 
     func write<Record: Encodable & Sendable>(_ records: [Record], generation: Int) {
         guard generation > lastWrittenGeneration else { return }
         lastWrittenGeneration = generation
         guard let data = try? RecordJSON.makeEncoder().encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        try? RecordFileWriting.write(data, to: fileURL, excludedFromBackup: excludedFromBackup)
+    }
+}
+
+/// How record store files are written to disk.
+nonisolated enum RecordFileWriting {
+    static let options: Data.WritingOptions = [.atomic, .completeFileProtectionUnlessOpen]
+
+    /// Writes `data` to `url` with ``options`` and, when requested, marks the
+    /// new file as excluded from backup (an atomic write replaces the file, so
+    /// the flag must be set again after every write).
+    static func write(_ data: Data, to url: URL, excludedFromBackup: Bool) throws {
+        try data.write(to: url, options: options)
+        if excludedFromBackup {
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var mutableURL = url
+            try mutableURL.setResourceValues(values)
+        }
     }
 }
 

@@ -12,7 +12,9 @@ class PassportStore {
 
     /// Creates a store backed by `fileURL`. The app uses ``shared``; tests pass a temporary file.
     init(fileURL: URL) {
-        file = RecordFileStore(fileURL: fileURL, source: "PassportStore")
+        // Passport records hold DG1/DG2 personal data and the face image: keep
+        // them out of iCloud and computer backups.
+        file = RecordFileStore(fileURL: fileURL, source: "PassportStore", excludedFromBackup: true)
         load()
     }
 
@@ -43,11 +45,22 @@ class PassportStore {
         return stored
     }
 
-    /// Stores an imported record: it replaces the record with the same document
-    /// number, or is added (under a new ID when its ID is already taken).
-    func importRecord(_ record: PassportRecord) {
+    /// The stored record an import of `record` would replace: the one with the
+    /// same document number, or `nil` when the import simply adds a record.
+    ///
+    /// The import screen asks the user before replacing it.
+    func importConflict(for record: PassportRecord) -> PassportRecord? {
         let documentNumber = record.passport.mrz?.documentNumber ?? ""
-        if !documentNumber.isEmpty, let existing = self.record(withDocumentNumber: documentNumber) {
+        guard !documentNumber.isEmpty else { return nil }
+        return self.record(withDocumentNumber: documentNumber)
+    }
+
+    /// Stores an imported record. With `replacingExisting`, it replaces the
+    /// record with the same document number (``importConflict(for:)``);
+    /// otherwise, or when there is none, it is added (under a new ID when its ID
+    /// is already taken).
+    func importRecord(_ record: PassportRecord, replacingExisting: Bool = true) {
+        if replacingExisting, let existing = importConflict(for: record) {
             replace(existing.id, with: record)
         } else {
             add(record)

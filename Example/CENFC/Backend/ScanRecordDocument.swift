@@ -22,7 +22,7 @@ nonisolated enum ScanRecordDocument {
             fallbackName: "Card",
             pathExtension: "cenfc"
         )
-        try export(record).write(to: url, options: .atomic)
+        try ExportFileLocation.write(export(record), to: url)
         return url
     }
 }

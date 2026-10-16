@@ -3,6 +3,7 @@ import UIKit
 @objc(SceneDelegate)
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    private let privacyCover = PrivacyCover()
 
     func scene(
         _ scene: UIScene, willConnectTo _: UISceneSession,
@@ -23,6 +24,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    func sceneWillResignActive(_: UIScene) {
+        // Hide passport data from the app switcher snapshot.
+        if let window {
+            privacyCover.show(in: window)
+        }
+    }
+
+    func sceneDidBecomeActive(_: UIScene) {
+        privacyCover.hide()
+    }
+
     func sceneDidEnterBackground(_: UIScene) {
         // Record saves run asynchronously; finish them before the app can be suspended or killed.
         RecordStores.flushInBackgroundTask()
@@ -35,9 +47,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func handleOpenURL(_ url: URL) {
-        guard let tabBar = window?.rootViewController as? TabBarController,
-              let destination = OpenURLRouter.destination(for: url)
-        else { return }
+        Task {
+            // Routing may read the file to sniff its type; keep that off the main thread.
+            let destination = await Task.detached(priority: .userInitiated) {
+                OpenURLRouter.destination(for: url)
+            }.value
+            guard let destination else { return }
+            open(url, at: destination)
+        }
+    }
+
+    private func open(_ url: URL, at destination: OpenURLDestination) {
+        guard let tabBar = window?.rootViewController as? TabBarController else { return }
 
         switch destination {
         case .scanner:

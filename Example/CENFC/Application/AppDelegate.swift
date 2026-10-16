@@ -14,6 +14,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         AppBootstrap.preloadPersistentStores()
+        AppBootstrap.purgeTemporaryExports()
         return true
     }
 
@@ -38,5 +39,15 @@ private enum AppBootstrap {
         _ = DumpStore.shared
         _ = NDEFStore.shared
         _ = PassportStore.shared
+    }
+
+    /// Removes export and preview files left in the temporary directory when the
+    /// app was terminated while a share sheet or preview was open. They can hold
+    /// passport data and card contents.
+    static func purgeTemporaryExports() {
+        Task.detached(priority: .utility) {
+            ExportFileLocation.purgeAll()
+            PassportDetailViewController.purgeAllPreviews()
+        }
     }
 }

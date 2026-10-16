@@ -19,7 +19,7 @@ nonisolated enum NDEFDocument {
             fallbackName: "NDEF",
             pathExtension: "cndef"
         )
-        try export(record).write(to: url, options: .atomic)
+        try ExportFileLocation.write(export(record), to: url)
         return url
     }
 
@@ -30,9 +30,7 @@ nonisolated enum NDEFDocument {
     }
 
     static func importRecord(from url: URL) throws -> NDEFDataRecord {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url)
+        let data = try ImportFileReader.read(url)
         return try importRecord(from: data)
     }
 }

@@ -4,8 +4,12 @@ import UIKit
 
 class TextViewerController: UIViewController {
     private let textView = UITextView()
+    /// Whether the text is personal data (a passport data group): the copy
+    /// button then uses ``SensitivePasteboard``.
+    let copiesSensitively: Bool
 
-    init(title: String, text: String) {
+    init(title: String, text: String, copiesSensitively: Bool = false) {
+        self.copiesSensitively = copiesSensitively
         super.init(nibName: nil, bundle: nil)
         self.title = title
         textView.text = text
@@ -41,8 +45,12 @@ class TextViewerController: UIViewController {
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "doc.on.doc"),
             primaryAction: UIAction { [weak self] _ in
-                guard let text = self?.textView.text else { return }
-                UIPasteboard.general.string = text
+                guard let self, let text = textView.text else { return }
+                if copiesSensitively {
+                    SensitivePasteboard.copy(text)
+                } else {
+                    UIPasteboard.general.string = text
+                }
                 SPIndicator.present(
                     title: String(localized: "Copied"),
                     preset: .done,
