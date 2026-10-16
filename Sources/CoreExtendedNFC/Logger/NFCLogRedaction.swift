@@ -9,7 +9,29 @@ import Foundation
 /// 2. **Secure-messaging APDUs** (CLA indicates SM) log the header and status word only.
 /// 3. **Everything else** logs header, lengths and status word; raw payload bytes
 ///    appear only when ``NFCLogConfiguration/logPayloads`` is `true`.
+///
+/// A `GET RESPONSE` (INS C0h) that continues a command's response inherits that
+/// command's tier through ``getResponseInheritedClass``, which
+/// ``APDUExchange/transmit(_:maxGetResponseFrames:retryOnWrongLength:using:)`` sets.
 enum NFCLogRedaction {
+    /// Redaction tier of an APDU exchange, from weakest to strongest.
+    enum RedactionClass: Int, Comparable, Sendable {
+        case plain
+        case secureMessaging
+        case sensitive
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    /// Tier of the command whose response a `GET RESPONSE` sent in this task continues.
+    @TaskLocal static var getResponseInheritedClass: RedactionClass = .plain
+
+    /// Set while the second frame of a COMPATIBILITY_WRITE to a secret page is sent:
+    /// that frame carries only data bytes, so it cannot be classified on its own.
+    @TaskLocal static var redactRawFrames = false
+
     /// Frame families whose raw (non-APDU) commands may carry secrets.
     enum RawFamily {
         /// NFC-A native commands (MIFARE Ultralight / NTAG).
@@ -28,6 +50,8 @@ enum NFCLogRedaction {
         0x20, // VERIFY
         0x21, // VERIFY (odd INS)
         0x24, // CHANGE REFERENCE DATA
+        0x26, // DISABLE VERIFICATION REQUIREMENT (may carry the PIN)
+        0x28, // ENABLE VERIFICATION REQUIREMENT (may carry the PIN)
         0x2C, // RESET RETRY COUNTER
         0x82, // EXTERNAL / MUTUAL AUTHENTICATE
         0x84, // GET CHALLENGE
@@ -49,8 +73,58 @@ enum NFCLogRedaction {
     /// and its second step (0xAF).
     static let sensitiveMiFareCommands: Set<UInt8> = [0x1B, 0x1A, 0xAF]
 
-    /// Whether `apdu` belongs to a PIN / password / authentication exchange.
+    /// Ultralight / NTAG WRITE (A2h) and COMPATIBILITY_WRITE (A0h).
+    static let mifareWriteCommands: Set<UInt8> = [0xA2, 0xA0]
+
+    /// Pages that hold a password, PACK or 3DES key on some Ultralight / NTAG
+    /// product. Without the tag's memory map every candidate is redacted, so a
+    /// user page with the same address on a larger tag is redacted too.
+    /// - MF0UL11 / NTAG210: PWD 12h, PACK 13h
+    /// - MF0UL21 / NTAG212: PWD 27h, PACK 28h
+    /// - NTAG213: PWD 2Bh, PACK 2Ch
+    /// - MF0ICU2 (Ultralight C): 3DES key 2Ch-2Fh
+    /// - NTAG215: PWD 85h, PACK 86h
+    /// - NTAG216: PWD E5h, PACK E6h
+    static let mifareSecretPages: Set<UInt8> = [
+        0x12, 0x13, 0x27, 0x28, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x85, 0x86, 0xE5, 0xE6,
+    ]
+
+    /// NXP ICODE custom commands (ICODE SLIX2 datasheet, "Custom commands") that
+    /// carry a password, an XOR-ed password or the random number used to XOR it:
+    /// GET RANDOM NUMBER (B2h), SET PASSWORD (B3h), WRITE PASSWORD (B4h),
+    /// DESTROY (B9h) and ENABLE PRIVACY (BAh).
+    static let sensitiveISO15693Commands: Set<UInt8> = [0xB2, 0xB3, 0xB4, 0xB9, 0xBA]
+
+    /// Whether a WRITE / COMPATIBILITY_WRITE to `page` must not be logged.
+    static func isSecretMiFarePage(_ page: UInt8) -> Bool {
+        mifareSecretPages.contains(page)
+    }
+
+    /// GET RESPONSE (ISO/IEC 7816-4 §11.5.6).
+    static let getResponseInstruction: UInt8 = 0xC0
+
+    /// Redaction tier of `apdu`, before inheritance.
+    static func ownClass(_ apdu: CommandAPDU) -> RedactionClass {
+        if isOwnSensitive(apdu) { return .sensitive }
+        if isOwnSecureMessaging(apdu) { return .secureMessaging }
+        return .plain
+    }
+
+    /// Redaction tier of `apdu`; a GET RESPONSE inherits the tier of the command
+    /// it continues.
+    static func redactionClass(_ apdu: CommandAPDU) -> RedactionClass {
+        let own = ownClass(apdu)
+        guard apdu.ins == getResponseInstruction else { return own }
+        return max(own, getResponseInheritedClass)
+    }
+
+    /// Whether `apdu` belongs to a PIN / password / authentication exchange,
+    /// including a GET RESPONSE that continues one.
     static func isSensitive(_ apdu: CommandAPDU) -> Bool {
+        redactionClass(apdu) == .sensitive
+    }
+
+    private static func isOwnSensitive(_ apdu: CommandAPDU) -> Bool {
         if sensitiveISOInstructions.contains(apdu.ins) { return true }
         if apdu.cla == 0x90 {
             if desfireSensitiveCommands.contains(apdu.ins) { return true }
@@ -69,8 +143,13 @@ enum NFCLogRedaction {
     }
 
     /// Whether `apdu` is protected by secure messaging (ISO/IEC 7816-4 §5.4.1:
-    /// CLA bits b4-b3 non-zero for interindustry classes, `11` otherwise).
+    /// CLA bits b4-b3 non-zero for interindustry classes, `11` otherwise), or is a
+    /// GET RESPONSE continuing such a command.
     static func isSecureMessaging(_ apdu: CommandAPDU) -> Bool {
+        redactionClass(apdu) == .secureMessaging
+    }
+
+    private static func isOwnSecureMessaging(_ apdu: CommandAPDU) -> Bool {
         if apdu.cla & 0x80 == 0 {
             return apdu.cla & 0x0C != 0
         }
@@ -78,8 +157,20 @@ enum NFCLogRedaction {
     }
 
     static func isSensitiveRaw(_ frame: Data, family: RawFamily) -> Bool {
-        guard family == .mifare, let command = frame.first else { return false }
-        return sensitiveMiFareCommands.contains(command)
+        if redactRawFrames { return true }
+        guard let command = frame.first else { return false }
+        switch family {
+        case .mifare:
+            if sensitiveMiFareCommands.contains(command) { return true }
+            if mifareWriteCommands.contains(command), frame.count >= 2 {
+                return isSecretMiFarePage(frame[frame.index(after: frame.startIndex)])
+            }
+            return false
+        case .iso15693:
+            return sensitiveISO15693Commands.contains(command)
+        case .felica:
+            return false
+        }
     }
 
     // MARK: Formatting

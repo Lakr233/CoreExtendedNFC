@@ -83,20 +83,43 @@ public struct UltralightDump: Sendable {
         )
     }
 
-    /// Restore user pages from a MemoryDump (skips read-only pages 0-3).
-    public func restore(dump: MemoryDump, map: UltralightMemoryMap) async throws {
-        for page in dump.pages {
-            // Skip manufacturer pages (0-3), they are read-only
-            guard page.number >= map.userDataStart else { continue }
-            // Skip pages beyond the user data area
-            guard page.number <= map.userDataEnd else { continue }
-            // Skip lock/config pages during normal restore
-            if let configStart = map.configStart, page.number >= configStart { continue }
-            if let lockStart = map.dynamicLockStart, page.number == lockStart { continue }
+    /// Restore user pages from a MemoryDump.
+    ///
+    /// Only pages inside the user data area of `map` are written; pages 0-3, the
+    /// dynamic lock and the configuration pages are skipped. Every page is
+    /// validated before the first write, so a bad dump never leaves the tag
+    /// half-restored.
+    ///
+    /// - Parameters:
+    ///   - dump: The dump to restore.
+    ///   - map: The target tag's memory map.
+    ///   - target: The target tag, when known. Its type must match
+    ///     `dump.cardInfo.type`, so a dump is never written onto a different product.
+    /// - Throws: ``NFCError/invalidParameter(_:)`` when a page to restore is not
+    ///   4 bytes or the card types differ. Nothing is written in that case.
+    public func restore(dump: MemoryDump, map: UltralightMemoryMap, target: CardInfo? = nil) async throws {
+        if let target, target.type != dump.cardInfo.type {
+            throw NFCError.invalidParameter(
+                "The dump is from a \(dump.cardInfo.type.description) but the tag is a \(target.type.description)"
+            )
+        }
+        let writes = dump.pages.filter { Self.isRestorable($0.number, map: map) }
+        if let page = writes.first(where: { $0.data.count != 4 }) {
+            throw NFCError.invalidParameter("Page \(page.number) holds \(page.data.count) bytes instead of 4")
+        }
 
+        for page in writes {
             try Task.checkCancellation()
             try await commands.writePage(page.number, data: page.data, memoryMap: map)
         }
+    }
+
+    /// User data pages only: not pages 0-3, the dynamic lock or configuration pages.
+    private static func isRestorable(_ page: UInt8, map: UltralightMemoryMap) -> Bool {
+        guard map.isUserDataPage(page) else { return false }
+        if let configStart = map.configStart, page >= configStart { return false }
+        if let lockStart = map.dynamicLockStart, page == lockStart { return false }
+        return true
     }
 
     private func parseUltralightCAccessConfiguration(

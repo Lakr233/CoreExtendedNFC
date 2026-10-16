@@ -13,6 +13,22 @@ public struct UltralightMemoryMap: Sendable, Equatable {
     /// First dynamic lock byte page (if applicable).
     public let dynamicLockStart: UInt8?
 
+    /// Describe a Type 2 memory layout. Use ``forType(_:)`` for the NXP products
+    /// this library knows; this initializer is for other layouts and tests.
+    public init(
+        totalPages: UInt8,
+        userDataStart: UInt8,
+        userDataEnd: UInt8,
+        configStart: UInt8?,
+        dynamicLockStart: UInt8?
+    ) {
+        self.totalPages = totalPages
+        self.userDataStart = userDataStart
+        self.userDataEnd = userDataEnd
+        self.configStart = configStart
+        self.dynamicLockStart = dynamicLockStart
+    }
+
     /// Whether `page` lies in the user data area. Every other page is a
     /// manufacturer, lock, OTP, configuration, password or key page.
     public func isUserDataPage(_ page: UInt8) -> Bool {

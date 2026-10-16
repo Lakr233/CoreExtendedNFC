@@ -245,6 +245,160 @@ struct LogRedactionTests {
     func `Payload logging is off by default`() {
         #expect(NFCLogConfiguration.logPayloads == false)
     }
+
+    // MARK: - Ultralight writes to password / key pages
+
+    @Test
+    func `Ultralight WRITE to PWD, PACK and key pages is redacted`() {
+        let password = Data([0xDE, 0xAD, 0xBE, 0xEF])
+        let userData = Data([0x11, 0x22, 0x33, 0x44])
+        let messages = Self.replayRaw(
+            commands: [
+                Data([0xA2, 0x2B]) + password, // NTAG213 PWD
+                Data([0xA2, 0xE5]) + password, // NTAG216 PWD
+                Data([0xA2, 0x2F]) + password, // Ultralight C key
+                Data([0xA2, 0x04]) + userData, // user page
+            ],
+            responses: Array(repeating: Data([0x0A]), count: 4),
+            logPayloads: true
+        )
+        #expect(!Self.contains(messages, password))
+        #expect(messages.contains("→ SEND A2 <redacted 5 bytes>"))
+        #expect(Self.contains(messages, userData))
+    }
+
+    @Test
+    func `Ultralight COMPATIBILITY_WRITE data frame to a key page is redacted`() async throws {
+        let spy = SpyNFCLogger()
+        let transport = LoggingRawTransport(logger: spy)
+        let key = Data([0xC1, 0xC2, 0xC3, 0xC4])
+        let userData = Data([0x51, 0x52, 0x53, 0x54])
+        let commands = UltralightCommands(transport: transport)
+        try await commands.compatibilityWrite(0x2C, data: key, allowIrreversible: true)
+        try await commands.compatibilityWrite(0x05, data: userData)
+        #expect(!Self.contains(spy.messages, key))
+        #expect(Self.contains(spy.messages, userData))
+    }
+
+    // MARK: - ISO 7816 verification requirement
+
+    @Test(arguments: [UInt8(0x26), 0x28])
+    func `ENABLE and DISABLE VERIFICATION REQUIREMENT PINs are redacted`(ins: UInt8) {
+        let pin = Data([0x31, 0x32, 0x33, 0x34, 0x35, 0x36])
+        let apdu = CommandAPDU(cla: 0x00, ins: ins, p1: 0x00, p2: 0x80, data: pin)
+        let line = NFCLogRedaction.describeCommand(apdu, logPayloads: true)
+        #expect(!line.contains(pin.hexDump))
+        #expect(line.contains("<redacted 6 bytes>"))
+    }
+
+    // MARK: - ICODE passwords
+
+    @Test(arguments: [UInt8(0xB2), 0xB3, 0xB4, 0xB9, 0xBA])
+    func `ICODE password custom commands are redacted`(command: UInt8) {
+        let secret = Data([0x9A, 0x8B, 0x7C, 0x6D])
+        let frame = Data([command, 0x04, 0x01]) + secret
+        let spy = SpyNFCLogger()
+        NFCLog.rawCommand(frame, family: .iso15693, source: "Test", logger: spy, logPayloads: true)
+        NFCLog.rawResponse(Data([0x00]) + secret, command: frame, family: .iso15693, source: "Test", logger: spy, logPayloads: true)
+        #expect(!Self.contains(spy.messages, secret))
+    }
+
+    @Test
+    func `ICODE block reads still follow the payload flag`() {
+        let block = Data([0x9A, 0x8B, 0x7C, 0x6D])
+        let spy = SpyNFCLogger()
+        NFCLog.rawResponse(block, command: Data([0x20, 0x00]), family: .iso15693, source: "Test", logger: spy, logPayloads: true)
+        #expect(Self.contains(spy.messages, block))
+    }
+
+    // MARK: - GET RESPONSE continuations
+
+    private static func transmitLogged(
+        _ apdu: CommandAPDU,
+        responses: [ResponseAPDU],
+        logPayloads: Bool
+    ) async throws -> [String] {
+        let spy = SpyNFCLogger()
+        var remaining = responses
+        _ = try await APDUExchange.transmit(apdu) { sent in
+            NFCLog.apduCommand(sent, source: "Test", logger: spy, logPayloads: logPayloads)
+            let response = remaining.removeFirst()
+            NFCLog.apduResponse(
+                data: response.data, sw1: response.sw1, sw2: response.sw2,
+                for: sent, source: "Test", logger: spy, logPayloads: logPayloads
+            )
+            return response
+        }
+        return spy.messages
+    }
+
+    @Test
+    func `GET RESPONSE after a sensitive command stays redacted`() async throws {
+        let signature = Data(repeating: 0xA7, count: 16)
+        let apdu = CommandAPDU(cla: 0x00, ins: 0x88, p1: 0x00, p2: 0x00, data: Data(repeating: 0x01, count: 8))
+        let messages = try await Self.transmitLogged(
+            apdu,
+            responses: [
+                ResponseAPDU(data: Data(), sw1: 0x61, sw2: 0x10),
+                ResponseAPDU(data: signature, sw1: 0x90, sw2: 0x00),
+            ],
+            logPayloads: true
+        )
+        #expect(!Self.contains(messages, signature))
+        #expect(messages.contains("← SW:9000 <redacted 16 bytes>"))
+    }
+
+    @Test
+    func `GET RESPONSE after a secure-messaging command logs the status word only`() async throws {
+        let cryptogram = Data(repeating: 0xB8, count: 16)
+        let apdu = CommandAPDU(cla: 0x0C, ins: 0xB0, p1: 0x00, p2: 0x00, data: Data(repeating: 0x02, count: 8))
+        let messages = try await Self.transmitLogged(
+            apdu,
+            responses: [
+                ResponseAPDU(data: Data(), sw1: 0x61, sw2: 0x10),
+                ResponseAPDU(data: cryptogram, sw1: 0x90, sw2: 0x00),
+            ],
+            logPayloads: true
+        )
+        #expect(!Self.contains(messages, cryptogram))
+        #expect(messages.contains("← SW:9000"))
+    }
+
+    @Test
+    func `GET RESPONSE after a plain command follows the payload flag`() async throws {
+        let content = Data(repeating: 0xC9, count: 16)
+        let apdu = CommandAPDU(cla: 0x00, ins: 0xB0, p1: 0x00, p2: 0x00, le: 0x00)
+        let messages = try await Self.transmitLogged(
+            apdu,
+            responses: [
+                ResponseAPDU(data: Data(), sw1: 0x61, sw2: 0x10),
+                ResponseAPDU(data: content, sw1: 0x90, sw2: 0x00),
+            ],
+            logPayloads: true
+        )
+        #expect(Self.contains(messages, content))
+    }
+}
+
+/// Ultralight transport that logs each frame while it is sent, as `MiFareTransport` does.
+private final class LoggingRawTransport: NFCTagTransport, @unchecked Sendable {
+    let identifier = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+    let logger: SpyNFCLogger
+
+    init(logger: SpyNFCLogger) {
+        self.logger = logger
+    }
+
+    func send(_ data: Data) async throws -> Data {
+        NFCLog.rawCommand(data, family: .mifare, source: "Test", logger: logger, logPayloads: true)
+        let response = Data([0x0A])
+        NFCLog.rawResponse(response, command: data, family: .mifare, source: "Test", logger: logger, logPayloads: true)
+        return response
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
+    }
 }
 
 private final class SpyNFCLogger: NFCLogger, @unchecked Sendable {

@@ -29,15 +29,21 @@ public struct UltralightCommands: Sendable {
     ///     CFGLCK, AUTHLIM), PWD and PACK, and the Ultralight C AUTH0/AUTH1 and
     ///     3DES key pages.
     ///
-    ///   Such writes are refused with ``NFCError/unsupportedOperation(_:)``
+    ///   Such writes are refused with ``NFCError/irreversibleWriteRefused(page:)``
     ///   unless `allowIrreversible` is `true`. Pages 0-3 are always checked. The
     ///   configuration pages depend on the product, so pass `memoryMap`
     ///   (``UltralightMemoryMap/forType(_:)``) to also refuse every page outside
     ///   the product's user data area; without it only pages 0-3 are checked.
-    ///   Page 3 is accepted without opt-in only for a standard read/write NDEF
-    ///   Capability Container (`E1 1x xx 00`, NFC Forum T2T 1.0 §6.1), which is
-    ///   what NDEF formatting writes; a read-only CC (CC3 ≠ 00h) or any other
-    ///   OTP value needs the opt-in.
+    ///
+    ///   Because page 3 bits are OR-ed into the current value, a page 3 write
+    ///   without the opt-in first reads page 3 and is sent only when it would
+    ///   not change anything (every bit of `data` is already set). Writing a new
+    ///   Capability Container needs `allowIrreversible: true`, which is what
+    ///   ``CoreExtendedNFC/formatNDEF(info:transport:)`` does.
+    ///
+    /// The tag must answer with the 4-bit ACK, which CoreNFC delivers as the
+    /// single byte `0Ah`; an empty answer or a NAK throws
+    /// ``NFCError/writeFailed(page:)``.
     ///
     /// - Parameters:
     ///   - page: Page address.
@@ -46,6 +52,7 @@ public struct UltralightCommands: Sendable {
     ///     configuration pages. `nil` checks only pages 0-3.
     ///   - allowIrreversible: Explicit opt-in to write lock, OTP and
     ///     configuration pages.
+    /// - Throws: ``NFCError/invalidParameter(_:)`` when `data` is not 4 bytes.
     public func writePage(
         _ page: UInt8,
         data: Data,
@@ -53,23 +60,20 @@ public struct UltralightCommands: Sendable {
         allowIrreversible: Bool = false
     ) async throws {
         guard data.count == 4 else {
-            throw NFCError.unsupportedOperation("Write data must be exactly 4 bytes")
+            throw NFCError.invalidParameter("Write data must be exactly 4 bytes")
         }
-        try Self.requireWritable(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
+        try await requireWritable(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
         var command = Data([0xA2, page])
         command.append(data)
         let response = try await transport.send(command)
-        // ACK is 0x0A (single byte)
-        if let firstByte = response.first, firstByte != 0x0A {
-            throw NFCError.writeFailed(page: page)
-        }
+        try Self.requireACK(response, page: page)
     }
 
     /// FAST_READ (0x3A): Read a range of pages [start...end] inclusive.
     /// Returns (end - start + 1) × 4 bytes.
     public func fastRead(from start: UInt8, to end: UInt8) async throws -> Data {
         guard end >= start else {
-            throw NFCError.unsupportedOperation("FAST_READ end page must not be before start page")
+            throw NFCError.invalidParameter("FAST_READ end page must not be before start page")
         }
         let expectedLength = (Int(end) - Int(start) + 1) * 4
         let response = try await transport.send(Data([0x3A, start, end]))
@@ -88,7 +92,8 @@ public struct UltralightCommands: Sendable {
     ///
     /// - Warning: Lock, OTP and configuration pages are refused unless
     ///   `allowIrreversible` is `true`, exactly as for
-    ///   ``writePage(_:data:memoryMap:allowIrreversible:)``.
+    ///   ``writePage(_:data:memoryMap:allowIrreversible:)``. Both phases must be
+    ///   answered with the ACK byte `0Ah`.
     public func compatibilityWrite(
         _ page: UInt8,
         data: Data,
@@ -96,15 +101,20 @@ public struct UltralightCommands: Sendable {
         allowIrreversible: Bool = false
     ) async throws {
         guard data.count == 4 else {
-            throw NFCError.unsupportedOperation("Write data must be exactly 4 bytes")
+            throw NFCError.invalidParameter("Write data must be exactly 4 bytes")
         }
-        try Self.requireWritable(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
+        try await requireWritable(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
         let addressResponse = try await transport.send(Data([0xA0, page]))
         try Self.requireACK(addressResponse, page: page)
 
         var payload = Data(data)
         payload.append(Data(repeating: 0x00, count: 12))
-        let dataResponse = try await transport.send(payload)
+        // The data frame has no command byte; keep a password or key out of the logs.
+        let dataResponse = try await NFCLogRedaction.$redactRawFrames.withValue(
+            NFCLogRedaction.redactRawFrames || NFCLogRedaction.isSecretMiFarePage(page)
+        ) {
+            try await transport.send(payload)
+        }
         try Self.requireACK(dataResponse, page: page)
     }
 
@@ -166,45 +176,51 @@ public struct UltralightCommands: Sendable {
     }
 
     /// Refuse a write to a lock, OTP or configuration page unless the caller opted in.
-    static func requireWritable(
+    ///
+    /// Page 3 is OTP: the written bits are OR-ed into the current value. Without
+    /// the opt-in it is read first and the write is allowed only when it would
+    /// leave the page unchanged.
+    func requireWritable(
         _ page: UInt8,
         data: Data,
         memoryMap: UltralightMemoryMap?,
         allowIrreversible: Bool
+    ) async throws {
+        try Self.requireWritable(page, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
+        guard page == 0x03, !allowIrreversible else { return }
+        let current = try await readPages(startPage: 0x03).prefix(4)
+        let unchanged = zip(current, data).allSatisfy { current, new in current | new == current }
+        guard current.count == 4, unchanged else {
+            throw NFCError.irreversibleWriteRefused(page: page)
+        }
+    }
+
+    /// Refuse a write to the UID, lock, configuration, password or key pages
+    /// unless the caller opted in. Page 3 (OTP) needs the tag's current value
+    /// and is checked by the async overload.
+    static func requireWritable(
+        _ page: UInt8,
+        memoryMap: UltralightMemoryMap?,
+        allowIrreversible: Bool
     ) throws {
         guard !allowIrreversible else { return }
-        let reason: String? = switch page {
-        case 0x00, 0x01:
-            "page \(page) holds the UID"
-        case 0x02:
-            "page 2 holds the static lock bytes"
-        case 0x03 where !isReadWriteNDEFCapabilityContainer(data):
-            "page 3 is one-time programmable (OTP / Capability Container)"
+        switch page {
+        case 0x00 ... 0x02:
+            throw NFCError.irreversibleWriteRefused(page: page)
         case 0x03:
-            nil
+            return
         default:
             if let memoryMap, !memoryMap.isUserDataPage(page) {
-                "page \(page) is a lock, configuration, password or key page"
-            } else {
-                nil
+                throw NFCError.irreversibleWriteRefused(page: page)
             }
         }
-        if let reason {
-            throw NFCError.unsupportedOperation(
-                "Refusing to write: \(reason) and the change may be irreversible. Pass allowIrreversible: true to write it anyway."
-            )
-        }
     }
 
-    /// A standard NFC Forum Type 2 CC granting read and write access:
-    /// CC0 = E1h (NDEF magic), CC1 major version 1, CC3 = 00h (T2T 1.0 §6.1).
-    private static func isReadWriteNDEFCapabilityContainer(_ data: Data) -> Bool {
-        let bytes = [UInt8](data)
-        return bytes.count == 4 && bytes[0] == 0xE1 && bytes[1] >> 4 == 0x1 && bytes[3] == 0x00
-    }
-
-    private static func requireACK(_ response: Data, page: UInt8) throws {
-        if let firstByte = response.first, firstByte != 0x0A {
+    /// WRITE and COMPATIBILITY_WRITE answer with the 4-bit ACK `Ah`, which CoreNFC
+    /// returns as the single byte `0Ah` (NAKs are `0h`/`1h`/`4h`/`5h`). An empty
+    /// answer is not an acknowledgement.
+    static func requireACK(_ response: Data, page: UInt8) throws {
+        guard response.first == 0x0A else {
             throw NFCError.writeFailed(page: page)
         }
     }

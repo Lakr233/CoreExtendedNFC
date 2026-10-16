@@ -19,7 +19,7 @@ public extension UltralightCommands {
     ///   ``readAuthConfig(configStartPage:)`` when AUTH0 allows it.
     func passwordAuth(password: Data) async throws -> Data {
         guard password.count == 4 else {
-            throw NFCError.unsupportedOperation("Password must be exactly 4 bytes")
+            throw NFCError.invalidParameter("Password must be exactly 4 bytes")
         }
         var command = Data([0x1B])
         command.append(password)
@@ -62,7 +62,7 @@ extension UltralightCommands {
         randomA: Data?
     ) async throws -> UltralightCAuthenticationSession {
         guard key.count == 16 else {
-            throw NFCError.unsupportedOperation("Ultralight C authentication requires a 16-byte key")
+            throw NFCError.invalidParameter("Ultralight C authentication requires a 16-byte key")
         }
 
         let startResponse = try await transport.send(Data([0x1A, 0x00]))

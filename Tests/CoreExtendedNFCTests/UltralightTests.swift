@@ -76,32 +76,164 @@ struct UltralightTests {
         #expect(mock.sentCommands.isEmpty)
     }
 
+    /// READ answer starting at page 3 whose first 4 bytes are `page3`.
+    private static func page3Read(_ page3: [UInt8]) -> Data {
+        Data(page3) + Data(count: 12)
+    }
+
+    /// Page 3 bits are OR-ed (MF0ICU2 / NTAG21x "Capability Container"): writing
+    /// E1 10 06 00 over E1 10 12 00 would leave E1 10 16 00, a different CC.
     @Test
-    func `WRITE refuses an OTP page 3 value that is not a read-write NDEF CC`() async {
+    func `WRITE refuses a page 3 value that would change the OTP bits`() async {
         let mock = MockTransport()
-        mock.responses = [Data([0x0A]), Data([0x0A])]
+        mock.responses = [Self.page3Read([0xE1, 0x10, 0x12, 0x00]), Self.page3Read([0xE1, 0x10, 0x12, 0x00])]
         let commands = UltralightCommands(transport: mock)
-        // Read-only CC (CC3 = 0Fh) and arbitrary OTP bits both need the opt-in.
+        do {
+            try await commands.writePage(3, data: Data([0xE1, 0x10, 0x06, 0x00]))
+            Issue.record("expected irreversibleWriteRefused")
+        } catch NFCError.irreversibleWriteRefused(page: 3) {
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+        // A read-only CC (CC3 = 0Fh) sets new bits too.
         await #expect(throws: NFCError.self) {
             try await commands.writePage(3, data: Data([0xE1, 0x10, 0x12, 0x0F]))
         }
+        // Only the two page 3 READs were sent, never a WRITE.
+        #expect(mock.sentCommands == [Data([0x30, 0x03]), Data([0x30, 0x03])])
+    }
+
+    @Test
+    func `WRITE allows a page 3 value that changes nothing and opted-in irreversible writes`() async throws {
+        let mock = MockTransport()
+        mock.responses = [
+            Self.page3Read([0xE1, 0x10, 0x12, 0x00]), Data([0x0A]),
+            Self.page3Read([0xE1, 0x10, 0x12, 0x00]), Data([0x0A]),
+            Data([0x0A]), Data([0x0A]),
+        ]
+        let commands = UltralightCommands(transport: mock)
+        try await commands.writePage(3, data: Data([0xE1, 0x10, 0x12, 0x00]))
+        try await commands.writePage(3, data: Data([0x00, 0x10, 0x02, 0x00])) // subset of the set bits
+        try await commands.writePage(3, data: Data([0xE1, 0x10, 0x06, 0x00]), allowIrreversible: true)
+        try await commands.writePage(2, data: Data([0x00, 0x00, 0xFF, 0xFF]), allowIrreversible: true)
+        let expected: [Data] = [
+            Data([0x30, 0x03]), Data([0xA2, 0x03, 0xE1, 0x10, 0x12, 0x00]),
+            Data([0x30, 0x03]), Data([0xA2, 0x03, 0x00, 0x10, 0x02, 0x00]),
+            Data([0xA2, 0x03, 0xE1, 0x10, 0x06, 0x00]),
+            Data([0xA2, 0x02, 0x00, 0x00, 0xFF, 0xFF]),
+        ]
+        #expect(mock.sentCommands == expected)
+    }
+
+    @Test(arguments: [UInt8(0x00), 0x01, 0x02])
+    func `Irreversible refusals are typed with the page`(page: UInt8) async {
+        let mock = MockTransport()
+        do {
+            try await UltralightCommands(transport: mock).writePage(page, data: Data(count: 4))
+            Issue.record("expected irreversibleWriteRefused")
+        } catch let NFCError.irreversibleWriteRefused(refused) {
+            #expect(refused == page)
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
+    @Test
+    func `Ultralight argument errors are invalidParameter`() async {
+        let commands = UltralightCommands(transport: MockTransport())
+        await #expect {
+            try await commands.writePage(4, data: Data([0x01]))
+        } throws: { error in
+            if case NFCError.invalidParameter = error { true } else { false }
+        }
+        await #expect {
+            try await commands.compatibilityWrite(4, data: Data([0x01]))
+        } throws: { error in
+            if case NFCError.invalidParameter = error { true } else { false }
+        }
+        await #expect {
+            _ = try await commands.passwordAuth(password: Data([0x01]))
+        } throws: { error in
+            if case NFCError.invalidParameter = error { true } else { false }
+        }
+        await #expect {
+            _ = try await commands.authenticateUltralightC(key: Data(count: 8))
+        } throws: { error in
+            if case NFCError.invalidParameter = error { true } else { false }
+        }
+    }
+
+    /// NXP datasheets: WRITE / COMPATIBILITY_WRITE answer with the 4-bit ACK Ah.
+    @Test
+    func `An empty WRITE response is not an ACK`() async {
+        let mock = MockTransport()
+        mock.responses = [Data(), Data([0x0A]), Data()]
+        let commands = UltralightCommands(transport: mock)
         await #expect(throws: NFCError.self) {
-            try await commands.writePage(3, data: Data([0xFF, 0xFF, 0xFF, 0xFF]))
+            try await commands.writePage(4, data: Data([1, 2, 3, 4]))
+        }
+        await #expect(throws: NFCError.self) {
+            try await commands.compatibilityWrite(4, data: Data([1, 2, 3, 4]))
+        }
+    }
+
+    @Test
+    func `writeNDEF never writes the OTP page 3`() async throws {
+        let mock = MockTransport()
+        let cc = Data([0xE1, 0x10, 0x12, 0x00]) + Data(count: 12)
+        mock.responses = [cc] + Array(repeating: Data([0x0A]), count: 40)
+        try await CoreExtendedNFC.writeNDEF(
+            .uri("https://a.b"),
+            info: CardInfo(type: .ntag213, uid: mock.identifier),
+            transport: mock
+        )
+        #expect(mock.sentCommands.contains { $0.first == 0xA2 })
+        let page3Writes = mock.sentCommands.filter { command in
+            let bytes = [UInt8](command)
+            return bytes.count >= 2 && (bytes[0] == 0xA2 || bytes[0] == 0xA0) && bytes[1] == 0x03
+        }
+        #expect(page3Writes.isEmpty)
+    }
+
+    @Test
+    func `Restore validates every page before the first write`() async {
+        let mock = MockTransport()
+        mock.responses = Array(repeating: Data([0x0A]), count: 8)
+        let info = CardInfo(type: .ntag213, uid: Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]))
+        let dump = MemoryDump(
+            cardInfo: info,
+            pages: [
+                MemoryDump.Page(number: 4, data: Data([1, 2, 3, 4])),
+                MemoryDump.Page(number: 5, data: Data([1, 2, 3, 4])),
+                MemoryDump.Page(number: 6, data: Data([1, 2])),
+            ]
+        )
+        let restore = UltralightDump(commands: UltralightCommands(transport: mock))
+        await #expect(throws: NFCError.self) {
+            try await restore.restore(dump: dump, map: .forType(.ntag213))
         }
         #expect(mock.sentCommands.isEmpty)
     }
 
     @Test
-    func `WRITE accepts a read-write NDEF CC on page 3 and opted-in irreversible writes`() async throws {
+    func `Restore refuses a dump from a different card type`() async {
         let mock = MockTransport()
-        mock.responses = [Data([0x0A]), Data([0x0A])]
-        let commands = UltralightCommands(transport: mock)
-        try await commands.writePage(3, data: Data([0xE1, 0x10, 0x12, 0x00]))
-        try await commands.writePage(2, data: Data([0x00, 0x00, 0xFF, 0xFF]), allowIrreversible: true)
-        #expect(mock.sentCommands == [
-            Data([0xA2, 0x03, 0xE1, 0x10, 0x12, 0x00]),
-            Data([0xA2, 0x02, 0x00, 0x00, 0xFF, 0xFF]),
-        ])
+        mock.responses = Array(repeating: Data([0x0A]), count: 8)
+        let uid = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+        let dump = MemoryDump(
+            cardInfo: CardInfo(type: .ntag215, uid: uid),
+            pages: [MemoryDump.Page(number: 4, data: Data([1, 2, 3, 4]))]
+        )
+        await #expect {
+            try await CoreExtendedNFC.restoreUltralight(
+                dump: dump,
+                info: CardInfo(type: .ntag213, uid: uid),
+                transport: mock
+            )
+        } throws: { error in
+            if case NFCError.invalidParameter = error { true } else { false }
+        }
+        #expect(mock.sentCommands.isEmpty)
     }
 
     /// NTAG213 datasheet §8.5: user 04h-27h, dynamic lock 28h, CFG0 29h, CFG1 2Ah,
@@ -596,5 +728,35 @@ struct TopLevelUltralightWriteGuardTests {
         transport.responses = [Data([0x0A])] // ACK
         try await CoreExtendedNFC.writePage(2, data: lockBytes, allowIrreversible: true, transport: transport)
         #expect(transport.sentCommands == [Data([0xA2, 0x02]) + lockBytes])
+    }
+
+    /// NTAG213 CFG0 is page 29h; without a map the facade cannot tell it from user memory.
+    @Test(arguments: [UInt8(0x10), 0x28, 0x29, 0xE5])
+    func `Top-level writes above page 15 without a memory map need the opt-in`(page: UInt8) async throws {
+        let transport = MockTransport()
+        do {
+            try await CoreExtendedNFC.writePage(page, data: Data(count: 4), transport: transport)
+            Issue.record("expected irreversibleWriteRefused")
+        } catch NFCError.irreversibleWriteRefused(page: page) {
+        }
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.compatibilityWrite(page, data: Data(count: 4), transport: transport)
+        }
+        #expect(transport.sentCommands.isEmpty)
+
+        transport.responses = [Data([0x0A]), Data([0x0A])]
+        try await CoreExtendedNFC.writePage(page, data: Data(count: 4), allowIrreversible: true, transport: transport)
+        // With a map that has `page` in its user area the write is allowed.
+        let map = UltralightMemoryMap(totalPages: 0xFF, userDataStart: 4, userDataEnd: 0xF0, configStart: nil, dynamicLockStart: nil)
+        try await CoreExtendedNFC.writePage(page, data: Data(count: 4), memoryMap: map, transport: transport)
+        #expect(transport.sentCommands.count == 2)
+    }
+
+    @Test
+    func `Top-level writes to page 15 without a memory map are allowed`() async throws {
+        let transport = MockTransport()
+        transport.responses = [Data([0x0A])]
+        try await CoreExtendedNFC.writePage(0x0F, data: Data([1, 2, 3, 4]), transport: transport)
+        #expect(transport.sentCommands == [Data([0xA2, 0x0F, 1, 2, 3, 4])])
     }
 }

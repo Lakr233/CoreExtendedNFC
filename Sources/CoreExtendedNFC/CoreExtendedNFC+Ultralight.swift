@@ -14,12 +14,24 @@ public extension CoreExtendedNFC {
             .readPages(startPage: startPage)
     }
 
+    /// Last page that is user memory on every Ultralight / NTAG product
+    /// (MF0ICU1 and MF0UL11 / NTAG210 user area 04h-0Fh). Above it a page may be
+    /// a lock, configuration, password or key page depending on the product.
+    internal static let ultralightCommonUserDataEnd: UInt8 = 0x0F
+
     /// Write 4 bytes to a single page.
     ///
-    /// Pages 0-2 (UID / static lock / OTP) and page 3 values other than a
-    /// read/write NDEF CC are refused unless `allowIrreversible` is `true`; with a
-    /// `memoryMap`, pages outside the user area are refused too. See
-    /// ``UltralightCommands/writePage(_:data:memoryMap:allowIrreversible:)``.
+    /// Without `allowIrreversible: true` these writes are refused with
+    /// ``NFCError/irreversibleWriteRefused(page:)``:
+    /// - pages 0-2 (UID and static lock bytes);
+    /// - page 3 (OTP), unless the write would leave it unchanged;
+    /// - with a `memoryMap`, every page outside the product's user data area;
+    /// - without a `memoryMap`, every page above 15 (0Fh), because the lock,
+    ///   configuration, PWD/PACK and key pages start right after the user area
+    ///   on the smallest products. Pass ``UltralightMemoryMap/forType(_:)`` to
+    ///   write the user area of larger tags.
+    ///
+    /// See ``UltralightCommands/writePage(_:data:memoryMap:allowIrreversible:)``.
     ///
     /// - Warning: Lock bytes, OTP bits and configuration pages are one-way:
     ///   `allowIrreversible: true` can permanently lock or brick the tag.
@@ -30,8 +42,20 @@ public extension CoreExtendedNFC {
         allowIrreversible: Bool = false,
         transport: any NFCTagTransport
     ) async throws {
+        try requireKnownPage(page, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
         try await UltralightCommands(transport: transport)
             .writePage(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
+    }
+
+    /// Without a memory map, a page above the smallest product's user area may be
+    /// a configuration, password or key page, so it needs the opt-in.
+    private static func requireKnownPage(
+        _ page: UInt8,
+        memoryMap: UltralightMemoryMap?,
+        allowIrreversible: Bool
+    ) throws {
+        guard !allowIrreversible, memoryMap == nil, page > ultralightCommonUserDataEnd else { return }
+        throw NFCError.irreversibleWriteRefused(page: page)
     }
 
     /// FAST_READ: Read a contiguous range of pages in a single command.
@@ -46,9 +70,9 @@ public extension CoreExtendedNFC {
 
     /// Compatibility write (16-byte frame for legacy readers).
     ///
-    /// Pages 0-2 (UID / static lock / OTP) and page 3 values other than a
-    /// read/write NDEF CC are refused unless `allowIrreversible` is `true`; with a
-    /// `memoryMap`, pages outside the user area are refused too. See
+    /// The same pages are refused as for
+    /// ``writePage(_:data:memoryMap:allowIrreversible:transport:)``, including
+    /// every page above 15 when no `memoryMap` is given. See
     /// ``UltralightCommands/compatibilityWrite(_:data:memoryMap:allowIrreversible:)``.
     ///
     /// - Warning: Lock bytes, OTP bits and configuration pages are one-way:
@@ -60,6 +84,7 @@ public extension CoreExtendedNFC {
         allowIrreversible: Bool = false,
         transport: any NFCTagTransport
     ) async throws {
+        try requireKnownPage(page, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
         try await UltralightCommands(transport: transport)
             .compatibilityWrite(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
     }
@@ -135,6 +160,10 @@ public extension CoreExtendedNFC {
     // MARK: Dump & Restore
 
     /// Restore user pages from a previous ``MemoryDump`` to an Ultralight/NTAG tag.
+    ///
+    /// The dump must come from the same product as `info` and every user page
+    /// must hold 4 bytes; otherwise ``NFCError/invalidParameter(_:)`` is thrown
+    /// before anything is written. See ``UltralightDump/restore(dump:map:target:)``.
     static func restoreUltralight(
         dump: MemoryDump,
         info: CardInfo,
@@ -143,6 +172,6 @@ public extension CoreExtendedNFC {
         let commands = UltralightCommands(transport: transport)
         let map = UltralightMemoryMap.forType(info.type)
         let dumper = UltralightDump(commands: commands)
-        try await dumper.restore(dump: dump, map: map)
+        try await dumper.restore(dump: dump, map: map, target: info)
     }
 }

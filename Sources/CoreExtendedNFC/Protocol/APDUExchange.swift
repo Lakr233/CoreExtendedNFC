@@ -35,6 +35,7 @@ public enum APDUExchange {
 
         var collected = response.data
         var frames = 0
+        let redactionClass = NFCLogRedaction.redactionClass(apdu)
 
         while response.needsGetResponse || (frames > 0 && response.correctedExpectedLength != nil) {
             frames += 1
@@ -43,8 +44,13 @@ public enum APDUExchange {
             }
             try Task.checkCancellation()
 
-            // In both 61xx and 6Cxx, SW2 is the Le to ask for next.
-            response = try await send(.getResponse(length: response.sw2))
+            // In both 61xx and 6Cxx, SW2 is the Le to ask for next. The GET RESPONSE
+            // carries the rest of `apdu`'s answer, so it is logged with the same
+            // redaction tier (a PIN or SM exchange stays redacted).
+            let next = CommandAPDU.getResponse(length: response.sw2)
+            response = try await NFCLogRedaction.$getResponseInheritedClass.withValue(redactionClass) {
+                try await send(next)
+            }
             collected.append(response.data)
         }
 
