@@ -60,7 +60,7 @@ This library does.
 | My Number card (Japan)           |   yes    | yes  |  no   |  token  |
 | MIFARE Classic 1K/4K             |   yes    |  no  |  no   |   no    |
 
-> DESFire is read-only: there is no write API, and the dump reads only free-access files, keyed by AID + file ID (Transaction MAC files are listed but not read). FeliCa dumps cover the Type 3 NDEF area plus up to 4 blocks per plain service; Type 4 dumps cover the CC and NDEF files. ISO 15693 blocks above 255 use the extended read command; tags that reject it are dumped up to block 255 with a `Blocks Read` fact. Ultralight / NTAG dumps stop at the first read-protected page (AUTH0) and keep what was readable. Classic is ID-only — iOS hardware can't do Crypto1.
+> DESFire is read-only: there is no write API, and the dump reads only free-access files, keyed by AID + file ID (Transaction MAC files are listed but not read). FeliCa dumps cover the Type 3 NDEF area plus up to 4 blocks per plain service; Type 4 dumps cover the CC and NDEF files. ISO 15693 blocks above 255 use the extended read command; tags that reject it are dumped up to block 255 with a `Blocks Read` fact. Ultralight / NTAG dumps stop at the first read-protected page (AUTH0) and keep what was readable. MIFARE Classic is ID-only because iOS does not support Crypto1 authentication.
 
 Real hardware coverage is tracked in [Tested Cards](docs/research/tested-cards.html).
 
@@ -152,7 +152,7 @@ let data = try await CoreExtendedNFC.readMyNumberCard(
 print(data.tokenInfo ?? "-", data.individualNumber ?? "-")
 ```
 
-Official applet/data layout reference: `docs/research/my-number-card.html`
+See the [My Number card reference](docs/research/my-number-card.html) for the official applet and data layout.
 
 **Card Identification (pure logic, no hardware)**
 
@@ -246,4 +246,4 @@ MIT
 ## Sponsor
 
 - [LookInside](https://lookinside-app.com/) helps you inspect a running iOS or macOS app UI from your Mac.
-- This project/repository is sponsored by AFK AI, INC.
+- This project is sponsored by AFK AI, Inc.

@@ -54,7 +54,7 @@ public struct PassportReader: Sendable {
             detail: "BAC has not run yet."
         )
 
-        onProgress?(String(localized: "Reading CardAccess...", bundle: .module))
+        onProgress?(String(localized: "Reading passport…", bundle: .module))
         do {
             let rawCardAccess = try await readCardAccess(transport: transport)
             let parsedCardAccess = try CardAccessParser.parse(rawCardAccess)
@@ -87,7 +87,7 @@ public struct PassportReader: Sendable {
         }
 
         // Step 1: SELECT eMRTD application
-        onProgress?(String(localized: "Selecting application...", bundle: .module))
+        onProgress?(String(localized: "Connecting to passport…", bundle: .module))
         NFCLog.debug("SELECT eMRTD application", source: "Passport")
         let selectAPDU = CommandAPDU.selectPassportApplication()
         let selectResponse = try await transport.sendAPDU(selectAPDU)
@@ -99,7 +99,7 @@ public struct PassportReader: Sendable {
         // Step 2: Prefer PACE when EF.CardAccess advertises it, otherwise fall back to BAC.
         var smTransport: SecureMessagingTransport?
         if let paceInfo = cardAccess?.paceInfos.first {
-            onProgress?(String(localized: "Attempting PACE...", bundle: .module))
+            onProgress?(String(localized: "Authenticating…", bundle: .module))
             do {
                 smTransport = try await PACEHandler.performPACE(
                     paceInfo: paceInfo,
@@ -124,7 +124,7 @@ public struct PassportReader: Sendable {
         }
 
         if smTransport == nil {
-            onProgress?(String(localized: "Authenticating with BAC...", bundle: .module))
+            onProgress?(String(localized: "Authenticating…", bundle: .module))
             smTransport = try await BACHandler.performBAC(
                 mrzKey: mrzKey,
                 transport: transport
@@ -161,7 +161,7 @@ public struct PassportReader: Sendable {
         // authoritative index; it is then kept in the model like any other file.
         func readSODIndexIfNeeded(before dgId: DataGroupId) async throws {
             guard session.needsSODIndex(before: dgId) else { return }
-            onProgress?(String(localized: "Reading SOD...", bundle: .module))
+            onProgress?(String(localized: "Reading security data…", bundle: .module))
             try await session.read(.sod) { try await readDataGroup(.sod, transport: smTransport) }
         }
 
@@ -170,7 +170,7 @@ public struct PassportReader: Sendable {
             step += 1
             try await readSODIndexIfNeeded(before: dgId)
             guard session.shouldSelect(dgId) else { continue }
-            onProgress?(String(localized: "Reading \(dgId.name) (\(step)/\(readOrder.count))...", bundle: .module))
+            onProgress?(String(localized: "Reading \(dgId.name) (\(step)/\(readOrder.count))…", bundle: .module))
             try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
         }
 
@@ -182,7 +182,7 @@ public struct PassportReader: Sendable {
            session.secureMessagingEnded == nil
         {
             try Task.checkCancellation()
-            onProgress?(String(localized: "Reading DG15 (Active Auth Key)...", bundle: .module))
+            onProgress?(String(localized: "Reading chip key…", bundle: .module))
             try await session.read(.dg15) { try await readDataGroup(.dg15, transport: smTransport) }
         }
 
@@ -195,7 +195,7 @@ public struct PassportReader: Sendable {
                 activeAuthSkipReason = "Active Authentication was not attempted because secure messaging ended: \(reason)"
             } else {
                 try Task.checkCancellation()
-                onProgress?(String(localized: "Verifying chip authenticity...", bundle: .module))
+                onProgress?(String(localized: "Verifying chip authenticity…", bundle: .module))
                 do {
                     activeAuthResult = try await performActiveAuthentication(
                         publicKey: publicKey,
@@ -233,7 +233,7 @@ public struct PassportReader: Sendable {
             step += 1
             try await readSODIndexIfNeeded(before: dgId)
             guard session.shouldSelect(dgId) else { continue }
-            onProgress?(String(localized: "Reading \(dgId.name) (\(step)/\(readOrder.count))...", bundle: .module))
+            onProgress?(String(localized: "Reading \(dgId.name) (\(step)/\(readOrder.count))…", bundle: .module))
             try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
         }
 
@@ -250,7 +250,7 @@ public struct PassportReader: Sendable {
         let rawDataGroups = session.rawDataGroups
 
         // Step 7: Parse and assemble
-        onProgress?(String(localized: "Processing...", bundle: .module))
+        onProgress?(String(localized: "Processing…", bundle: .module))
         let parsed = assemblePassportModel(
             rawDataGroups: rawDataGroups,
             trustAnchorsDER: trustAnchorsDER,

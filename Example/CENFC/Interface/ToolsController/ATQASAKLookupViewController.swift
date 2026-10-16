@@ -39,10 +39,10 @@ class ATQASAKLookupViewController: StackScrollController {
     override func setupContentViews() {
         super.setupContentViews()
 
-        addSectionHeader(String(localized: "ATQA (2 bytes hex)"))
+        addSectionHeader(String(localized: "ATQA (Hex, 2 Bytes)"))
         stackView.addArrangedSubviewWithMargin(atqaField)
 
-        addSectionHeader(String(localized: "SAK (1 byte hex)"))
+        addSectionHeader(String(localized: "SAK (Hex, 1 Byte)"))
         stackView.addArrangedSubviewWithMargin(sakField)
 
         addSectionFooter(String(localized: "Enter ATQA and SAK values to identify the card type."))
@@ -118,12 +118,12 @@ class ATQASAKLookupViewController: StackScrollController {
         )
         addInfoRow(
             icon: cardType.isOperableOnIOS ? "checkmark.circle" : "xmark.circle",
-            title: String(localized: "Operable on iOS"),
-            description: String(localized: "Whether CoreNFC can perform read/write operations on this chip."),
+            title: String(localized: "Supported on iOS"),
+            description: String(localized: "Whether iOS can read and write this chip."),
             value: cardType.isOperableOnIOS ? String(localized: "Yes") : String(localized: "No"),
             isDestructive: !cardType.isOperableOnIOS
         )
 
-        addSectionFooter(String(localized: "Card identification based on NXP AN10833 ATQA/SAK lookup tables. Some chips share ATQA/SAK and require GET_VERSION for precise identification."))
+        addSectionFooter(String(localized: "Identification uses the NXP AN10833 ATQA/SAK tables. Some chips share the same values, so scan the card to identify it precisely."))
     }
 }

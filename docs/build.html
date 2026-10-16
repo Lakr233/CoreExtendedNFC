@@ -4,11 +4,11 @@
 <main><h1>Build</h1><p class="lede">CoreExtendedNFC is iOS-only. Validate with an iOS-capable toolchain and do not add macOS compatibility shims for CoreNFC.</p>
 <h2 id="requirements">Requirements</h2><table><thead><tr><th>Tool</th><th>Version</th></tr></thead><tbody><tr><td>Swift</td><td>6.2 or newer</td></tr><tr><td>iOS</td><td>15.0 or newer</td></tr><tr><td>Xcode</td><td>iOS SDK with CoreNFC available</td></tr><tr><td>openssl-spm</td><td>3.6.1 or newer, resolved by SwiftPM</td></tr></tbody></table>
 <p><code>Package.swift</code> declares one external dependency, <a href="https://github.com/Lakr233/openssl-spm">openssl-spm</a>, for passport cryptography. The first build needs network access to fetch it.</p>
-<h2 id="formatting">Formatting and lint</h2><p>Use the Swift toolchain’s formatter with the repository configuration. Replace <code>&lt;files&gt;</code> with the changed Swift file paths.</p><pre><code class="language-bash">swift format format --in-place --configuration .swift-format &lt;files&gt;
+<h2 id="formatting">Formatting and Linting</h2><p>Use the Swift toolchain’s formatter with the repository configuration. Replace <code>&lt;files&gt;</code> with the changed Swift file paths.</p><pre><code class="language-bash">swift format format --in-place --configuration .swift-format &lt;files&gt;
 swift format lint --strict --configuration .swift-format &lt;files&gt;</code></pre>
 <h2 id="tests">Tests</h2><pre><code class="language-bash">DESTINATION="$(./Scripts/select-ios-simulator.sh)"
 xcodebuild -scheme CoreExtendedNFC -destination "$DESTINATION" test</code></pre>
-<h2 id="example">Example app</h2><pre><code class="language-bash">xcodebuild -project Example/CENFC.xcodeproj -scheme CENFC -destination 'generic/platform=iOS Simulator' build</code></pre>
+<h2 id="example">Example App</h2><pre><code class="language-bash">xcodebuild -project Example/CENFC.xcodeproj -scheme CENFC -destination 'generic/platform=iOS Simulator' build</code></pre>
 <p>NFC reads require a physical iPhone and card. For Singapore CEPAS, use the <a href="guide/transit.html#singapore">offline test guide</a> and export Logs; passing a simulator build or mock tests does not verify card support.</p>
 <h2 id="pages">GitHub Pages</h2><p><code>.github/workflows/pages.yml</code> publishes the static <code>docs/</code> directory on pushes to <code>main</code>.</p>
 <footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

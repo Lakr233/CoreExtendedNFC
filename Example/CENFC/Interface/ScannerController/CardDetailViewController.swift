@@ -154,7 +154,7 @@ class CardDetailViewController: StackScrollController {
         addInfoRow(
             icon: "square.stack.3d.up",
             title: String(localized: "Card Family"),
-            description: String(localized: "Product family this chip belongs to, determines available commands."),
+            description: String(localized: "The product family of this chip, which determines the available commands."),
             value: String(describing: record.cardInfo.type.family)
         )
         addInfoRow(
@@ -166,14 +166,14 @@ class CardDetailViewController: StackScrollController {
         addInfoRow(
             icon: record.cardInfo.type.isOperableOnIOS ? "checkmark.circle" : "xmark.circle",
             title: String(localized: "Operable on iOS"),
-            description: String(localized: "Whether CoreNFC can perform read/write operations on this chip."),
+            description: String(localized: "Whether this iPhone can read and write this chip."),
             value: record.cardInfo.type.isOperableOnIOS ? String(localized: "Yes") : String(localized: "No"),
             isDestructive: !record.cardInfo.type.isOperableOnIOS
         )
         addInfoRow(
             icon: "calendar",
             title: String(localized: "Scan Date"),
-            description: String(localized: "When this tag was last scanned by the reader."),
+            description: String(localized: "When this card was last scanned."),
             value: dateFormatter.string(from: record.date)
         )
 
@@ -196,7 +196,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "arrow.right.arrow.left",
                 title: String(localized: "ATQA"),
-                description: String(localized: "Answer To Request Type A, encodes anticollision and bit-frame info."),
+                description: String(localized: "Answer to Request, Type A. Encodes anticollision and bit-frame information."),
                 value: atqa.hexDump
             )
         }
@@ -204,7 +204,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "arrow.right.arrow.left",
                 title: String(localized: "SAK"),
-                description: String(localized: "Select Acknowledge byte, indicates ISO 14443-4 compliance and chip family."),
+                description: String(localized: "Select Acknowledge byte. Indicates ISO 14443-4 compliance and chip family."),
                 value: String(format: "0x%02X", sak)
             )
         }
@@ -212,7 +212,7 @@ class CardDetailViewController: StackScrollController {
             addInfoRow(
                 icon: "doc.plaintext",
                 title: String(localized: "ATS FSCI"),
-                description: String(localized: "Frame Size for proximity Coupling device Integer, max frame the card accepts."),
+                description: String(localized: "Frame Size for Proximity Coupling Device Integer. The largest frame the card accepts."),
                 value: "\(String(localized: "\(String(ats.fsci)) (max \(String(ats.maxFrameSize)) bytes)"))"
             )
             if let ta = ats.ta {

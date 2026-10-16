@@ -79,7 +79,7 @@ class TLVParserViewController: StackScrollController {
             }
             addSectionFooter(String(localized: "BER-TLV parser per ITU-T X.690. Constructed tags (bit 6 set) are expanded recursively."))
         } catch {
-            addErrorFooter(String(localized: "Parse error: \(error.localizedDescription)"))
+            addErrorFooter(String(localized: "Unable to parse TLV data: \(error.localizedDescription)"))
         }
     }
 

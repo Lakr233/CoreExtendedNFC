@@ -264,7 +264,7 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
         onCancel: @escaping () -> Void = {}
     ) -> UIAlertController {
         let alert = UIAlertController(
-            title: String(localized: "Delete \(count) Record(s)?"),
+            title: String(localized: "Delete \(count) Records?"),
             message: String(localized: "This action cannot be undone."),
             preferredStyle: .actionSheet
         )

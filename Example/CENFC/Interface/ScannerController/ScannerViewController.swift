@@ -490,7 +490,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     private func promptDuplicateScan(_ record: ScanRecord, existingID: UUID) {
         let alert = UIAlertController(
             title: String(localized: "Card Already Exists"),
-            message: String(localized: "A card with this UID already exists in the history. What would you like to do?"),
+            message: String(localized: "A card with this UID is already in your history. Overwrite it or save it as a new record."),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: String(localized: "Overwrite"), style: .destructive) { [weak self] _ in
@@ -540,7 +540,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     private func promptSaveDump(_ dumpRecord: DumpRecord) {
         let alert = UIAlertController(
             title: String(localized: "Dump Data Detected"),
-            message: String(localized: "This file contains memory dump data (\(dumpRecord.dump.summary.technicalSummary)). Save to Dump store?"),
+            message: String(localized: "This file contains memory dump data (\(dumpRecord.dump.summary.technicalSummary)). Save it to Dump?"),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: String(localized: "Save"), style: .default) { _ in

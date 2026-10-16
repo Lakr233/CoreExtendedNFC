@@ -138,9 +138,9 @@ class RawCommunicationViewController: StackScrollController {
         )
 
         if canVerifyUID {
-            addSectionFooter(String(localized: "Commands will only be sent after verifying the card UID matches."))
+            addSectionFooter(String(localized: "Commands are sent only after the card UID is verified."))
         } else {
-            addSectionFooter(String(localized: "This card uses a random UID, so the card presented cannot be verified. Make sure you present the same card."))
+            addSectionFooter(String(localized: "This card uses a random UID and cannot be verified. Present the same card."))
         }
     }
 
@@ -193,7 +193,7 @@ class RawCommunicationViewController: StackScrollController {
     private var inputHintText: String {
         switch communicationMode {
         case .rawBytes:
-            String(localized: "Enter hex bytes separated by spaces. Example: 30 04 (MiFare READ page 4)")
+            String(localized: "Enter hex bytes separated by spaces. Example: 30 04 (MIFARE READ page 4)")
         case .apdu:
             String(localized: "Enter APDU hex: CLA INS P1 P2 [Lc Data...] [Le]. Example: 00 A4 04 00 07 D2760000850101 00")
         }
@@ -229,14 +229,14 @@ class RawCommunicationViewController: StackScrollController {
             guard commandData.count >= 4 else {
                 presentInfoAlert(
                     title: String(localized: "APDU Too Short"),
-                    message: String(localized: "Need at least CLA INS P1 P2")
+                    message: String(localized: "Enter at least 4 bytes: CLA, INS, P1, and P2.")
                 )
                 return
             }
             guard let parsed = Self.parseAPDU(commandData) else {
                 presentInfoAlert(
                     title: String(localized: "Invalid APDU"),
-                    message: String(localized: "The length byte Lc does not match the number of data bytes. Use CLA INS P1 P2, then optionally Lc and exactly Lc data bytes, then optionally Le. Extended-length APDUs are not supported here.")
+                    message: String(localized: "The Lc byte does not match the number of data bytes. Extended-length APDUs are not supported.")
                 )
                 return
             }
@@ -260,7 +260,7 @@ class RawCommunicationViewController: StackScrollController {
         do {
             let (_, transport) = try await manager.scan(
                 for: pollingTargets,
-                message: String(localized: "Hold your iPhone near the NFC tag")
+                message: String(localized: "Hold your iPhone near the card.")
             )
 
             try Task.checkCancellation()
@@ -269,12 +269,12 @@ class RawCommunicationViewController: StackScrollController {
             guard !canVerifyUID || transport.identifier == cardInfo.uid else {
                 let expected = cardInfo.uid.hexDump
                 let got = transport.identifier.hexDump
-                manager.invalidate(errorMessage: String(localized: "Wrong card detected"))
+                manager.invalidate(errorMessage: String(localized: "This is a different card. Present the original card and try again."))
                 appendLog("ERROR: UID mismatch\n  Expected: \(expected)\n  Got:      \(got)")
                 return
             }
 
-            manager.setAlertMessage(String(localized: "Sending..."))
+            manager.setAlertMessage(String(localized: "Sending…"))
 
             let response: Data
             if let apdu {

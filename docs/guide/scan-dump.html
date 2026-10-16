@@ -18,7 +18,7 @@
   <a href="../research/index.html">Research</a>
 </nav>
 <main>
-<h1>Scan and dump</h1>
+<h1>Scan and Dump</h1>
 <p class="lede">Use the top-level API when the app owns the NFC session. Keep the returned session alive while sending commands through the transport.</p>
 <h2 id="scan">Scan</h2>
 <pre><code class="language-swift">do {
@@ -30,7 +30,7 @@
 }
 </code></pre>
 <p>When the user dismisses the NFC sheet, <code>scan()</code> throws <code>NFCError.userCanceled</code>, and later failures on that session's transport are reported the same way. Only one scan may be pending per <code>NFCSessionManager</code>; another call throws <code>NFCError.scanInProgress</code>. See <a href="../api/errors.html">Errors</a>.</p>
-<h2 id="identification-refinement">Identification refinement</h2>
+<h2 id="identification-refinement">Identification Refinement</h2>
 <p><code>scan()</code> first maps the CoreNFC tag family into a coarse <code>CardType</code>, then refines that result with family-specific probes where iOS exposes safe commands.</p>
 <p>For MIFARE Type 2 tags, CoreNFC may only expose an unknown MIFARE family. If the coarse result looks like MIFARE Classic, CoreExtendedNFC validates the Type 2 manufacturer pages with <code>READ 0x30 0x00</code> and the UID BCC bytes before retrying the Ultralight / NTAG <code>GET_VERSION</code> path. Real MIFARE Classic cards remain identification-only because iOS does not expose Crypto1 authentication.</p>
 <p>Other refinements: Ultralight C is recognized by a 16-byte answer to <code>READ 0x2B</code> (no authentication is attempted; an Ultralight C with page <code>2B</code> read-protected stays generic Ultralight). NTAG210 and NTAG212 are recognized from GET_VERSION. FeliCa system code <code>88B4</code> is split into Lite and Lite-S by reading block <code>0x90</code>, which only Lite-S has. ATQA <code>0304</code> with SAK <code>20</code> is DESFire with a random UID. Other SAK <code>20</code>, <code>28</code> and <code>38</code> cards start as generic ISO 7816 (<code>.smartMX</code>) and are probed for DESFire, Type 4 and eMRTD.</p>

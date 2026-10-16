@@ -207,13 +207,13 @@ struct PassportReaderSessionTests {
 
         // The run's language follows the simulator (en or zh-Hans).
         let delivered = messages.withLock { $0 }
-        #expect(delivered.contains("Authenticating with BAC...") || delivered.contains("正在使用 BAC 认证…"))
-        #expect(delivered.contains("Reading DG1 (MRZ) (1/1)...") || delivered.contains("正在读取 DG1 (MRZ)（1/1）…"))
+        #expect(delivered.contains("Authenticating…") || delivered.contains("正在认证…"))
+        #expect(delivered.contains("Reading DG1 (MRZ) (1/1)…") || delivered.contains("正在读取 DG1 (MRZ)（1/1）…"))
 
         let zhBundle = try #require(
             Bundle.module.path(forResource: "zh-Hans", ofType: "lproj").flatMap(Bundle.init(path:))
         )
-        let format = zhBundle.localizedString(forKey: "Reading %@ (%lld/%lld)...", value: nil, table: nil)
+        let format = zhBundle.localizedString(forKey: "Reading %@ (%lld/%lld)…", value: nil, table: nil)
         #expect(String(format: format, "DG1", 1, 1) == "正在读取 DG1（1/1）…")
     }
 

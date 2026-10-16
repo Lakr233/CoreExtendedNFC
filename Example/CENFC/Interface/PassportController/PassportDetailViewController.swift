@@ -147,7 +147,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
             let fileURL = try PassportDocument.exportToFile(record)
             presentExportSheet(for: [fileURL], barButtonItem: navigationItem.rightBarButtonItem)
         } catch {
-            presentErrorAlert(for: error, title: String(localized: "Export Error"))
+            presentErrorAlert(for: error, title: String(localized: "Unable to Export Passport"))
         }
     }
 
@@ -192,7 +192,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
             addInfoRow(
                 icon: "photo",
                 title: String(localized: "Open Photo Preview"),
-                description: String(localized: "The portrait is available, but inline decoding is not supported on this device. Tap to open the extracted image preview."),
+                description: String(localized: "This photo cannot be shown here. Tap to open a preview."),
                 value: previewPayload.sourceFormatName,
                 extraMenuActions: [
                     UIAction(
@@ -245,7 +245,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         addInfoRow(
             icon: "calendar",
             title: String(localized: "Date of Birth"),
-            description: String(localized: "Holder's date of birth in YYMMDD format from the MRZ."),
+            description: String(localized: "Holder's date of birth from the MRZ."),
             value: record.formattedDOB
         )
         addInfoRow(
@@ -313,7 +313,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         }
 
         if record.isImported {
-            addSectionFooter(String(localized: "This record was imported from a file. Passive Authentication is re-run on this device against the file's data groups; without a trusted CSCA certificate it can at best confirm the hashes and the SOD signature. A stored Active Authentication result is re-judged against that result; the challenge itself needs the chip and is not repeated. BAC, PACE and Chip Authentication need the physical chip, so they are not re-verified. Personal data is parsed from the file's data groups. Read the chip again to verify it fully."))
+            addSectionFooter(String(localized: "This record was imported from a file. Passive Authentication is checked again on this device; checks that need the chip are not repeated. Read the chip again to verify it fully."))
         } else {
             addSectionFooter(String(localized: "ICAO 9303 security mechanism results. BAC authenticates the reader using MRZ data. Passive Authentication verifies data group hashes against the SOD. Active Authentication proves the chip is genuine."))
         }

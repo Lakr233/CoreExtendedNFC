@@ -139,7 +139,7 @@ class TransitBalanceViewController: StackScrollController {
                 let (info, transport) = try await manager.scan(for: [.all])
                 AppLogStore.shared.info("Detected tag; initial AID=\(info.initialSelectedAID ?? "none")", source: "Transit")
                 // Transit detection must run before refinement changes the selected application.
-                manager.setAlertMessage(String(localized: "Reading..."))
+                manager.setAlertMessage(String(localized: "Reading Card…"))
                 let balance = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
                 AppLogStore.shared.info(Self.readSucceededLogMessage(for: balance), source: "Transit")
                 manager.setAlertMessage(String(localized: "Done"))
@@ -269,7 +269,7 @@ class TransitBalanceViewController: StackScrollController {
                 )
             }
 
-            addSectionFooter(String(localized: "\(balance.transactions.count) transaction(s)"))
+            addSectionFooter(String(localized: "Transactions: \(balance.transactions.count)"))
         }
     }
 

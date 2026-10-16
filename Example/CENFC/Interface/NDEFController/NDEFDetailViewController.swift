@@ -45,7 +45,7 @@ class NDEFEditorViewController: StackScrollController {
             target: self,
             action: #selector(writeToCard)
         )
-        writeButton.accessibilityLabel = String(localized: "Write to Tag")
+        writeButton.accessibilityLabel = String(localized: "Write to Card")
         navigationItem.rightBarButtonItem = writeButton
     }
 
@@ -103,7 +103,7 @@ class NDEFEditorViewController: StackScrollController {
     @objc private func writeToCard() {
         guard let message = currentMessage() else {
             let alert = UIAlertController(
-                title: String(localized: "Cannot Write"),
+                title: String(localized: "Unable to Write Record"),
                 message: String(localized: "Fill in the required fields first."),
                 preferredStyle: .alert
             )
@@ -287,7 +287,7 @@ class NDEFURIEditorViewController: NDEFEditorViewController {
     }
 
     private static func menuTitle(for entry: (code: UInt8, prefix: String)) -> String {
-        entry.code == 0x00 ? String(localized: "(No prefix)") : entry.prefix
+        entry.code == 0x00 ? String(localized: "No Prefix") : entry.prefix
     }
 
     private func updatePrefixButton(_ button: UIButton) {
@@ -305,7 +305,7 @@ class NDEFURIEditorViewController: NDEFEditorViewController {
 
         let selected = Self.uriPrefixes[selectedPrefixIndex]
         var config = button.configuration ?? .gray()
-        config.title = selected.code == 0x00 ? String(localized: "(none)") : selected.prefix
+        config.title = selected.code == 0x00 ? String(localized: "No Prefix") : selected.prefix
         button.configuration = config
     }
 
@@ -412,7 +412,7 @@ class NDEFMIMEEditorViewController: NDEFEditorViewController {
 
         addSectionFooter(String(localized: "NFC Forum MIME Media Record. Carries a MIME content type and raw payload data."))
         if payloadText.isHex {
-            addSectionFooter(String(localized: "The payload is binary and is shown as hex bytes. Edit it as hex."))
+            addSectionFooter(String(localized: "Binary data is shown and edited as hexadecimal bytes."))
         }
     }
 
@@ -466,7 +466,7 @@ class NDEFExternalEditorViewController: NDEFEditorViewController {
 
         addSectionFooter(String(localized: "NFC Forum External Type Record. Uses a reverse-domain type identifier."))
         if payloadText.isHex {
-            addSectionFooter(String(localized: "The payload is binary and is shown as hex bytes. Edit it as hex."))
+            addSectionFooter(String(localized: "Binary data is shown and edited as hexadecimal bytes."))
         }
     }
 

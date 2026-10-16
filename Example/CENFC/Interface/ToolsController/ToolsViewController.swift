@@ -15,7 +15,7 @@ class ToolsViewController: StackScrollController {
         ToolItem(
             icon: "arrow.left.arrow.right",
             title: String(localized: "Hex Converter"),
-            subtitle: String(localized: "Convert between hex, decimal, binary, ASCII"),
+            subtitle: String(localized: "Convert between hex, decimal, binary, and ASCII"),
             viewController: { HexConverterViewController() }
         ),
         ToolItem(
@@ -99,7 +99,7 @@ class ToolsViewController: StackScrollController {
     }
 
     private func openPrivacyPolicy() {
-        var text = String(localized: "Resource not found, please check your installation.")
+        var text = String(localized: "Unable to load this document. Reinstall the app and try again.")
         if let url = Bundle.main.url(forResource: "PrivacyPolicy", withExtension: "txt"),
            let content = try? String(contentsOf: url)
         { text = content }
@@ -108,7 +108,7 @@ class ToolsViewController: StackScrollController {
     }
 
     private func openOpenSourceLicenses() {
-        var text = String(localized: "Resource not found, please check your installation.")
+        var text = String(localized: "Unable to load this document. Reinstall the app and try again.")
         if let url = Bundle.main.url(forResource: "OpenSourceLicenses", withExtension: "md"),
            let content = try? String(contentsOf: url)
         { text = content }
@@ -146,7 +146,7 @@ class ToolsViewController: StackScrollController {
         }
 
         let messageLabel = UILabel().then {
-            $0.text = String(localized: "All features in this section are advanced tools that may not have been fully validated. Results are provided as-is — please verify independently before relying on them.")
+            $0.text = String(localized: "These advanced tools may not be fully validated. Verify results before relying on them.")
             $0.font = .preferredFont(forTextStyle: .footnote)
             $0.textColor = .secondaryLabel
             $0.numberOfLines = 0

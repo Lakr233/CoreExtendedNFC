@@ -82,7 +82,7 @@ extension WelcomePageViewController.Configuration {
                 .init(
                     icon: UIImage(systemName: "checkmark.shield.fill")!,
                     title: String(localized: "Security Verification"),
-                    detail: String(localized: "Passive and Active Authentication verify data integrity and chip genuineness.")
+                    detail: String(localized: "Passive and Active Authentication verify data integrity and chip authenticity.")
                 ),
 
                 // MARK: - Tools

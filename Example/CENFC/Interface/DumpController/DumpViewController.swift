@@ -344,12 +344,12 @@ class DumpViewController: ObjectListViewController<DumpStore>,
 
             guard refinedInfo.type.isOperableOnIOS else {
                 let message = String(localized: "This card type cannot be dumped on iOS. Only identification is possible.")
-                manager.invalidate(errorMessage: "\(refinedInfo.type.description) — \(String(localized: "not dumpable on iOS"))")
+                manager.invalidate(errorMessage: "\(refinedInfo.type.description) — \(String(localized: "cannot be dumped on iOS"))")
                 presentInfoAlert(title: refinedInfo.type.description, message: message)
                 return
             }
 
-            manager.setAlertMessage(String(localized: "Reading..."))
+            manager.setAlertMessage(String(localized: "Reading…"))
             let dump = try await CoreExtendedNFC.dumpCard(info: refinedInfo, transport: transport)
 
             let record = DumpRecord(from: dump)
@@ -428,7 +428,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     private func promptSaveScan(_ scanRecord: ScanRecord) {
         let alert = UIAlertController(
             title: String(localized: "Save to Scanner?"),
-            message: String(localized: "Save card identification data (\(scanRecord.cardInfo.type.description)) to the Scanner store?"),
+            message: String(localized: "Save the \(scanRecord.cardInfo.type.description) card information to Scanner?"),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: String(localized: "Save"), style: .default) { [weak self] _ in

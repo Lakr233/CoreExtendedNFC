@@ -31,26 +31,6 @@
         }
       }
     },
-    "Attempting PACE..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在尝试 PACE…"
-          }
-        }
-      }
-    },
-    "Authenticating with BAC..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在使用 BAC 认证…"
-          }
-        }
-      }
-    },
     "Authentication with the tag failed." : {
       "localizations" : {
         "zh-Hans" : {
@@ -176,7 +156,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将 iPhone 靠近您的护照"
+            "value" : "将 iPhone 靠近你的护照"
           }
         }
       }
@@ -241,18 +221,14 @@
         }
       }
     },
-    "Processing..." : {
+    "Reading %@ (%lld/%lld)…" : {
       "localizations" : {
-        "zh-Hans" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在处理…"
+            "value" : "Reading %@ (%lld/%lld)…"
           }
-        }
-      }
-    },
-    "Reading %@ (%lld/%lld)..." : {
-      "localizations" : {
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -261,42 +237,18 @@
         }
       }
     },
-    "Reading CardAccess..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在读取 CardAccess…"
-          }
-        }
-      }
-    },
-    "Reading DG15 (Active Auth Key)..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在读取 DG15（主动认证密钥）…"
-          }
-        }
-      }
-    },
-    "Reading SOD..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在读取 SOD…"
-          }
-        }
-      }
-    },
     "Reading..." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading…"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在读取..."
+            "value" : "正在读取…"
           }
         }
       }
@@ -307,16 +259,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安全报文失败：%@"
-          }
-        }
-      }
-    },
-    "Selecting application..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在选择应用…"
           }
         }
       }
@@ -511,16 +453,6 @@
         }
       }
     },
-    "Verifying chip authenticity..." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在验证芯片真实性…"
-          }
-        }
-      }
-    },
     "Writing page %lld failed." : {
       "localizations" : {
         "zh-Hans" : {
@@ -577,6 +509,118 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用户认证用电子证书 PIN"
+          }
+        }
+      }
+    },
+    "Reading security data…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading security data…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取安全数据…"
+          }
+        }
+      }
+    },
+    "Processing…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在处理…"
+          }
+        }
+      }
+    },
+    "Verifying chip authenticity…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifying chip authenticity…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在验证芯片真实性…"
+          }
+        }
+      }
+    },
+    "Authenticating…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Authenticating…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在认证…"
+          }
+        }
+      }
+    },
+    "Reading passport…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading passport…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取护照…"
+          }
+        }
+      }
+    },
+    "Reading chip key…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading chip key…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取芯片密钥…"
+          }
+        }
+      }
+    },
+    "Connecting to passport…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting to passport…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在连接护照…"
           }
         }
       }

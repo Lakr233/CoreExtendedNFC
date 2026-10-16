@@ -372,7 +372,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             manager.setAlertMessage(String(localized: "Reading NDEF…"))
 
             let message = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
-            manager.setAlertMessage(String(localized: "\(message.records.count) record(s)"))
+            manager.setAlertMessage(String(localized: "Read \(message.records.count) record(s)."))
             manager.invalidate()
 
             var imported = 0
@@ -417,7 +417,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         case .empty:
             String(localized: "Empty Record")
         case .unknown:
-            String(localized: "Unknown NDEF")
+            String(localized: "Unknown Record")
         }
     }
 

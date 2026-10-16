@@ -45,7 +45,7 @@ targets: [
 ]
 </code></pre>
 
-<h2 id="quick-start">Quick start</h2>
+<h2 id="quick-start">Quick Start</h2>
 <pre><code class="language-swift">import CoreExtendedNFC
 
 let (card, transport, session) = try await CoreExtendedNFC.scan()
@@ -62,7 +62,7 @@ let passport = try await CoreExtendedNFC.readPassport(
 </code></pre>
 <p>The package depends on <a href="https://github.com/Lakr233/openssl-spm">openssl-spm</a> for passport cryptography; SwiftPM resolves it automatically. Failures are thrown as <code>NFCError</code>; see <a href="api/errors.html">Errors</a>.</p>
 
-<h2 id="supported-cards">Supported cards</h2>
+<h2 id="supported-cards">Supported Cards</h2>
 <table>
 <thead><tr><th>Family</th><th>Identify</th><th>Read</th><th>Write</th><th>Dump</th></tr></thead>
 <tbody>
@@ -79,11 +79,11 @@ let passport = try await CoreExtendedNFC.readPassport(
 </table>
 <p>MIFARE Classic is identification-only because iOS does not expose Crypto1 parity-bit authentication. DESFire has no write API. ISO 15693 tags with more than 256 blocks are read with extended commands; tags that reject them are dumped up to block 255 and marked partially readable.</p>
 
-<h2 id="where-next">Where next</h2>
+<h2 id="where-next">Next Steps</h2>
 <ul class="hub-list">
 <li><a href="guide/index.html">Guide</a><span class="summary">Task-oriented scanning, dump, NDEF, passport, transit, My Number, and Info.plist setup notes.</span></li>
-<li><a href="api/index.html">API reference</a><span class="summary">Public Swift surface grouped by top-level API, card commands, models, and protocol helpers.</span></li>
-<li><a href="research/index.html">Research notes</a><span class="summary">Real-card validation, iOS polling identifiers, transit-card findings, and My Number data layout.</span></li>
+<li><a href="api/index.html">API Reference</a><span class="summary">Public Swift surface grouped by top-level API, card commands, models, and protocol helpers.</span></li>
+<li><a href="research/index.html">Research Notes</a><span class="summary">Real-card validation, iOS polling identifiers, transit-card findings, and My Number data layout.</span></li>
 </ul>
 
 <footer>

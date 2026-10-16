@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Passport</title><link rel="stylesheet" href="../styles.css"></head>
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="index.html" aria-current="page">Guide</a><a href="../api/index.html">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="../research/index.html">Research</a></nav>
 <main><h1>Passport / eMRTD</h1><p class="lede">Passport reading starts from the MRZ-derived key, establishes Secure Messaging with PACE or BAC, and reads LDS data groups from the eMRTD applet.</p>
-<h2 id="read">Read data groups</h2><pre><code class="language-swift">// ICAO 9303 Part 11 Appendix D example: "L898902C&lt;369080619406236"
+<h2 id="read">Read Data Groups</h2><pre><code class="language-swift">// ICAO 9303 Part 11 Appendix D example: "L898902C&lt;369080619406236"
 let mrzKey = MRZKeyGenerator.computeMRZKey(
     documentNumber: "L898902C",
     dateOfBirth: "690806",
@@ -16,7 +16,7 @@ let passport = try await CoreExtendedNFC.readPassport(
     trustAnchorsDER: cscaCertificates,          // DER CSCA certificates from your trust list
     onProgress: { message in print(message) }   // localized progress text
 )</code></pre>
-<h2 id="flow">Read flow</h2>
+<h2 id="flow">Read Flow</h2>
 <ol>
 <li>EF.CardAccess is read. When it advertises PACE, PACE runs first. If PACE fails, the reader falls back to BAC; a lost tag or cancelled task ends the read.</li>
 <li>EF.COM and the SOD are read first. A data group is selected when either lists it, and only the SOD hash list can rule one out. When COM is requested without the SOD and COM omits a requested group, the SOD is read as the index too.</li>
@@ -24,7 +24,7 @@ let passport = try await CoreExtendedNFC.readPassport(
 <li>When secure messaging ends, the remaining groups are marked <code>notRead</code> and everything read so far is kept.</li>
 </ol>
 <p><code>readPassport</code> throws when nothing could be read, or when DG1 was requested but not read; DG1 is mandatory. Otherwise it returns a partial model. <code>passport.dataGroupReadStatus</code> explains each group: <code>read</code>, <code>notPresent</code>, <code>unavailable</code> (absent or protected), <code>failed</code>, or <code>notRead</code>. File sizes are capped at 10 MB for DG2-DG7 and 64 KB for the rest, so a corrupt length field cannot trigger huge reads. When the user dismisses the sheet, the error is <code>NFCError.userCanceled</code>; check <code>error.isNFCCancellation</code> to stay silent.</p>
-<h2 id="security">Security report</h2>
+<h2 id="security">Security Report</h2>
 <p><code>passport.securityReport</code> has one stage each for CardAccess, PACE, BAC, Chip Authentication, Passive Authentication and Active Authentication.</p>
 <ul>
 <li><strong>Passive Authentication</strong> is <code>succeeded</code> only when the hashes match, the SOD signature verifies, and its signer chains to a certificate in <code>trustAnchorsDER</code>. Without trust anchors, matching hashes and a valid signature are <code>fallback</code>. A bad signature, broken chain or hash mismatch is <code>failed</code>.</li>
@@ -33,5 +33,5 @@ let passport = try await CoreExtendedNFC.readPassport(
 <p>Re-check a saved model offline, for example after loading new CSCA certificates:</p>
 <pre><code class="language-swift">let result = passport.reverifyPassiveAuthentication(trustAnchorsDER: cscas)
 let updated = passport.reverifyingSecurity(trustAnchorsDER: cscas)   // PA and AA re-judged</code></pre>
-<h2 id="scope">Current scope</h2><p>PACE (ECDH Generic Mapping on the NIST curves P-256, P-384 and P-521, MRZ password) is implemented with OpenSSL. It rejects a chip mapping or ephemeral public key that reflects the terminal's own key. Other PACE mappings and curves throw <code>unsupportedOperation</code>, and the reader falls back to BAC. BAC, Secure Messaging, data-group parsing, Passive Authentication and Active Authentication are implemented. Chip Authentication is read from DG14 but not performed, because its ECDH key agreement is not implemented; the stage reports <code>notSupported</code> when advertised.</p>
-<nav class="pager"><a class="prev" href="ndef.html">NDEF</a><a class="next" href="transit.html">Transit cards</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>
+<h2 id="scope">Current Scope</h2><p>PACE (ECDH Generic Mapping on the NIST curves P-256, P-384 and P-521, MRZ password) is implemented with OpenSSL. It rejects a chip mapping or ephemeral public key that reflects the terminal's own key. Other PACE mappings and curves throw <code>unsupportedOperation</code>, and the reader falls back to BAC. BAC, Secure Messaging, data-group parsing, Passive Authentication and Active Authentication are implemented. Chip Authentication is read from DG14 but not performed, because its ECDH key agreement is not implemented; the stage reports <code>notSupported</code> when advertised.</p>
+<nav class="pager"><a class="prev" href="ndef.html">NDEF</a><a class="next" href="transit.html">Transit Cards</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

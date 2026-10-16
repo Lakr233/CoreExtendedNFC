@@ -45,7 +45,7 @@ final class EmptyStateView: UIView {
 
     static func scan() -> EmptyStateView {
         EmptyStateView(
-            message: String(localized: "Tap Scan to add · long press for options · two-finger swipe to multi-select")
+            message: String(localized: "Tap Scan to add a card. Touch and hold an item for options, or swipe with two fingers to select several.")
         )
     }
 }

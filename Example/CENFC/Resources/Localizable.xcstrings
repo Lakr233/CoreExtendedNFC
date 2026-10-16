@@ -316,7 +316,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所有数据留在您的设备上。无网络、无云端、无追踪。"
+            "value" : "所有数据都保留在你的设备上。无网络、无云端、无追踪。"
           }
         }
       }
@@ -1276,7 +1276,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已复制"
+            "value" : "已拷贝"
           }
         }
       }
@@ -1292,7 +1292,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制"
+            "value" : "拷贝"
           }
         }
       }
@@ -1308,7 +1308,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制全部信息"
+            "value" : "拷贝全部信息"
           }
         }
       }
@@ -1324,7 +1324,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制证件号码"
+            "value" : "拷贝证件号码"
           }
         }
       }
@@ -1340,7 +1340,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制十六进制转储"
+            "value" : "拷贝十六进制转储"
           }
         }
       }
@@ -1356,7 +1356,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制 UID"
+            "value" : "拷贝 UID"
           }
         }
       }
@@ -2572,7 +2572,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将 iPhone 靠近您的护照"
+            "value" : "将 iPhone 靠近你的护照"
           }
         }
       }
@@ -3393,22 +3393,6 @@
         }
       }
     },
-    "Loaded from %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loaded from %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已从 %@ 加载"
-          }
-        }
-      }
-    },
     "Log" : {
       "localizations" : {
         "en" : {
@@ -3709,22 +3693,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "NDEF 已写入 %@"
-          }
-        }
-      }
-    },
-    "Need at least CLA INS P1 P2" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Need at least CLA INS P1 P2"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "至少需要 CLA INS P1 P2 四个字节"
           }
         }
       }
@@ -5089,22 +5057,6 @@
         }
       }
     },
-    "Reading..." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reading..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在读取..."
-          }
-        }
-      }
-    },
     "Reading…" : {
       "localizations" : {
         "en" : {
@@ -5165,22 +5117,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刷新"
-          }
-        }
-      }
-    },
-    "Resource not found, please check your installation." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Resource not found, please check your installation."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到资源，请检查安装。"
           }
         }
       }
@@ -5356,7 +5292,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存"
+            "value" : "存储"
           }
         }
       }
@@ -5377,22 +5313,6 @@
         }
       }
     },
-    "Save card identification data (%@) to the Scanner store?" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save card identification data (%@) to the Scanner store?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将卡片识别数据（%@）保存到扫描记录中？"
-          }
-        }
-      }
-    },
     "Save to Scanner?" : {
       "localizations" : {
         "en" : {
@@ -5404,7 +5324,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存到扫描记录？"
+            "value" : "存储到扫描记录？"
           }
         }
       }
@@ -5558,13 +5478,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Search logs..."
+            "value" : "Search logs"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索日志…"
+            "value" : "搜索日志"
           }
         }
       }
@@ -5677,22 +5597,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "发送"
-          }
-        }
-      }
-    },
-    "Sending..." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sending..."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发送中…"
           }
         }
       }
@@ -6044,7 +5948,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击分享按钮导出所有格式。"
+            "value" : "轻点分享按钮以导出所有格式。"
           }
         }
       }
@@ -6060,7 +5964,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击分享按钮导出完整护照记录。"
+            "value" : "轻点分享按钮以导出完整护照记录。"
           }
         }
       }
@@ -6349,22 +6253,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此卡片类型无法在 iOS 上转储，仅支持识别。"
-          }
-        }
-      }
-    },
-    "This file contains memory dump data (%@). Save to Dump store?" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This file contains memory dump data (%@). Save to Dump store?"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此文件包含内存转储数据（%@）。保存到转储记录？"
           }
         }
       }
@@ -7532,7 +7420,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "复制日志"
+            "value" : "拷贝日志"
           }
         }
       }
@@ -7692,7 +7580,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已保存一条证件号码相同的 %@ 的记录。替换将丢弃已保存的记录，包括读取芯片时得到的安全检查结果。"
+            "value" : "已存储一条证件号码相同的 %@ 的记录。替换将丢弃已存储的记录，包括读取芯片时得到的安全检查结果。"
           }
         }
       }
@@ -8076,7 +7964,855 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已保存这张 %@ 卡片的记录。替换将丢弃已保存的记录。"
+            "value" : "已存储这张 %@ 卡片的记录。替换将丢弃已存储的记录。"
+          }
+        }
+      }
+    },
+    "Sending…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sending…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在发送…"
+          }
+        }
+      }
+    },
+    "Search logs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search logs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索日志"
+          }
+        }
+      }
+    },
+    "cannot be dumped on iOS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cannot be dumped on iOS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在 iOS 上转储"
+          }
+        }
+      }
+    },
+    "Save the %@ card information to Scanner?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save the %@ card information to Scanner?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要将 %@ 卡片信息存储到“扫描”吗？"
+          }
+        }
+      }
+    },
+    "Tap Scan to add a card. Touch and hold an item for options, or swipe with two fingers to select several." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap Scan to add a card. Touch and hold an item for options, or swipe with two fingers to select several."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点“扫描”添加卡片。按住某一项可查看选项，用两指滑动可选择多项。"
+          }
+        }
+      }
+    },
+    "No Prefix" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Prefix"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无前缀"
+          }
+        }
+      }
+    },
+    "Unknown Record" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown Record"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知记录"
+          }
+        }
+      }
+    },
+    "Unable to Write Record" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Write Record"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法写入记录"
+          }
+        }
+      }
+    },
+    "Read %lld record(s)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read %lld record(s)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已读取 %lld 条记录。"
+          }
+        }
+      }
+    },
+    "Binary data is shown and edited as hexadecimal bytes." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Binary data is shown and edited as hexadecimal bytes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "二进制数据以十六进制字节显示和编辑。"
+          }
+        }
+      }
+    },
+    "This record was imported from a file. Passive Authentication is checked again on this device; checks that need the chip are not repeated. Read the chip again to verify it fully." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This record was imported from a file. Passive Authentication is checked again on this device; checks that need the chip are not repeated. Read the chip again to verify it fully."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此记录从文件导入。被动认证已在本机重新校验；需要芯片参与的检查不会重复。重新读取芯片即可完整验证。"
+          }
+        }
+      }
+    },
+    "Delete %lld Records?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete %lld Records?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要删除 %lld 条记录吗？"
+          }
+        }
+      }
+    },
+    "Holder's date of birth from the MRZ." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Holder's date of birth from the MRZ."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MRZ 中的持证人出生日期。"
+          }
+        }
+      }
+    },
+    "Unable to Read Passport" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Read Passport"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取护照"
+          }
+        }
+      }
+    },
+    "Unable to Export Passport" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to Export Passport"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导出护照"
+          }
+        }
+      }
+    },
+    "Enter the document number, date of birth, and date of expiry from the machine-readable zone of your passport. They are used to unlock the chip." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the document number, date of birth, and date of expiry from the machine-readable zone of your passport. They are used to unlock the chip."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入护照机读区（MRZ）中的证件号码、出生日期和有效期，用于解锁芯片。"
+          }
+        }
+      }
+    },
+    "This photo cannot be shown here. Tap to open a preview." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This photo cannot be shown here. Tap to open a preview."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此照片无法在这里显示。轻点可打开预览。"
+          }
+        }
+      }
+    },
+    "Enter at least 4 bytes: CLA, INS, P1, and P2." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter at least 4 bytes: CLA, INS, P1, and P2."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "至少输入 4 个字节：CLA、INS、P1 和 P2。"
+          }
+        }
+      }
+    },
+    "The Lc byte does not match the number of data bytes. Extended-length APDUs are not supported." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Lc byte does not match the number of data bytes. Extended-length APDUs are not supported."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lc 字节与数据字节数不符。不支持扩展长度 APDU。"
+          }
+        }
+      }
+    },
+    "This is a different card. Present the original card and try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This is a different card. Present the original card and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这是另一张卡片。请出示原来的卡片后重试。"
+          }
+        }
+      }
+    },
+    "This card uses a random UID and cannot be verified. Present the same card." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This card uses a random UID and cannot be verified. Present the same card."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此卡片使用随机 UID，无法验证。请出示同一张卡片。"
+          }
+        }
+      }
+    },
+    "Commands are sent only after the card UID is verified." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commands are sent only after the card UID is verified."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在卡片 UID 验证通过后才会发送指令。"
+          }
+        }
+      }
+    },
+    "Hold your iPhone near the card." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold your iPhone near the card."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 iPhone 靠近卡片。"
+          }
+        }
+      }
+    },
+    "Enter hex bytes separated by spaces. Example: 30 04 (MIFARE READ page 4)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter hex bytes separated by spaces. Example: 30 04 (MIFARE READ page 4)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入以空格分隔的十六进制字节。例如：30 04（MIFARE READ 第 4 页）"
+          }
+        }
+      }
+    },
+    "This file contains memory dump data (%@). Save it to Dump?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file contains memory dump data (%@). Save it to Dump?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件包含内存转储数据（%@）。要存储到“转储”吗？"
+          }
+        }
+      }
+    },
+    "A card with this UID is already in your history. Overwrite it or save it as a new record." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A card with this UID is already in your history. Overwrite it or save it as a new record."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历史记录中已有相同 UID 的卡片。可以覆盖它，或另存为新记录。"
+          }
+        }
+      }
+    },
+    "Whether this iPhone can read and write this chip." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whether this iPhone can read and write this chip."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 能否读写这枚芯片。"
+          }
+        }
+      }
+    },
+    "Frame Size for Proximity Coupling Device Integer. The largest frame the card accepts." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frame Size for Proximity Coupling Device Integer. The largest frame the card accepts."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "近耦合设备帧长度整数（FSDI）。卡片可接受的最大帧长度。"
+          }
+        }
+      }
+    },
+    "The product family of this chip, which determines the available commands." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The product family of this chip, which determines the available commands."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此芯片所属的产品系列，决定了可用的指令。"
+          }
+        }
+      }
+    },
+    "Answer to Request, Type A. Encodes anticollision and bit-frame information." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answer to Request, Type A. Encodes anticollision and bit-frame information."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A 型请求应答（ATQA）。编码防冲突和位帧信息。"
+          }
+        }
+      }
+    },
+    "Select Acknowledge byte. Indicates ISO 14443-4 compliance and chip family." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select Acknowledge byte. Indicates ISO 14443-4 compliance and chip family."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择确认字节（SAK）。表示是否符合 ISO 14443-4 以及芯片系列。"
+          }
+        }
+      }
+    },
+    "When this card was last scanned." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When this card was last scanned."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此卡片上次扫描的时间。"
+          }
+        }
+      }
+    },
+    "Unable to load this document. Reinstall the app and try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to load this document. Reinstall the app and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法载入此文档。请重新安装 App 后重试。"
+          }
+        }
+      }
+    },
+    "These advanced tools may not be fully validated. Verify results before relying on them." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These advanced tools may not be fully validated. Verify results before relying on them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些高级工具可能未经充分验证。请在依赖结果前自行核实。"
+          }
+        }
+      }
+    },
+    "Convert between hex, decimal, binary, and ASCII" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convert between hex, decimal, binary, and ASCII"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在十六进制、十进制、二进制和 ASCII 之间转换"
+          }
+        }
+      }
+    },
+    "Reading Card…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading Card…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取卡片…"
+          }
+        }
+      }
+    },
+    "Identification uses the NXP AN10833 ATQA/SAK tables. Some chips share the same values, so scan the card to identify it precisely." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identification uses the NXP AN10833 ATQA/SAK tables. Some chips share the same values, so scan the card to identify it precisely."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别依据 NXP AN10833 的 ATQA/SAK 表。部分芯片的值相同，如需精确识别请扫描卡片。"
+          }
+        }
+      }
+    },
+    "Whether iOS can read and write this chip." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whether iOS can read and write this chip."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 能否读写这枚芯片。"
+          }
+        }
+      }
+    },
+    "Supported on iOS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supported on iOS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 支持"
+          }
+        }
+      }
+    },
+    "Unable to parse TLV data: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to parse TLV data: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法解析 TLV 数据：%@"
+          }
+        }
+      }
+    },
+    "Transactions: %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transactions: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交易：%lld 笔"
+          }
+        }
+      }
+    },
+    "Invalid access bits. Check bytes 6-8 and try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid access bits. Check bytes 6-8 and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "访问位无效。请检查第 6–8 字节后重试。"
+          }
+        }
+      }
+    },
+    "Read/Write with Key B, Read with Key A or B" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read/Write with Key B, Read with Key A or B"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 B 可读写，密钥 A 或 B 可读"
+          }
+        }
+      }
+    },
+    "Read/Write with Key B (decrement with Key A or B)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read/Write with Key B (decrement with Key A or B)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 B 可读写（密钥 A 或 B 可减值）"
+          }
+        }
+      }
+    },
+    "Key A: write A or B. Access: read A or B, write never. Key B: read/write A or B" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key A: write A or B. Access: read A or B, write never. Key B: read/write A or B"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：A 或 B 可写。访问位：A 或 B 可读，不可写。密钥 B：A 或 B 可读写"
+          }
+        }
+      }
+    },
+    "Key A: write never. Access: read A or B, write never. Key B: read/write never" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key A: write never. Access: read A or B, write never. Key B: read/write never"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：不可写。访问位：A 或 B 可读，不可写。密钥 B：不可读写"
+          }
+        }
+      }
+    },
+    "Key A: write B. Access: read A or B, write B. Key B: read never, write B" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key A: write B. Access: read A or B, write B. Key B: read never, write B"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：B 可写。访问位：A 或 B 可读，B 可写。密钥 B：不可读，B 可写"
+          }
+        }
+      }
+    },
+    "Key A: write B. Access: read A or B, write never. Key B: read never, write B" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key A: write B. Access: read A or B, write never. Key B: read never, write B"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：B 可写。访问位：A 或 B 可读，不可写。密钥 B：不可读，B 可写"
+          }
+        }
+      }
+    },
+    "Key A: write never. Access: read A or B, write never. Key B: read never, write never" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key A: write never. Access: read A or B, write never. Key B: read never, write never"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：不可写。访问位：A 或 B 可读，不可写。密钥 B：不可读，不可写"
+          }
+        }
+      }
+    },
+    "Key A: write never. Access: read A or B, write B. Key B: read never, write never" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key A: write never. Access: read A or B, write B. Key B: read never, write never"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：不可写。访问位：A 或 B 可读，B 可写。密钥 B：不可读，不可写"
+          }
+        }
+      }
+    },
+    "ATQA (Hex, 2 Bytes)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ATQA (Hex, 2 Bytes)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ATQA（十六进制，2 字节）"
+          }
+        }
+      }
+    },
+    "SAK (Hex, 1 Byte)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SAK (Hex, 1 Byte)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SAK（十六进制，1 字节）"
+          }
+        }
+      }
+    },
+    "Passive and Active Authentication verify data integrity and chip authenticity." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passive and Active Authentication verify data integrity and chip authenticity."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "被动认证和主动认证用于验证数据完整性和芯片真实性。"
           }
         }
       }

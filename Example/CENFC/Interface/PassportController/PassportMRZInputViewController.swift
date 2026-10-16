@@ -88,7 +88,7 @@ class PassportMRZInputViewController: StackScrollController, PrivacySensitiveScr
         stackView.addArrangedSubviewWithMargin(expiryPicker) { $0.top = 8; $0.bottom = 8 }
         stackView.addArrangedSubview(SeparatorView())
 
-        addSectionFooter(String(localized: "Enter the document number, date of birth, and date of expiry from the MRZ (Machine Readable Zone) on your passport. These are used for BAC (Basic Access Control) authentication with the chip."))
+        addSectionFooter(String(localized: "Enter the document number, date of birth, and date of expiry from the machine-readable zone of your passport. They are used to unlock the chip."))
     }
 
     // MARK: - Scan
@@ -129,7 +129,7 @@ class PassportMRZInputViewController: StackScrollController, PrivacySensitiveScr
         } catch {
             navigationItem.rightBarButtonItem?.isEnabled = true
             if !presentNFCErrorAlertIfNeeded(for: error) {
-                presentErrorAlert(for: error, title: String(localized: "Passport Read Failed"))
+                presentErrorAlert(for: error, title: String(localized: "Unable to Read Passport"))
             }
         }
     }
