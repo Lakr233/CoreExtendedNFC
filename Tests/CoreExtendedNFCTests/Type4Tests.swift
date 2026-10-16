@@ -248,4 +248,67 @@ struct Type4Tests {
         #expect(updates.map(\.p2) == [0, 2, 4, 0])
         #expect(updates.map { $0.data ?? Data() } == [Data([0, 0]), Data([1, 2]), Data([3]), Data([0, 3])])
     }
+
+    @Test
+    func `writeNDEF splits the NLEN header by MLc on an MLc = 1 tag`() async throws {
+        let tag = SimulatedType4Tag(mlc: 1)
+        let info = CardInfo(type: .type4NDEF, uid: tag.identifier)
+
+        // before: the 2-byte NLEN UPDATE BINARY was rejected with 6700
+        try await CoreExtendedNFC.writeNDEF(.text("hi"), info: info, transport: tag)
+
+        #expect(tag.updateLengths.allSatisfy { $0 <= 1 })
+        #expect(try await CoreExtendedNFC.readNDEF(info: info, transport: tag) == .text("hi"))
+    }
+}
+
+/// In-memory Type 4 tag that enforces MLc on UPDATE BINARY (6700 when Lc > MLc).
+private final class SimulatedType4Tag: ISO7816TagTransporting, @unchecked Sendable {
+    let identifier = Data([0x04, 0x01, 0x02, 0x03])
+    let initialAID = "D2760000850101"
+    let cc: Data
+    private let mlc: Int
+    private var ndefFile = Data(repeating: 0x00, count: 0x80)
+    private var selected: Data?
+    var updateLengths: [Int] = []
+
+    init(mlc: UInt16) {
+        self.mlc = Int(mlc)
+        cc = Data([
+            0x00, 0x0F, 0x20, 0x00, 0x3B, UInt8(mlc >> 8), UInt8(mlc & 0xFF),
+            0x04, 0x06, 0xE1, 0x04, 0x00, 0x80, 0x00, 0x00,
+        ])
+    }
+
+    func send(_: Data) async throws -> Data {
+        throw NFCError.unsupportedOperation("unused")
+    }
+
+    func sendAPDUWithChaining(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+        try await sendAPDU(apdu)
+    }
+
+    func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
+        let ok = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
+        let offset = Int(apdu.p1) << 8 | Int(apdu.p2)
+        switch apdu.ins {
+        case 0xA4:
+            if apdu.p1 != 0x04 { selected = apdu.data }
+            return ok
+        case 0xB0:
+            let file = selected == Data([0xE1, 0x03]) ? cc : ndefFile
+            guard offset <= file.count else { return ResponseAPDU(data: Data(), sw1: 0x6B, sw2: 0x00) }
+            let length = apdu.expectedResponseLength ?? 256
+            return ResponseAPDU(data: Data(file[offset ..< min(file.count, offset + length)]), sw1: 0x90, sw2: 0x00)
+        case 0xD6:
+            let data = apdu.data ?? Data()
+            updateLengths.append(data.count)
+            guard data.count <= mlc else { return ResponseAPDU(data: Data(), sw1: 0x67, sw2: 0x00) }
+            guard offset + data.count <= ndefFile.count else { return ResponseAPDU(data: Data(), sw1: 0x6B, sw2: 0x00) }
+            ndefFile.replaceSubrange(offset ..< offset + data.count, with: data)
+            return ok
+        default:
+            return ResponseAPDU(data: Data(), sw1: 0x6D, sw2: 0x00)
+        }
+    }
 }

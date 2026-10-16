@@ -234,12 +234,26 @@ public struct Type4Reader: Sendable {
 
         try await selectFile(cc.ndefFileID)
 
-        // Write NLEN/ENLEN = 0 first (marks the write as in progress).
-        try await updateBinary(offset: 0, data: Data(repeating: 0x00, count: headerLength))
-
+        // Every UPDATE BINARY, including the NLEN/ENLEN header, carries at most MLc
+        // bytes (T4T §5.1.3); MLc may be as small as 1.
         let maxWrite = min(Int(cc.mlc), 255)
-        var offset = headerLength
-        var remaining = message[...]
+
+        // Write NLEN/ENLEN = 0 first (marks the write as in progress).
+        try await updateBinaryChunked(offset: 0, data: Data(repeating: 0x00, count: headerLength), maxWrite: maxWrite)
+
+        try await updateBinaryChunked(offset: headerLength, data: message, maxWrite: maxWrite)
+
+        // Write the real NLEN/ENLEN last.
+        try await updateBinaryChunked(
+            offset: 0,
+            data: Data(cc.encodeNDEFFile(message).prefix(headerLength)),
+            maxWrite: maxWrite
+        )
+    }
+
+    private func updateBinaryChunked(offset: Int, data: Data, maxWrite: Int) async throws {
+        var offset = offset
+        var remaining = data[...]
         while !remaining.isEmpty {
             try Task.checkCancellation()
             let chunk = Data(remaining.prefix(maxWrite))
@@ -247,9 +261,6 @@ public struct Type4Reader: Sendable {
             remaining = remaining.dropFirst(chunk.count)
             offset += chunk.count
         }
-
-        // Write the real NLEN/ENLEN last.
-        try await updateBinary(offset: 0, data: Data(cc.encodeNDEFFile(message).prefix(headerLength)))
     }
 
     private func selectFile(_ fileID: Data) async throws {
