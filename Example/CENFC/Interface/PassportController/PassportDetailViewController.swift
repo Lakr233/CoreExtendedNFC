@@ -8,20 +8,6 @@ import UIKit
 import UniformTypeIdentifiers
 
 class PassportDetailViewController: StackScrollController, PrivacySensitiveScreen {
-    nonisolated struct PreviewPayload: Sendable {
-        let fileData: Data
-        let fileExtension: String
-        let sourceFormatName: String
-        let imageSize: CGSize
-        let hasRenderedPreview: Bool
-    }
-
-    /// Everything derived from the portrait and signature images, decoded once off the main thread.
-    nonisolated struct DecodedPreviews: Sendable {
-        var payloads: [DataGroupId: PreviewPayload] = [:]
-        var faceImage: UIImage?
-    }
-
     private let record: PassportRecord
     private var previewURL: URL?
     private var previews: DecodedPreviews?
@@ -133,22 +119,6 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
             showFaceImage(previews)
             logPreviewDiagnostics(previews)
         }
-    }
-
-    nonisolated static func decodePreviews(for passport: PassportModel) -> DecodedPreviews {
-        var result = DecodedPreviews()
-        for (dgId, data) in [
-            (DataGroupId.dg2, passport.resolvedFaceImageData),
-            (DataGroupId.dg7, passport.resolvedSignatureImageData),
-        ] {
-            guard let data else { continue }
-            let image = decodeImage(from: data)
-            if dgId == .dg2 {
-                result.faceImage = image
-            }
-            result.payloads[dgId] = previewPayload(for: data, decodedImage: image)
-        }
-        return result
     }
 
     override func setupContentViews() {
@@ -359,117 +329,6 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         )
     }
 
-    /// One line of the security report as shown on screen.
-    nonisolated struct SecurityRow: Equatable, Sendable {
-        let title: String
-        let value: String
-        let icon: String
-        let isDestructive: Bool
-        var isPassiveAuthentication = false
-        var isActiveAuthentication = false
-    }
-
-    /// The security report rows for `record`.
-    ///
-    /// The rows for `record` with the stages re-derived by
-    /// ``PassportRecord/reverifiedSecurity()`` (`nil` while that runs).
-    static func securityRows(
-        for record: PassportRecord,
-        reverified: PassportRecord.ReverifiedSecurity?
-    ) -> [SecurityRow] {
-        securityRows(
-            for: record,
-            reverifiedPassiveAuthentication: reverified?.passiveAuthentication,
-            reverifiedPassiveAuthStatus: reverified?.passiveAuthStatus,
-            reverifiedActiveAuthentication: reverified?.activeAuthentication
-        )
-    }
-
-    /// A record imported from a file carries whatever security results its
-    /// author wrote. BAC, PACE and Chip Authentication can only be proven
-    /// against the physical chip, so imported records show those stages as
-    /// "not re-verified" instead of the stored result. Passive Authentication
-    /// only needs the bytes, so for imported records it shows
-    /// `reverifiedPassiveAuthentication`, or "Verifying" while that is still
-    /// `nil`. Active Authentication shows the stored AA result re-judged against
-    /// it (`reverifiedActiveAuthentication`), or "not re-verified" when there is
-    /// none. The file's own PA and AA stages are never shown.
-    static func securityRows(
-        for record: PassportRecord,
-        reverifiedPassiveAuthentication: PassportSecurityStageResult? = nil,
-        reverifiedPassiveAuthStatus: PassiveAuthStatus? = nil,
-        reverifiedActiveAuthentication: PassportSecurityStageResult? = nil
-    ) -> [SecurityRow] {
-        let report = record.passport.securityReport
-        let stages: [(title: String, stage: PassportSecurityStageResult, isPassiveAuthentication: Bool)] = [
-            (String(localized: "Card Access"), report.cardAccess, false),
-            (String(localized: "PACE"), report.pace, false),
-            (String(localized: "BAC"), report.bac, false),
-            (String(localized: "Chip Authentication"), report.chipAuthentication, false),
-            (String(localized: "Passive Authentication"), report.passiveAuthentication, true),
-            (String(localized: "Active Authentication"), report.activeAuthentication, false),
-        ]
-        let activeTitle = String(localized: "Active Authentication")
-        return stages.map { title, stage, isPassiveAuthentication in
-            let isActiveAuthentication = title == activeTitle
-            if record.isImported, isActiveAuthentication, let reverified = reverifiedActiveAuthentication {
-                let (icon, isDestructive) = securityIcon(for: reverified.status)
-                return SecurityRow(
-                    title: title,
-                    value: securityValue(for: reverified, isPassiveAuthentication: false),
-                    icon: icon,
-                    isDestructive: isDestructive,
-                    isActiveAuthentication: true
-                )
-            }
-            if record.isImported, isPassiveAuthentication {
-                guard let reverified = reverifiedPassiveAuthentication else {
-                    return SecurityRow(
-                        title: title,
-                        value: String(localized: "Verifying…"),
-                        icon: "circle.dotted",
-                        isDestructive: false,
-                        isPassiveAuthentication: true
-                    )
-                }
-                let (icon, isDestructive) = securityIcon(for: reverified.status)
-                return SecurityRow(
-                    title: title,
-                    value: securityValue(
-                        for: reverified,
-                        isPassiveAuthentication: true,
-                        passiveAuthStatus: reverifiedPassiveAuthStatus
-                    ),
-                    icon: icon,
-                    isDestructive: isDestructive,
-                    isPassiveAuthentication: true
-                )
-            }
-            if record.isImported {
-                return SecurityRow(
-                    title: title,
-                    value: String(localized: "Imported, not re-verified"),
-                    icon: "questionmark.circle",
-                    isDestructive: false,
-                    isActiveAuthentication: isActiveAuthentication
-                )
-            }
-            let (icon, isDestructive) = securityIcon(for: stage.status)
-            return SecurityRow(
-                title: title,
-                value: securityValue(
-                    for: stage,
-                    isPassiveAuthentication: isPassiveAuthentication,
-                    passiveAuthStatus: isPassiveAuthentication ? record.passport.passiveAuthResult?.status : nil
-                ),
-                icon: icon,
-                isDestructive: isDestructive,
-                isPassiveAuthentication: isPassiveAuthentication,
-                isActiveAuthentication: isActiveAuthentication
-            )
-        }
-    }
-
     // MARK: - Technical
 
     private func buildTechnicalSection() {
@@ -592,30 +451,6 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         addSectionFooter(String(localized: "Tap the share button to export the full passport record."))
     }
 
-    nonisolated private static func previewPayload(for data: Data, decodedImage: UIImage?) -> PreviewPayload? {
-        let formatName = inferPreviewFormat(for: data)
-        if let image = decodedImage,
-           let jpegData = image.jpegData(compressionQuality: 0.95)
-        {
-            return PreviewPayload(
-                fileData: jpegData,
-                fileExtension: "jpg",
-                sourceFormatName: formatName,
-                imageSize: image.size,
-                hasRenderedPreview: true
-            )
-        }
-
-        guard let nativeExtension = nativePreviewExtension(for: data) else { return nil }
-        return PreviewPayload(
-            fileData: data,
-            fileExtension: nativeExtension,
-            sourceFormatName: formatName,
-            imageSize: .zero,
-            hasRenderedPreview: false
-        )
-    }
-
     private func previewImage(_ payload: PreviewPayload, name: String) {
         let sanitizedName = name.replacingOccurrences(of: "/", with: "-")
         let url = previewDirectoryURL.appendingPathComponent("\(sanitizedName).\(payload.fileExtension)")
@@ -685,83 +520,6 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         )
     }
 
-    nonisolated private static func decodeImage(from data: Data) -> UIImage? {
-        if let image = UIImage(data: data) {
-            return image
-        }
-
-        let sourceOptions = [
-            kCGImageSourceShouldCache: false,
-        ] as CFDictionary
-
-        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions),
-           let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        {
-            return UIImage(cgImage: cgImage)
-        }
-
-        let hintedTypes = [
-            "public.jpeg-2000",
-            UTType.jpeg.identifier,
-            UTType.png.identifier,
-        ]
-
-        for hintedType in hintedTypes {
-            let hintOptions = [
-                kCGImageSourceShouldCache: false,
-                kCGImageSourceTypeIdentifierHint: hintedType,
-            ] as CFDictionary
-
-            if let source = CGImageSourceCreateWithData(data as CFData, hintOptions),
-               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
-            {
-                return UIImage(cgImage: cgImage)
-            }
-        }
-
-        return nil
-    }
-
-    nonisolated private static func inferPreviewFormat(for data: Data) -> String {
-        if data.starts(with: [0xFF, 0xD8, 0xFF]) {
-            return "JPEG"
-        }
-
-        if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
-            return "PNG"
-        }
-
-        if data.starts(with: [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20]) {
-            return "JPEG2000"
-        }
-
-        if data.starts(with: [0xFF, 0x4F, 0xFF, 0x51]) {
-            return "JPEG2000 Codestream"
-        }
-
-        return "Unknown"
-    }
-
-    nonisolated private static func nativePreviewExtension(for data: Data) -> String? {
-        if data.starts(with: [0xFF, 0xD8, 0xFF]) {
-            return "jpg"
-        }
-
-        if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
-            return "png"
-        }
-
-        if data.starts(with: [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20]) {
-            return "jp2"
-        }
-
-        if data.starts(with: [0xFF, 0x4F, 0xFF, 0x51]) {
-            return "j2c"
-        }
-
-        return nil
-    }
-
     // MARK: - Footer
 
     private func buildFooter() {
@@ -779,85 +537,6 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         }
         stackView.addArrangedSubviewWithMargin(docLabel)
         stackView.addArrangedSubviewWithMargin(UIView())
-    }
-
-    private static func securityIcon(for status: PassportSecurityStageStatus) -> (String, Bool) {
-        switch status {
-        case .succeeded: ("checkmark.circle.fill", false)
-        case .failed: ("xmark.circle.fill", true)
-        case .fallback: ("exclamationmark.triangle.fill", false)
-        case .skipped, .notAdvertised, .notSupported: ("minus.circle", false)
-        case .pending: ("circle.dotted", false)
-        }
-    }
-
-    /// The localized text shown for a security stage.
-    ///
-    /// The library's `detail` strings are English diagnostics, so the row shows
-    /// app text derived from the stage status instead. For passive
-    /// authentication, `passiveAuthStatus` (from the chip read) gives a more
-    /// specific reason; without it the status of the stage decides.
-    static func securityValue(
-        for stage: PassportSecurityStageResult,
-        isPassiveAuthentication: Bool,
-        passiveAuthStatus: PassiveAuthStatus? = nil
-    ) -> String {
-        guard isPassiveAuthentication else {
-            return statusTitle(stage.status)
-        }
-        switch stage.status {
-        case .succeeded, .fallback, .failed:
-            if let passiveAuthStatus {
-                return passiveAuthenticationText(passiveAuthStatus)
-            }
-        default:
-            break
-        }
-        switch stage.status {
-        case .succeeded:
-            return String(localized: "Verified against a trusted CSCA")
-        case .fallback:
-            return String(localized: "Hashes match; signer not chained to a trusted CSCA")
-        case .notSupported:
-            return String(localized: "No SOD available")
-        default:
-            return statusTitle(stage.status)
-        }
-    }
-
-    static func passiveAuthenticationText(_ status: PassiveAuthStatus) -> String {
-        switch status {
-        case .fullyVerified:
-            String(localized: "Verified against a trusted CSCA")
-        case .signatureVerified:
-            String(localized: "Hashes and signature valid; signer not chained to a trusted CSCA")
-        case .dataGroupHashesVerified, .signatureNotVerified:
-            String(localized: "Hashes match; signature not verified")
-        case .hashMismatch:
-            String(localized: "Data group hash mismatch")
-        case .sodParseFailed:
-            String(localized: "SOD could not be parsed")
-        case .sodNotAvailable:
-            String(localized: "No SOD available")
-        case .unsupportedHashAlgorithm:
-            String(localized: "Unsupported hash algorithm")
-        case .signatureInvalid:
-            String(localized: "SOD signature invalid")
-        case .trustChainInvalid:
-            String(localized: "Signer certificate not trusted")
-        }
-    }
-
-    static func statusTitle(_ status: PassportSecurityStageStatus) -> String {
-        switch status {
-        case .pending: String(localized: "Pending")
-        case .succeeded: String(localized: "Succeeded")
-        case .failed: String(localized: "Failed")
-        case .fallback: String(localized: "Fallback")
-        case .skipped: String(localized: "Skipped")
-        case .notAdvertised: String(localized: "Not Advertised")
-        case .notSupported: String(localized: "Not Supported")
-        }
     }
 }
 

@@ -372,44 +372,6 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
         present(picker, animated: true)
     }
 
-    func importFile(at url: URL) {
-        Task {
-            do {
-                let record = try await ImportFileReader.readInBackground(url) { data in
-                    try PassportDocument.importRecord(from: data)
-                }
-                importRecord(record)
-            } catch {
-                presentErrorAlert(for: error)
-            }
-        }
-    }
-
-    /// Adds an imported record, asking first when it would replace a stored
-    /// record with the same document number.
-    private func importRecord(_ record: PassportRecord) {
-        guard let existing = PassportStore.shared.importConflict(for: record) else {
-            PassportStore.shared.importRecord(record)
-            reloadSnapshot()
-            return
-        }
-        let alert = UIAlertController(
-            title: String(localized: "Replace Passport Record?"),
-            message: String(localized: "A record for \(existing.displayName) with the same document number is already saved. Replacing it discards the saved record, including its security results from reading the chip."),
-            preferredStyle: .alert
-        )
-        alert.addAction(UIAlertAction(title: String(localized: "Replace"), style: .destructive) { [weak self] _ in
-            PassportStore.shared.importRecord(record, replacingExisting: true)
-            self?.reloadSnapshot()
-        })
-        alert.addAction(UIAlertAction(title: String(localized: "Keep Both"), style: .default) { [weak self] _ in
-            PassportStore.shared.importRecord(record, replacingExisting: false)
-            self?.reloadSnapshot()
-        })
-        alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
-        presentQueued(alert)
-    }
-
     // MARK: - Export
 
     private func exportRecord(_ record: PassportRecord) {
@@ -515,41 +477,6 @@ extension PassportViewController: UITableViewDelegate {
 
     func tableViewDidEndMultipleSelectionInteraction(_: UITableView) {
         // Keep editing mode active until user explicitly exits
-    }
-}
-
-// MARK: - Search
-
-extension PassportViewController: UISearchControllerDelegate, UISearchBarDelegate {
-    func searchBar(_: UISearchBar, textDidChange _: String) {
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(commitSearch), object: nil)
-        perform(#selector(commitSearch), with: nil, afterDelay: 0.25)
-    }
-
-    @objc private func commitSearch() {
-        reloadSnapshot()
-    }
-
-    // Tapping Cancel clears the text programmatically without calling
-    // `searchBar(_:textDidChange:)`, so refresh the list here as well.
-    func searchBarCancelButtonClicked(_: UISearchBar) {
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(commitSearch), object: nil)
-        reloadSnapshot()
-    }
-
-    func didDismissSearchController(_: UISearchController) {
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(commitSearch), object: nil)
-        reloadSnapshot()
-    }
-}
-
-// MARK: - UIDocumentPickerDelegate
-
-extension PassportViewController: UIDocumentPickerDelegate {
-    func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        for url in urls {
-            importFile(at: url)
-        }
     }
 }
 
