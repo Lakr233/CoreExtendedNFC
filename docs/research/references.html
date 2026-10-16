@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Reference Documents</title><link rel="stylesheet" href="../styles.css"></head>
+<body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="../guide/index.html">Guide</a><a href="../api/index.html">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="index.html" aria-current="page">Research</a></nav>
+<main><h1>Reference Documents</h1><p class="lede">Specifications, datasheets, and open-source implementations the library is built and checked against. Links checked on 2026-10-16.</p>
+<p>Documents whose licence allows redistribution are kept in the repository under <a href="https://github.com/Lakr233/CoreExtendedNFC/tree/main/docs/references"><code>docs/references/</code></a>, with sources, checksums, and licence evidence in its <a href="https://github.com/Lakr233/CoreExtendedNFC/blob/main/docs/references/README.md">README</a>. Everything else is copyrighted by its publisher and is linked only. Several ISO/IEC, JIS, KS, and SS standards must be bought.</p>
+
+<nav class="on-this-page" aria-label="On this page">
+<strong>On this page</strong>
+<a href="#vendored">Vendored copies</a>
+<a href="#icao">ICAO</a>
+<a href="#bsi">BSI</a>
+<a href="#iso">ISO/IEC</a>
+<a href="#nfc-forum">NFC Forum</a>
+<a href="#felica">FeliCa</a>
+<a href="#nxp">NXP</a>
+<a href="#transit">Transit standards</a>
+<a href="#other-rfcs">Other RFCs and NIST</a>
+<a href="#open-source">Open-source cross-references</a>
+</nav>
+
+<h2 id="vendored">Vendored copies</h2>
+<p>Unmodified copies. RFCs may be reproduced in full under the IETF Trust's policy; NIST publications are US Government works, not subject to copyright in the United States (17 U.S.C. §105).</p>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td>RFC 4493, The AES-CMAC Algorithm</td><td>AES-CMAC for DESFire EV1/EV2 secure messaging and PACE/CA with AES; test vectors.</td><td>Vendored copy: <a href="../references/rfc4493.txt">docs/references/rfc4493.txt</a> · <a href="https://www.rfc-editor.org/rfc/rfc4493">rfc-editor.org</a></td></tr>
+<tr><td>RFC 5652, Cryptographic Message Syntax (CMS)</td><td>Parsing the eMRTD Document Security Object (SOD) as CMS SignedData for passive authentication.</td><td>Vendored copy: <a href="../references/rfc5652.txt">docs/references/rfc5652.txt</a> · <a href="https://www.rfc-editor.org/rfc/rfc5652">rfc-editor.org</a></td></tr>
+<tr><td>RFC 5280, Internet X.509 PKI Certificate and CRL Profile</td><td>Document Signer certificate and SubjectPublicKeyInfo structures in the SOD and DG15.</td><td>Vendored copy: <a href="../references/rfc5280.txt">docs/references/rfc5280.txt</a> · <a href="https://www.rfc-editor.org/rfc/rfc5280">rfc-editor.org</a></td></tr>
+<tr><td>NIST FIPS 197 (2023 update), Advanced Encryption Standard</td><td>AES block cipher behind CMAC, DESFire AES authentication, and PACE/CA session keys.</td><td>Vendored copy: <a href="../references/NIST.FIPS.197-upd1.pdf">docs/references/NIST.FIPS.197-upd1.pdf</a> · <a href="https://doi.org/10.6028/NIST.FIPS.197-upd1">doi.org</a></td></tr>
+<tr><td>NIST FIPS 180-4, Secure Hash Standard</td><td>SHA-1 and SHA-2 for BAC key derivation, data-group hash checks, and active authentication.</td><td>Vendored copy: <a href="../references/NIST.FIPS.180-4.pdf">docs/references/NIST.FIPS.180-4.pdf</a> · <a href="https://doi.org/10.6028/NIST.FIPS.180-4">doi.org</a></td></tr>
+<tr><td>NIST SP 800-38B, The CMAC Mode for Authentication</td><td>CMAC subkey generation and truncation rules alongside RFC 4493.</td><td>Vendored copy: <a href="../references/NIST.SP.800-38b.pdf">docs/references/NIST.SP.800-38b.pdf</a> · <a href="https://doi.org/10.6028/NIST.SP.800-38B">doi.org</a></td></tr>
+</tbody></table>
+
+<h2 id="icao">ICAO Doc 9303, Machine Readable Travel Documents</h2>
+<p>Free PDFs from the <a href="https://www.icao.int/publications/doc-series/doc-9303">ICAO Doc 9303 page</a>. icao.int may answer scripted requests with a bot check; the files open in a browser.</p>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td><a href="https://www.icao.int/sites/default/files/publications/DocSeries/9303_p3_cons_en.pdf">Part 3: Specifications Common to all MRTDs</a></td><td>MRZ fields and check digits (weights 7, 3, 1) for the BAC key seed.</td><td>Link only · © ICAO, all rights reserved</td></tr>
+<tr><td><a href="https://www.icao.int/sites/default/files/publications/DocSeries/9303_p10_cons_en.pdf">Part 10: Logical Data Structure (LDS)</a></td><td>eMRTD application AID, EF.COM, data-group file IDs and tags, DG1/DG2/DG11/DG12 layouts.</td><td>Link only · © ICAO, all rights reserved</td></tr>
+<tr><td><a href="https://www.icao.int/sites/default/files/publications/DocSeries/9303_p11_cons_en.pdf">Part 11: Security Mechanisms for MRTDs</a></td><td>BAC, PACE, chip authentication, active authentication, and secure messaging (DO'87/DO'99/DO'8E).</td><td>Link only · © ICAO, all rights reserved</td></tr>
+<tr><td><a href="https://www.icao.int/sites/default/files/publications/DocSeries/9303_p12_cons_en.pdf">Part 12: Public Key Infrastructure for MRTDs</a></td><td>Document Signer certificate and SOD profile used by passive authentication.</td><td>Link only · © ICAO, all rights reserved</td></tr>
+</tbody></table>
+
+<h2 id="bsi">BSI technical guidelines</h2>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td><a href="https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/Technische-Richtlinien/TR-nach-Thema-sortiert/tr03110/tr-03110.html">TR-03110, Advanced Security Mechanisms for MRTDs and eIDAS Token, Parts 1–3</a></td><td>PACE, chip authentication, and terminal authentication protocols, OIDs, and the SecurityInfos in DG14 and EF.CardAccess.</td><td>Link only · © BSI</td></tr>
+<tr><td><a href="https://www.bsi.bund.de/EN/Themen/Unternehmen-und-Organisationen/Standards-und-Zertifizierung/Technische-Richtlinien/TR-nach-Thema-sortiert/tr03111/tr-03111.html">TR-03111, Elliptic Curve Cryptography</a></td><td>ECDSA plain signature format (r ‖ s) and EC key encodings for active authentication.</td><td>Link only · © BSI</td></tr>
+</tbody></table>
+
+<h2 id="iso">ISO/IEC standards</h2>
+<p>Paid standards. The links go to the ISO catalogue; iso.org may answer scripted requests with HTTP 403, but the pages open in a browser.</p>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td><a href="https://www.iso.org/standard/73598.html">ISO/IEC 14443-3:2018</a>, Initialization and anticollision</td><td>CRC_A and CRC_B, ATQA and SAK interpretation for card identification.</td><td>Link only · © ISO/IEC, paid</td></tr>
+<tr><td><a href="https://www.iso.org/standard/73599.html">ISO/IEC 14443-4:2018</a>, Transmission protocol</td><td>ATS parsing and the SAK bit that marks ISO 14443-4 compliance.</td><td>Link only · © ISO/IEC, paid</td></tr>
+<tr><td><a href="https://www.iso.org/standard/77180.html">ISO/IEC 7816-4:2020</a>, Organization, security and commands for interchange</td><td>APDU structure, SELECT, READ BINARY, status words, and secure-messaging data objects.</td><td>Link only · © ISO/IEC, paid</td></tr>
+<tr><td><a href="https://www.iso.org/standard/73602.html">ISO/IEC 15693-3:2019</a>, Anticollision and transmission protocol</td><td>ISO 15693 Get System Information, block read/write, and block security status commands.</td><td>Link only · © ISO/IEC, paid</td></tr>
+<tr><td><a href="https://www.iso.org/standard/50375.html">ISO/IEC 9797-1:2011</a>, MACs using a block cipher</td><td>MAC algorithm 3 (retail MAC) and padding method 2 for BAC secure messaging.</td><td>Link only · © ISO/IEC, paid</td></tr>
+<tr><td><a href="https://www.iso.org/standard/54788.html">ISO/IEC 9796-2:2010</a>, Signatures giving message recovery</td><td>RSA active-authentication verification with message recovery.</td><td>Link only · © ISO/IEC, paid</td></tr>
+<tr><td><a href="https://www.iso.org/standard/67116.html">ISO/IEC 10118-3:2018</a>, Dedicated hash-functions</td><td>Hash-function identifiers (such as <code>33</code> for SHA-1) in the ISO 9796-2 trailer during RSA active authentication.</td><td>Link only · © ISO/IEC, paid</td></tr>
+</tbody></table>
+
+<h2 id="nfc-forum">NFC Forum specifications</h2>
+<p>All listed on the <a href="https://nfc-forum.org/build/specifications">NFC Forum specifications page</a>. Download terms are set on that page.</p>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td>NFC Data Exchange Format (NDEF)</td><td>NDEF message and record encoding and parsing.</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>RTD Text</td><td>Text record payloads (status byte, language code, UTF-8/UTF-16).</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>RTD URI</td><td>URI record identifier-code prefixes.</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>Smart Poster RTD</td><td>Nested Smart Poster messages with URI and title records.</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>Type 2 Tag (T2T)</td><td>Capability container and NDEF TLVs on Ultralight and NTAG.</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>Type 3 Tag (T3T)</td><td>FeliCa NDEF attribute block and data blocks.</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>Type 4 Tag (T4T)</td><td>NDEF tag application SELECT, CC file, and NDEF file reads and writes.</td><td>Link only · © NFC Forum</td></tr>
+<tr><td>Type 5 Tag (T5T)</td><td>ISO 15693 capability container, MLEN, and the T5T area.</td><td>Link only · © NFC Forum</td></tr>
+</tbody></table>
+
+<h2 id="felica">FeliCa</h2>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td><a href="https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+X+6319-4%3A2016">JIS X 6319-4:2016</a>, High speed proximity cards</td><td>FeliCa frame format, block list elements, and command codes.</td><td>Link only · © JSA, paid</td></tr>
+<tr><td><a href="https://www.sony.net/Products/felica/business/tech-support/data/card_usersmanual_2.3e.pdf">FeliCa Card User's Manual, Excerpted Edition</a></td><td>Read/Write Without Encryption, Request Service, and status flags.</td><td>Link only · © Sony</td></tr>
+<tr><td><a href="https://www.sony.net/Products/felica/business/tech-support/data/fls_usmnl_1.4e.pdf">FeliCa Lite-S User's Manual</a></td><td>System code 88B4, Lite/Lite-S detection from PMm, and the memory map.</td><td>Link only · © Sony</td></tr>
+</tbody></table>
+<p>Other Sony manuals are on the <a href="https://www.sony.net/Products/felica/business/tech-support/">FeliCa technical information page</a>.</p>
+
+<h2 id="nxp">NXP datasheets and application notes</h2>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td><a href="https://www.nxp.com/docs/en/application-note/AN10833.pdf">AN10833</a>, MIFARE type identification procedure</td><td>ATQA/SAK and GET_VERSION mapping to card types.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/data-sheet/MF1S50YYX_V1.pdf">MF1S50yyX/V1</a>, MIFARE Classic EV1 1K</td><td>Sector layout and access-condition decoding. Identification only; no authentication.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/data-sheet/MF0ICU2.pdf">MF0ICU2</a>, MIFARE Ultralight C</td><td>3DES authentication, AUTH0/AUTH1 configuration, and the memory map.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/data-sheet/MF0ULX1.pdf">MF0ULX1</a>, MIFARE Ultralight EV1</td><td>GET_VERSION, PWD_AUTH, READ_CNT, READ_SIG, and configuration pages.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/data-sheet/NTAG213_215_216.pdf">NTAG213/215/216</a></td><td>Variant detection, user-memory sizes, configuration pages, and password protection.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/data-sheet/NTAG210_212.pdf">NTAG210/212</a></td><td>Memory layout and configuration pages for NTAG210 and NTAG212.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td>NT3H1101/1201, NTAG I²C (<a href="https://www.nxp.com/products/NT3H1101W0FHK">product page</a>)</td><td>NTAG I²C identification from the GET_VERSION product subtype.</td><td>Link only · © NXP. Discontinued; nxp.com no longer serves the datasheet PDF.</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/data-sheet/NT3H2111_2211.pdf">NT3H2111/2211</a>, NTAG I²C plus</td><td>NTAG I²C plus identification and memory sizes.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/application-note/AN12196.pdf">AN12196</a>, NTAG 424 DNA features and hints</td><td>AuthenticateEV2First flow and session-key derivation vectors (SV1/SV2).</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/application-note/AN12343.pdf">AN12343</a>, MIFARE DESFire Light features and hints</td><td>EV2 authentication parts 1 and 2, PCD capabilities, and EV2 secure messaging.</td><td>Link only · © NXP, all rights reserved</td></tr>
+<tr><td><a href="https://www.nxp.com/docs/en/application-note/AN10922.pdf">AN10922</a>, Symmetric key diversifications</td><td>Background on DESFire key diversification. The library does not implement diversification.</td><td>Link only · © NXP, all rights reserved</td></tr>
+</tbody></table>
+<p>nxp.com rejects some scripted requests; the PDFs open in a browser.</p>
+
+<h2 id="transit">Transit standards</h2>
+<table><thead><tr><th>Document</th><th>Used for</th><th>Availability</th></tr></thead><tbody>
+<tr><td>KS X 6924, Korean transit card specification (<a href="https://www.standard.go.kr/">Korean Standards Service Network</a>)</td><td>T-Money, Cashbee, and other Korean card AIDs, purse info, and balance reads.</td><td>Link only · © KATS, paid. No stable per-standard URL; search the portal for KS X 6924.</td></tr>
+<tr><td><a href="https://www.singaporestandardseshop.sg/Product/SSPdtDetail/5f4d8261-1a1b-4351-9f41-18dac9670fc9">SS 518:2014</a>, CEPAS</td><td>Singapore CEPAS purse file layout and balance reads.</td><td>Link only · © Enterprise Singapore, paid</td></tr>
+</tbody></table>
+<p>The findings behind these readers are on <a href="transit-card.html">Transit Card Research</a>.</p>
+
+<h2 id="other-rfcs">Other RFCs and NIST publications</h2>
+<p>Also cited in the source. They are freely redistributable but not vendored.</p>
+<ul>
+<li><a href="https://www.rfc-editor.org/rfc/rfc3279">RFC 3279</a>: algorithm identifiers for X.509 (RSA and DSA keys).</li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc5480">RFC 5480</a>: elliptic-curve SubjectPublicKeyInfo.</li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc5754">RFC 5754</a>: SHA-2 algorithm identifiers in CMS.</li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc5758">RFC 5758</a>: ECDSA with SHA-2 algorithm identifiers.</li>
+<li><a href="https://csrc.nist.gov/pubs/fips/46-3/final">FIPS 46-3</a> (withdrawn): DES and 3DES, used by BAC and legacy DESFire authentication.</li>
+</ul>
+
+<h2 id="open-source">Open-source cross-references</h2>
+<p>Used to cross-check behaviour against real cards. No code is copied; GPL code is linked only.</p>
+<table><thead><tr><th>Project</th><th>Used for</th><th>Licence</th></tr></thead><tbody>
+<tr><td><a href="https://github.com/RfidResearchGroup/proxmark3">proxmark3</a>: <a href="https://github.com/RfidResearchGroup/proxmark3/blob/master/client/src/cmdhfmfu.c">cmdhfmfu.c</a>, <a href="https://github.com/RfidResearchGroup/proxmark3/blob/master/client/src/mifare/desfirecore.c">desfirecore.c</a>, <a href="https://github.com/RfidResearchGroup/proxmark3/blob/master/client/src/mifare/desfiresecurechan.c">desfiresecurechan.c</a>, <a href="https://github.com/RfidResearchGroup/proxmark3/blob/master/client/src/cmdhfmfdes.c">cmdhfmfdes.c</a></td><td>Ultralight/NTAG version tables and DESFire authentication, session keys, and secure channel.</td><td>GPL-3.0 · link only</td></tr>
+<tr><td><a href="https://github.com/nfcpy/nfcpy">nfcpy</a>: <a href="https://github.com/nfcpy/nfcpy/blob/master/src/nfc/tag/tt2.py">tt2.py</a>, <a href="https://github.com/nfcpy/nfcpy/blob/master/src/nfc/tag/tt4.py">tt4.py</a></td><td>Type 2 Tag NDEF handling and the Type 4 Tag mapping 1.0 fallback SELECT.</td><td>EUPL-1.1 · link only</td></tr>
+<tr><td><a href="https://github.com/linux-nfc/neard/blob/master/plugins/nfctype5.c">neard plugins/nfctype5.c</a></td><td>Type 5 Tag NDEF detection and reads.</td><td>GPL-2.0 · link only. git.kernel.org returned HTTP 500 on 2026-10-16, so this links the GitHub mirror.</td></tr>
+<tr><td><a href="https://github.com/metrodroid/metrodroid">Metrodroid</a></td><td>China T-Union and KS X 6924 transit data and AIDs.</td><td>GPL-3.0 · link only</td></tr>
+<tr><td><a href="https://jmrtd.org/">JMRTD</a></td><td>Chip authentication and eMRTD reader flow cross-check.</td><td>Open source · link only</td></tr>
+</tbody></table>
+
+<nav class="pager"><a class="prev" href="my-number-card.html">My Number data</a><span class="parent"><a href="index.html">Research</a></span></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

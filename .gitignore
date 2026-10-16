@@ -48,6 +48,8 @@ fastlane/test_output
 .netrc
 /Packages
 References/
+# Redistributable spec copies for the docs site (see docs/references/README.md)
+!docs/references/
 Example/CENFC/Configuration/*Developer*.xcconfig
 Example/CENFC/DerivedSources/*
 !Example/CENFC/DerivedSources/DerivedSourcesReadme.swift
