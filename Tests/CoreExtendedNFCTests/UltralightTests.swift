@@ -581,3 +581,20 @@ private final class ScriptedUltralightTransport: NFCTagTransport, @unchecked Sen
         throw NFCError.unsupportedOperation("Type 2 tag model")
     }
 }
+
+struct TopLevelUltralightWriteGuardTests {
+    @Test
+    func `Top-level writePage to page 2 needs the irreversible opt-in`() async throws {
+        let transport = MockTransport()
+        let lockBytes = Data([0x48, 0x00, 0xFF, 0xFF]) // serial byte, internal, static lock bytes
+
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writePage(2, data: lockBytes, transport: transport)
+        }
+        #expect(transport.sentCommands.isEmpty)
+
+        transport.responses = [Data([0x0A])] // ACK
+        try await CoreExtendedNFC.writePage(2, data: lockBytes, allowIrreversible: true, transport: transport)
+        #expect(transport.sentCommands == [Data([0xA2, 0x02]) + lockBytes])
+    }
+}

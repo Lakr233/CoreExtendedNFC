@@ -28,8 +28,7 @@ public extension CoreExtendedNFC {
             manager.invalidate()
             return card
         } catch {
-            manager.invalidate(errorMessage: error.localizedDescription)
-            throw error
+            throw manager.invalidateAfterFailure(error)
         }
     }
 

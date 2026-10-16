@@ -117,13 +117,21 @@ public protocol ISO15693TagTransporting: NFCTagTransport {
     /// Write the Application Family Identifier.
     func writeAFI(_ afi: UInt8) async throws
 
-    /// Permanently lock the current AFI value.
+    /// Permanently lock the current AFI value (ISO/IEC 15693-3 §10.4.7).
+    ///
+    /// - Warning: Irreversible. Once locked, the AFI can never be written again.
+    ///   Prefer `CoreExtendedNFC.configureISO15693AFI(_:permanentlyLock:transport:)`,
+    ///   which only locks when `permanentlyLock` is explicitly `true`.
     func lockAFI() async throws
 
     /// Write the Data Storage Format Identifier.
     func writeDSFID(_ dsfid: UInt8) async throws
 
-    /// Permanently lock the current DSFID value.
+    /// Permanently lock the current DSFID value (ISO/IEC 15693-3 §10.4.9).
+    ///
+    /// - Warning: Irreversible. Once locked, the DSFID can never be written again.
+    ///   Prefer `CoreExtendedNFC.configureISO15693DSFID(_:permanentlyLock:transport:)`,
+    ///   which only locks when `permanentlyLock` is explicitly `true`.
     func lockDSFID() async throws
 
     /// Send a manufacturer-specific custom command.

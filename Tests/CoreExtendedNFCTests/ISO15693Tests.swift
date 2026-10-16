@@ -64,6 +64,23 @@ struct ISO15693Tests {
     }
 
     @Test
+    func `Top-level AFI and DSFID updates never lock unless permanentlyLock is set`() async throws {
+        let transport = MockISO15693SecurityTransport()
+
+        try await CoreExtendedNFC.configureISO15693AFI(0xA1, transport: transport)
+        try await CoreExtendedNFC.configureISO15693DSFID(0x07, transport: transport)
+        #expect(transport.operations == ["writeAFI:A1", "writeDSFID:07"])
+
+        try await CoreExtendedNFC.configureISO15693AFI(0xA2, permanentlyLock: true, transport: transport)
+        try await CoreExtendedNFC.configureISO15693DSFID(0x08, permanentlyLock: true, transport: transport)
+        #expect(transport.operations == [
+            "writeAFI:A1", "writeDSFID:07",
+            "writeAFI:A2", "lockAFI",
+            "writeDSFID:08", "lockDSFID",
+        ])
+    }
+
+    @Test
     func `ISO 15693 security manager forwards custom command and auth primitives`() async throws {
         let transport = MockISO15693SecurityTransport(
             customCommandResponse: Data([0xDE, 0xAD]),

@@ -382,6 +382,25 @@ struct NFCSessionManagerTests {
         #expect(info.blockCount == 28)
     }
 
+    @Test
+    func `failure after a user cancel is reported as userCanceled without a sheet message`() {
+        // before: the top-level wrappers rethrew the raced error and showed its message.
+        let raced = NFCSessionManager.failureOutcome(for: NFCError.tagConnectionLost, userCanceled: true)
+        #expect(Self.describe(raced.error as? NFCError) == "userCanceled")
+        #expect(raced.alertMessage == nil)
+
+        let ordinary = NFCSessionManager.failureOutcome(for: NFCError.tagConnectionLost, userCanceled: false)
+        #expect(Self.describe(ordinary.error as? NFCError) == "tagConnectionLost")
+        #expect(ordinary.alertMessage == NFCError.tagConnectionLost.localizedDescription)
+
+        let canceled = NFCSessionManager.failureOutcome(for: NFCError.userCanceled, userCanceled: false)
+        #expect(canceled.alertMessage == nil)
+
+        let taskCancel = NFCSessionManager.failureOutcome(for: CancellationError(), userCanceled: true)
+        #expect(taskCancel.error is CancellationError)
+        #expect(taskCancel.alertMessage == nil)
+    }
+
     private static func describe(_ error: NFCError?) -> String? {
         guard let error else { return nil }
         return switch error {

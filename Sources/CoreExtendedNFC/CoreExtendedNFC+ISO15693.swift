@@ -52,26 +52,58 @@ public extension CoreExtendedNFC {
 
     // MARK: Configuration
 
-    /// Update AFI and optionally lock it.
+    /// Update the AFI and, only when `permanentlyLock` is `true`, lock it.
+    ///
+    /// - Warning: `permanentlyLock: true` sends LOCK AFI (ISO/IEC 15693-3 §10.4.7),
+    ///   which is irreversible: the AFI can never be changed again on that tag.
     static func configureISO15693AFI(
         _ afi: UInt8,
-        lock: Bool = false,
+        permanentlyLock: Bool = false,
         transport: any NFCTagTransport
     ) async throws {
         let iso = try iso15693Transport(from: transport)
-        let manager = ISO15693SecurityManager(transport: iso)
-        try await manager.configureAFI(afi, lock: lock)
+        try await iso.writeAFI(afi)
+        if permanentlyLock {
+            try await iso.lockAFI()
+        }
     }
 
-    /// Update DSFID and optionally lock it.
+    /// Update the AFI and optionally lock it.
+    @available(*, deprecated, renamed: "configureISO15693AFI(_:permanentlyLock:transport:)",
+               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    static func configureISO15693AFI(
+        _ afi: UInt8,
+        lock: Bool,
+        transport: any NFCTagTransport
+    ) async throws {
+        try await configureISO15693AFI(afi, permanentlyLock: lock, transport: transport)
+    }
+
+    /// Update the DSFID and, only when `permanentlyLock` is `true`, lock it.
+    ///
+    /// - Warning: `permanentlyLock: true` sends LOCK DSFID (ISO/IEC 15693-3 §10.4.9),
+    ///   which is irreversible: the DSFID can never be changed again on that tag.
     static func configureISO15693DSFID(
         _ dsfid: UInt8,
-        lock: Bool = false,
+        permanentlyLock: Bool = false,
         transport: any NFCTagTransport
     ) async throws {
         let iso = try iso15693Transport(from: transport)
-        let manager = ISO15693SecurityManager(transport: iso)
-        try await manager.configureDSFID(dsfid, lock: lock)
+        try await iso.writeDSFID(dsfid)
+        if permanentlyLock {
+            try await iso.lockDSFID()
+        }
+    }
+
+    /// Update the DSFID and optionally lock it.
+    @available(*, deprecated, renamed: "configureISO15693DSFID(_:permanentlyLock:transport:)",
+               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    static func configureISO15693DSFID(
+        _ dsfid: UInt8,
+        lock: Bool,
+        transport: any NFCTagTransport
+    ) async throws {
+        try await configureISO15693DSFID(dsfid, permanentlyLock: lock, transport: transport)
     }
 
     // MARK: Security

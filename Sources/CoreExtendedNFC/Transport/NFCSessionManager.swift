@@ -113,6 +113,40 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
         continuation?.resume(throwing: NFCError.sessionInvalidated(errorMessage))
     }
 
+    /// End the session after a failed operation and return the error to rethrow.
+    ///
+    /// When the user dismissed the sheet (or the task was cancelled) the session is
+    /// invalidated without an error message and ``NFCError/userCanceled`` (or the
+    /// `CancellationError`) is returned, so a failure that raced the cancel is not
+    /// shown to the user as a read error.
+    func invalidateAfterFailure(_ error: any Error) -> any Error {
+        let outcome = Self.failureOutcome(for: error, userCanceled: wasCanceledByUser)
+        if let message = outcome.alertMessage {
+            invalidate(errorMessage: message)
+        } else {
+            invalidate()
+        }
+        return outcome.error
+    }
+
+    /// The error to rethrow and the message to show on the sheet (`nil` = none)
+    /// for a failure that ended a session.
+    static func failureOutcome(
+        for error: any Error,
+        userCanceled: Bool
+    ) -> (error: any Error, alertMessage: String?) {
+        if error is CancellationError {
+            return (error, nil)
+        }
+        if userCanceled {
+            return (NFCError.userCanceled, nil)
+        }
+        if case NFCError.userCanceled = error {
+            return (error, nil)
+        }
+        return (error, error.localizedDescription)
+    }
+
     /// CoreNFC holds its delegate weakly, so a session must not outlive the manager:
     /// its transport stops working once the manager is released.
     deinit {
@@ -166,7 +200,7 @@ public final class NFCSessionManager: NSObject, NFCTagReaderSessionDelegate, @un
                     return
                 }
                 let (cardInfo, transport) = try Self.identifyTag(nfcTag, monitor: monitor)
-                NFCLog.info("Tag detected: \(cardInfo.type.description) UID:\(cardInfo.uid.hexDump)", source: "Session")
+                NFCLog.info("Tag detected: \(cardInfo.type.description) UID:\(NFCLog.payload(cardInfo.uid))", source: "Session")
                 continuation.resume(returning: (cardInfo, transport))
             } catch {
                 let cancelled = !scanState.finishConnecting(by: readerSession)

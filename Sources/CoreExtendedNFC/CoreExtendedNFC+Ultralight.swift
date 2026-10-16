@@ -15,13 +15,23 @@ public extension CoreExtendedNFC {
     }
 
     /// Write 4 bytes to a single page.
+    ///
+    /// Pages 0-2 (UID / static lock / OTP) and page 3 values other than a
+    /// read/write NDEF CC are refused unless `allowIrreversible` is `true`; with a
+    /// `memoryMap`, pages outside the user area are refused too. See
+    /// ``UltralightCommands/writePage(_:data:memoryMap:allowIrreversible:)``.
+    ///
+    /// - Warning: Lock bytes, OTP bits and configuration pages are one-way:
+    ///   `allowIrreversible: true` can permanently lock or brick the tag.
     static func writePage(
         _ page: UInt8,
         data: Data,
+        memoryMap: UltralightMemoryMap? = nil,
+        allowIrreversible: Bool = false,
         transport: any NFCTagTransport
     ) async throws {
         try await UltralightCommands(transport: transport)
-            .writePage(page, data: data)
+            .writePage(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
     }
 
     /// FAST_READ: Read a contiguous range of pages in a single command.
@@ -35,13 +45,23 @@ public extension CoreExtendedNFC {
     }
 
     /// Compatibility write (16-byte frame for legacy readers).
+    ///
+    /// Pages 0-2 (UID / static lock / OTP) and page 3 values other than a
+    /// read/write NDEF CC are refused unless `allowIrreversible` is `true`; with a
+    /// `memoryMap`, pages outside the user area are refused too. See
+    /// ``UltralightCommands/compatibilityWrite(_:data:memoryMap:allowIrreversible:)``.
+    ///
+    /// - Warning: Lock bytes, OTP bits and configuration pages are one-way:
+    ///   `allowIrreversible: true` can permanently lock or brick the tag.
     static func compatibilityWrite(
         _ page: UInt8,
         data: Data,
+        memoryMap: UltralightMemoryMap? = nil,
+        allowIrreversible: Bool = false,
         transport: any NFCTagTransport
     ) async throws {
         try await UltralightCommands(transport: transport)
-            .compatibilityWrite(page, data: data)
+            .compatibilityWrite(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
     }
 
     // MARK: Version & Identity

@@ -318,7 +318,7 @@ struct NDEFTests {
     }
 
     @Test
-    func `Unified Type 5 NDEF write emits CC and user blocks`() async throws {
+    func `Unified Type 5 NDEF write keeps the CC and writes only the TLV blocks`() async throws {
         let transport = MockISO15693WriteTransport(
             systemInfo: ISO15693SystemInfo(
                 uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
@@ -327,7 +327,8 @@ struct NDEFTests {
                 blockSize: 4,
                 blockCount: 5,
                 icReference: 0x01
-            )
+            ),
+            storedBlocks: [0: Data([0xE1, 0x40, 0x02, 0x00]), 4: Data([0xAA, 0xBB, 0xCC, 0xDD])]
         )
 
         let message = NDEFMessage.text("A")
@@ -337,10 +338,112 @@ struct NDEFTests {
             transport: transport
         )
 
-        #expect(transport.writtenBlocks.count == 5)
-        #expect(transport.writtenBlocks[0].number == 0)
-        #expect(transport.writtenBlocks[0].data == Data([0xE1, 0x40, 0x02, 0x00]))
-        #expect(transport.writtenBlocks[1].data[0] == 0x03)
+        // Text record "A"/en (NFC Forum RTD Text): D1 01 04 54 02 65 6E 41.
+        // TLV 03 08 <record> FE fills bytes 4-14; block 4 is past the terminator.
+        // before: CC rewritten and all 5 blocks written (block 4 zero-filled).
+        #expect(transport.readBlockNumbers.first == 0)
+        #expect(transport.writtenBlocks.map(\.number) == [1, 2, 3])
+        #expect(transport.writtenBlocks[0].data == Data([0x03, 0x08, 0xD1, 0x01]))
+        #expect(transport.writtenBlocks[1].data == Data([0x04, 0x54, 0x02, 0x65]))
+        #expect(transport.writtenBlocks[2].data == Data([0x6E, 0x41, 0xFE, 0x00]))
+        #expect(transport.storedBlocks[4] == Data([0xAA, 0xBB, 0xCC, 0xDD]))
+    }
+
+    @Test
+    func `Type 5 NDEF write refuses an unformatted tag without writing`() async {
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 8, icReference: 0x01
+            ),
+            storedBlocks: [0: Data([0x00, 0x00, 0x00, 0x00])]
+        )
+
+        do {
+            try await CoreExtendedNFC.writeNDEF(
+                .uri("https://a.b"),
+                info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
+                transport: transport
+            )
+            Issue.record("Expected an unformatted tag to be refused")
+        } catch let NFCError.unsupportedOperation(message) {
+            #expect(message.contains("not NDEF formatted"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(transport.writtenBlocks.isEmpty) // before: CC + 7 blocks written
+    }
+
+    @Test
+    func `Type 5 NDEF write refuses a CC without write access`() async {
+        // CC byte 1 = 43h: version 1.0, write access 11b (no write access).
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 8, icReference: 0x01
+            ),
+            storedBlocks: [0: Data([0xE1, 0x43, 0x03, 0x00])]
+        )
+
+        do {
+            try await CoreExtendedNFC.writeNDEF(
+                .uri("https://a.b"),
+                info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
+                transport: transport
+            )
+            Issue.record("Expected a write-protected tag to be refused")
+        } catch NFCError.tagLocked {
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(transport.writtenBlocks.isEmpty)
+    }
+
+    @Test
+    func `Type 5 NDEF write honours MLEN of the existing CC`() async {
+        // MLEN = 1 × 8 bytes; the 11-byte TLV does not fit even though memory is larger.
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 64, icReference: 0x01
+            ),
+            storedBlocks: [0: Data([0xE1, 0x40, 0x01, 0x00])]
+        )
+
+        await #expect(throws: NFCError.self) {
+            try await CoreExtendedNFC.writeNDEF(
+                .uri("https://a.b"),
+                info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
+                transport: transport
+            )
+        }
+        #expect(transport.writtenBlocks.isEmpty)
+    }
+
+    @Test
+    func `Type 5 NDEF write after an 8-byte CC starts at block 2`() async throws {
+        // E2h magic, MLEN byte 2 = 00h, 16-bit MLEN 0010h in bytes 6-7 (block 1).
+        let transport = MockISO15693WriteTransport(
+            systemInfo: ISO15693SystemInfo(
+                uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
+                dsfid: 0x00, afi: 0x00, blockSize: 4, blockCount: 40, icReference: 0x01
+            ),
+            storedBlocks: [
+                0: Data([0xE2, 0x40, 0x00, 0x01]),
+                1: Data([0x00, 0x00, 0x00, 0x10]),
+            ]
+        )
+
+        try await CoreExtendedNFC.writeNDEF(
+            .text("A"),
+            info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
+            transport: transport
+        )
+
+        #expect(transport.readBlockNumbers == [0, 1])
+        #expect(transport.writtenBlocks.map(\.number) == [2, 3, 4])
+        #expect(transport.writtenBlocks[0].data == Data([0x03, 0x08, 0xD1, 0x01]))
+        #expect(transport.writtenBlocks[2].data == Data([0x6E, 0x41, 0xFE, 0x00]))
     }
 
     // MARK: - T2T NDEF detection (NFC Forum T2T 1.0 §6.4.1)
@@ -408,7 +511,7 @@ struct NDEFTests {
     }
 
     @Test
-    func `Type 5 write on a tag with more than 256 blocks stays within single-byte addresses`() async throws {
+    func `Type 5 format on a tag with more than 256 blocks stays within single-byte addresses`() async throws {
         let transport = MockISO15693WriteTransport(
             systemInfo: ISO15693SystemInfo(
                 uid: Data([0xE0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]),
@@ -420,8 +523,7 @@ struct NDEFTests {
             )
         )
 
-        try await CoreExtendedNFC.writeNDEF(
-            NDEFMessage.uri("https://a.b"),
+        try await CoreExtendedNFC.formatNDEF(
             info: CardInfo(type: .iso15693_generic, uid: transport.identifier, icManufacturer: 0x04),
             transport: transport
         )
@@ -508,9 +610,13 @@ private final class MockISO15693WriteTransport: ISO15693TagTransporting, @unchec
     let icManufacturerCode = 0x04
     let systemInfo: ISO15693SystemInfo
     var writtenBlocks: [WriteBlock] = []
+    /// Tag memory; unset blocks read as zeros.
+    var storedBlocks: [UInt8: Data]
+    var readBlockNumbers: [UInt8] = []
 
-    init(systemInfo: ISO15693SystemInfo) {
+    init(systemInfo: ISO15693SystemInfo, storedBlocks: [UInt8: Data] = [:]) {
         self.systemInfo = systemInfo
+        self.storedBlocks = storedBlocks
     }
 
     func send(_: Data) async throws -> Data {
@@ -521,12 +627,14 @@ private final class MockISO15693WriteTransport: ISO15693TagTransporting, @unchec
         throw NFCError.unsupportedOperation("unused")
     }
 
-    func readBlock(_: UInt8) async throws -> Data {
-        throw NFCError.unsupportedOperation("unused")
+    func readBlock(_ number: UInt8) async throws -> Data {
+        readBlockNumbers.append(number)
+        return storedBlocks[number] ?? Data(repeating: 0x00, count: systemInfo.blockSize)
     }
 
     func writeBlock(_ number: UInt8, data: Data) async throws {
         writtenBlocks.append(.init(number: number, data: data))
+        storedBlocks[number] = data
     }
 
     func readBlocks(range _: NSRange) async throws -> [Data] {

@@ -31,7 +31,7 @@ public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable
     }
 
     public func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
-        NFCLog.debug("→ APDU \(apdu.bytes.hexDump)", source: "ISO7816")
+        NFCLog.apduCommand(apdu, source: "ISO7816")
         let nfcAPDU = NFCISO7816APDU(
             instructionClass: apdu.cla,
             instructionCode: apdu.ins,
@@ -43,7 +43,7 @@ public final class ISO7816Transport: ISO7816TagTransporting, @unchecked Sendable
         let (data, sw1, sw2) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.sendCommand(apdu: nfcAPDU)
         }
-        NFCLog.debug("← SW:\(String(format: "%02X%02X", sw1, sw2)) \(data.hexDump)", source: "ISO7816")
+        NFCLog.apduResponse(data: data, sw1: sw1, sw2: sw2, for: apdu, source: "ISO7816")
         return ResponseAPDU(data: data, sw1: sw1, sw2: sw2)
     }
 

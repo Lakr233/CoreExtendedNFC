@@ -10,7 +10,7 @@ extension DESFireCommands {
 
     /// Send command and collect all AF (Additional Frame) responses into a single buffer.
     func sendWithChaining(_ cmd: UInt8, data: Data?) async throws -> Data {
-        NFCLog.debug("DESFire CMD \(String(format: "0x%02X", cmd))\(data.map { " data=\($0.hexDump)" } ?? "")", source: "DESFire")
+        NFCLog.desfireCommand(cmd, data: data, source: "DESFire")
         let apdu = CommandAPDU.desfireWrap(command: cmd, data: data)
         var response = try await transport.sendAPDU(apdu)
         var result = response.data

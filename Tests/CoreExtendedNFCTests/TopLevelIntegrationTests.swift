@@ -543,6 +543,7 @@ struct TopLevelRobustnessTests {
     @Test
     func `ISO 15693 NDEF write on a tag with more than 256 blocks stays single-byte addressable`() async throws {
         let transport = RecordingISO15693Transport(systemInfo: Self.systemInfo(blockSize: 4, blockCount: 512))
+        transport.ccBlock = Data([0xE1, 0x40, 0x7F, 0x00])
         let info = CardInfo(type: .iso15693_generic, uid: Self.uid)
         // before: traps on UInt8(256) after 256 writes
         try await CoreExtendedNFC.writeNDEF(.uri("https://a.b"), info: info, transport: transport)
@@ -645,6 +646,8 @@ private final class RecordingISO15693Transport: ISO15693TagTransporting, @unchec
     var readBlockError: NFCError?
     var readBlocks: [UInt8] = []
     var writtenBlocks: [UInt8] = []
+    /// Block 0 contents; `nil` reads as the filler pattern (not NDEF formatted).
+    var ccBlock: Data?
 
     init(systemInfo: ISO15693SystemInfo, cancelAfterReadingBlock: UInt8? = nil) {
         self.systemInfo = systemInfo
@@ -665,6 +668,7 @@ private final class RecordingISO15693Transport: ISO15693TagTransporting, @unchec
         if number == cancelAfterReadingBlock {
             withUnsafeCurrentTask { $0?.cancel() }
         }
+        if number == 0, let ccBlock { return ccBlock }
         return Data(repeating: number, count: max(systemInfo.blockSize, 0))
     }
 

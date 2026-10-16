@@ -21,8 +21,7 @@ public enum CoreExtendedNFC {
             return (refinedInfo, transport, manager)
         } catch {
             // Never leave the system NFC sheet open when the caller gets no manager back.
-            manager.invalidate(errorMessage: error.localizedDescription)
-            throw error
+            throw manager.invalidateAfterFailure(error)
         }
     }
 
@@ -45,8 +44,7 @@ public enum CoreExtendedNFC {
             manager.invalidate()
             return (info, dump)
         } catch {
-            manager.invalidate(errorMessage: error.localizedDescription)
-            throw error
+            throw manager.invalidateAfterFailure(error)
         }
     }
 
@@ -123,6 +121,12 @@ public enum CoreExtendedNFC {
     }
 
     /// Write an NDEF message using the best available family-specific path.
+    ///
+    /// Type 2 and Type 5 tags must already be NDEF formatted: the CC is read first
+    /// and the write is refused with ``NFCError/unsupportedOperation(_:)`` when it is
+    /// missing, or ``NFCError/tagLocked`` when it denies write access. Only the
+    /// blocks holding the NDEF TLV are written on Type 5 tags; use
+    /// ``formatNDEF(info:transport:)`` to format a blank tag.
     public static func writeNDEF(
         _ message: NDEFMessage,
         info: CardInfo,
@@ -158,7 +162,7 @@ public enum CoreExtendedNFC {
     ///
     /// Supported families:
     /// - Type 2 (Ultralight/NTAG): writes CC to page 3 and clears user pages.
-    /// - Type 5 (ISO 15693): delegates to the existing write path which creates CC.
+    /// - Type 5 (ISO 15693): writes a fresh CC to block 0 and clears the data area.
     /// - Type 4 and Type 3: CC is managed by tag firmware and cannot be formatted via commands.
     public static func formatNDEF(
         info: CardInfo,
@@ -171,7 +175,7 @@ public enum CoreExtendedNFC {
             guard let iso15693Transport = transport as? any ISO15693TagTransporting else {
                 throw NFCError.unsupportedOperation("ISO 15693 NDEF formatting requires an ISO 15693 transport")
             }
-            try await writeType5NDEF(Data(), transport: iso15693Transport)
+            try await formatType5NDEF(transport: iso15693Transport)
         default:
             throw NFCError.unsupportedOperation(
                 "NDEF formatting is not supported for \(info.type.description)"
@@ -230,8 +234,7 @@ public enum CoreExtendedNFC {
             manager.invalidate()
             return passport
         } catch {
-            manager.invalidate(errorMessage: error.localizedDescription)
-            throw error
+            throw manager.invalidateAfterFailure(error)
         }
     }
 
@@ -522,7 +525,7 @@ public enum CoreExtendedNFC {
 
         for write in writes {
             try Task.checkCancellation()
-            try await commands.writePage(write.page, data: write.chunk)
+            try await commands.writePage(write.page, data: write.chunk, memoryMap: memory)
         }
     }
 
@@ -540,17 +543,71 @@ public enum CoreExtendedNFC {
 
         // Write Capability Container to page 3 as the final step
         try Task.checkCancellation()
-        try await commands.writePage(3, data: NDEFTagMapping.buildType2CC(for: info.type))
+        // The CC is OTP on Type 2 tags (bits can only be set), so opt in explicitly.
+        try await commands.writePage(
+            3,
+            data: NDEFTagMapping.buildType2CC(for: info.type),
+            memoryMap: memory,
+            allowIrreversible: true
+        )
     }
 
+    /// Write an NDEF message to an NDEF-formatted Type 5 tag.
+    ///
+    /// Reads the CC first and refuses tags that are not formatted (CC magic E1h/E2h)
+    /// or deny write access, then writes only the blocks holding the NDEF TLV and
+    /// its terminator. Use ``formatNDEF(info:transport:)`` to format a blank tag.
     private static func writeType5NDEF(
         _ message: Data,
         transport: any ISO15693TagTransporting
     ) async throws {
         let systemInfo = try await transport.getSystemInfo()
         try requireKnownMemorySize(systemInfo)
-        let blocks = try NDEFTagMapping.buildType5Blocks(
+        guard systemInfo.blockSize >= 4 else {
+            throw NFCError.unsupportedOperation("Type 5 block size must be at least 4 bytes")
+        }
+
+        var leadingBytes = try await transport.readBlock(0)
+        let ccLength = try NDEFTagMapping.type5CCLength(firstBlock: leadingBytes)
+        var nextBlock: UInt8 = 1
+        while leadingBytes.count < ccLength {
+            try Task.checkCancellation()
+            guard Int(nextBlock) < systemInfo.blockCount else {
+                throw NFCError.invalidResponse(leadingBytes)
+            }
+            leadingBytes.append(try await transport.readBlock(nextBlock))
+            nextBlock += 1
+        }
+
+        let writes = try NDEFTagMapping.type5NDEFWrites(
             message: message,
+            leadingBytes: leadingBytes,
+            blockSize: systemInfo.blockSize,
+            blockCount: systemInfo.blockCount
+        )
+        // Resolve every block address before the first write so the tag is never
+        // left half-written by an unaddressable block.
+        let addressed = try writes.map { write in
+            guard let blockNumber = UInt8(exactly: write.block) else {
+                throw NFCError.unsupportedOperation("ISO 15693 writes beyond block 255 need extended commands")
+            }
+            return (blockNumber, write.data)
+        }
+        for (blockNumber, data) in addressed {
+            try Task.checkCancellation()
+            try await transport.writeBlock(blockNumber, data: data)
+        }
+    }
+
+    /// Format a Type 5 tag: write a fresh CC and an empty NDEF message, clearing
+    /// the rest of the single-byte addressable data area.
+    private static func formatType5NDEF(
+        transport: any ISO15693TagTransporting
+    ) async throws {
+        let systemInfo = try await transport.getSystemInfo()
+        try requireKnownMemorySize(systemInfo)
+        let blocks = try NDEFTagMapping.buildType5Blocks(
+            message: Data(),
             blockSize: systemInfo.blockSize,
             blockCount: systemInfo.blockCount
         )

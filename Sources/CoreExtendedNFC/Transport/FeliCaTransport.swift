@@ -27,7 +27,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
     }
 
     public func send(_ data: Data) async throws -> Data {
-        NFCLog.debug("→ SEND \(data.hexDump)", source: "FeliCa")
+        NFCLog.rawCommand(data, family: .felica, source: "FeliCa")
         let response: Data = try await withNFCErrorMapping(terminationMonitor) {
             try await withCheckedThrowingContinuation { continuation in
                 tag.sendFeliCaCommand(commandPacket: data) { response, error in
@@ -39,7 +39,7 @@ public final class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
                 }
             }
         }
-        NFCLog.debug("← RECV \(response.hexDump)", source: "FeliCa")
+        NFCLog.rawResponse(response, command: data, family: .felica, source: "FeliCa")
         return response
     }
 

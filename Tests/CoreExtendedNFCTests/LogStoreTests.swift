@@ -187,6 +187,24 @@ struct LogStoreTests {
     }
 
     @Test
+    func `log files are created with complete-unless-open protection`() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileManager = ProtectionRecordingFileManager()
+        let store = LogStore(directory: directory, fileManager: fileManager, maxFileSize: 64, maxFiles: 2)
+
+        for index in 0 ..< 4 {
+            store.append(level: .info, category: "Protect", message: "line-\(index)-padding-padding")
+        }
+        store.flush()
+
+        // before: created with no attributes (default protection class)
+        let created = fileManager.createdProtections
+        #expect(created.count >= 2) // initial file + the file recreated by rotation
+        #expect(created.allSatisfy { $0 == .completeUnlessOpen })
+    }
+
+    @Test
     func `category resolver infers sensible defaults`() {
         #expect(LogCategoryResolver.resolve(category: nil, fileID: "/tmp/ModelInference.swift") == "Model")
         #expect(LogCategoryResolver.resolve(category: nil, fileID: "/tmp/NetworkService.swift") == "Network")
@@ -194,6 +212,20 @@ struct LogStoreTests {
         #expect(LogCategoryResolver.resolve(category: nil, fileID: "/tmp/DatabaseManager.swift") == "Database")
         #expect(LogCategoryResolver.resolve(category: nil, fileID: "/tmp/Other.swift") == "App")
         #expect(LogCategoryResolver.resolve(category: "Custom", fileID: "/tmp/Other.swift") == "Custom")
+    }
+}
+
+private final class ProtectionRecordingFileManager: FileManager, @unchecked Sendable {
+    private let protections = LockedValue<[FileProtectionType?]>([])
+
+    var createdProtections: [FileProtectionType?] {
+        protections.withLock { $0 }
+    }
+
+    override func createFile(atPath path: String, contents data: Data?, attributes attr: [FileAttributeKey: Any]? = nil) -> Bool {
+        let protection = attr?[.protectionKey] as? FileProtectionType
+        protections.withLock { $0.append(protection) }
+        return super.createFile(atPath: path, contents: data, attributes: attr)
     }
 }
 

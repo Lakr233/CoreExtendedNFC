@@ -34,7 +34,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         guard let commandByte = data.first else {
             throw NFCError.unsupportedOperation("ISO 15693 raw send requires at least one byte (command code)")
         }
-        NFCLog.debug("→ SEND \(data.hexDump)", source: "ISO15693")
+        NFCLog.rawCommand(data, family: .iso15693, source: "ISO15693")
         let commandCode = Int(commandByte)
         // `dropFirst` is startIndex-relative, so sliced input is safe.
         let parameters: Data? = data.count > 1 ? Data(data.dropFirst()) : nil
@@ -54,7 +54,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
                 }
             }
         }
-        NFCLog.debug("← RECV \(response.hexDump)", source: "ISO15693")
+        NFCLog.rawResponse(response, command: data, family: .iso15693, source: "ISO15693")
         return response
     }
 
@@ -68,13 +68,13 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         let data = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.readSingleBlock(requestFlags: [.highDataRate], blockNumber: number)
         }
-        NFCLog.debug("← BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
+        NFCLog.debug("← BLOCK #\(number) \(NFCLog.payload(data))", source: "ISO15693")
         return data
     }
 
     /// Write a single block.
     public func writeBlock(_ number: UInt8, data: Data) async throws {
-        NFCLog.debug("→ WRITE_BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
+        NFCLog.debug("→ WRITE_BLOCK #\(number) \(NFCLog.payload(data))", source: "ISO15693")
         try await withNFCErrorMapping(terminationMonitor) {
             try await tag.writeSingleBlock(
                 requestFlags: [.highDataRate],
@@ -91,13 +91,13 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         let data = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.extendedReadSingleBlock(requestFlags: [.highDataRate], blockNumber: Int(number))
         }
-        NFCLog.debug("← EXT_BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
+        NFCLog.debug("← EXT_BLOCK #\(number) \(NFCLog.payload(data))", source: "ISO15693")
         return data
     }
 
     /// Extended write of a single block addressed with a 2-byte block number (command 0x31).
     public func extendedWriteBlock(_ number: UInt16, data: Data) async throws {
-        NFCLog.debug("→ EXT_WRITE_BLOCK #\(number) \(data.hexDump)", source: "ISO15693")
+        NFCLog.debug("→ EXT_WRITE_BLOCK #\(number) \(NFCLog.payload(data))", source: "ISO15693")
         try await withNFCErrorMapping(terminationMonitor) {
             try await tag.extendedWriteSingleBlock(
                 requestFlags: [.highDataRate],
@@ -151,6 +151,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         try await completion { tag.writeAFI(requestFlags: [.highDataRate], afi: afi, completionHandler: $0) }
     }
 
+    /// - Warning: Irreversible: permanently locks the AFI (see ``ISO15693TagTransporting/lockAFI()``).
     public func lockAFI() async throws {
         try await completion { tag.lockAFI(requestFlags: [.highDataRate], completionHandler: $0) }
     }
@@ -159,6 +160,7 @@ public final class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendab
         try await completion { tag.writeDSFID(requestFlags: [.highDataRate], dsfid: dsfid, completionHandler: $0) }
     }
 
+    /// - Warning: Irreversible: permanently locks the DSFID (see ``ISO15693TagTransporting/lockDSFID()``).
     public func lockDSFID() async throws {
         try await completion { tag.lockDSFID(requestFlags: [.highDataRate], completionHandler: $0) }
     }

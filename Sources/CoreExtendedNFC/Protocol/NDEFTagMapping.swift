@@ -165,6 +165,73 @@ enum NDEFTagMapping {
         }
     }
 
+    /// Validate the Type 5 Capability Container at the start of `firstBlock`
+    /// (block 0) for an NDEF write and return the CC length (4 or 8 bytes).
+    ///
+    /// NFC Forum T5T 1.0 §4.3.1 / §7.5.1 (NDEF write procedure):
+    /// - byte 0 must be the magic E1h or E2h, otherwise the tag is not NDEF formatted;
+    /// - byte 1 b7-b6 is the major mapping version (only 1 is supported);
+    /// - byte 1 b1-b0 is write access: only 00b (granted) permits writing;
+    /// - byte 2 = 00h selects the 8-byte CC (16-bit MLEN in bytes 6-7).
+    static func type5CCLength(firstBlock: Data) throws -> Int {
+        let bytes = [UInt8](firstBlock.prefix(4))
+        guard bytes.count == 4, bytes[0] == 0xE1 || bytes[0] == 0xE2 else {
+            throw NFCError.unsupportedOperation("The tag is not NDEF formatted; format it first")
+        }
+        guard bytes[1] >> 6 <= 1 else {
+            throw NFCError.unsupportedOperation("Unsupported Type 5 NDEF mapping version")
+        }
+        guard bytes[1] & 0x03 == 0x00 else {
+            throw NFCError.tagLocked
+        }
+        return bytes[2] == 0x00 ? 8 : 4
+    }
+
+    /// Plan the block writes that store `message` on an NDEF-formatted Type 5 tag.
+    ///
+    /// `leadingBytes` are the bytes read from block 0 onwards and must cover the CC.
+    /// Only the blocks holding the NDEF TLV and its terminator TLV are returned; the
+    /// CC is kept as read (a block it shares with the TLV is rewritten with the
+    /// CC bytes unchanged) and memory after the terminator is left untouched.
+    /// The data area is bounded by MLEN and by the single-byte addressable blocks.
+    static func type5NDEFWrites(
+        message: Data,
+        leadingBytes: Data,
+        blockSize: Int,
+        blockCount: Int
+    ) throws -> [(block: Int, data: Data)] {
+        guard blockSize >= 4 else {
+            throw NFCError.unsupportedOperation("Type 5 block size must be at least 4 bytes")
+        }
+        let ccLength = try type5CCLength(firstBlock: leadingBytes)
+        let cc = [UInt8](leadingBytes.prefix(ccLength))
+        guard cc.count == ccLength else {
+            throw NFCError.invalidResponse(leadingBytes)
+        }
+        let memoryLengthUnits = ccLength == 8
+            ? Int(cc[6]) << 8 | Int(cc[7])
+            : Int(cc[2])
+
+        let addressableBytes = min(blockCount, type5SingleByteAddressableBlocks) * blockSize
+        let capacity = min(memoryLengthUnits * 8, max(0, addressableBytes - ccLength))
+        let tlv = encodeNDEFTLV(message)
+        guard tlv.count <= capacity else {
+            throw NFCError.unsupportedOperation("NDEF message exceeds Type 5 user memory")
+        }
+
+        var area = Data(cc) + tlv
+        let padding = (blockSize - area.count % blockSize) % blockSize
+        area.append(Data(repeating: 0x00, count: padding))
+
+        // Blocks made only of CC bytes are not rewritten.
+        let firstBlock = ccLength / blockSize
+        let lastBlock = area.count / blockSize - 1
+        return (firstBlock ... lastBlock).map { block in
+            let offset = block * blockSize
+            return (block, Data(area[offset ..< offset + blockSize]))
+        }
+    }
+
     private static func extractTLVNDEF(from data: Data) -> Data? {
         var offset = 0
         while offset < data.count {

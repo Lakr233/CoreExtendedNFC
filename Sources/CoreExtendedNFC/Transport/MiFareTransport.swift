@@ -27,16 +27,16 @@ public final class MiFareTransport: NFCTagTransport, @unchecked Sendable {
     }
 
     public func send(_ data: Data) async throws -> Data {
-        NFCLog.debug("→ SEND \(data.hexDump)", source: "MiFare")
+        NFCLog.rawCommand(data, family: .mifare, source: "MiFare")
         let response = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.sendMiFareCommand(commandPacket: data)
         }
-        NFCLog.debug("← RECV \(response.hexDump)", source: "MiFare")
+        NFCLog.rawResponse(response, command: data, family: .mifare, source: "MiFare")
         return response
     }
 
     public func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU {
-        NFCLog.debug("→ APDU \(apdu.bytes.hexDump)", source: "MiFare")
+        NFCLog.apduCommand(apdu, source: "MiFare")
         let nfcAPDU = NFCISO7816APDU(
             instructionClass: apdu.cla,
             instructionCode: apdu.ins,
@@ -48,7 +48,7 @@ public final class MiFareTransport: NFCTagTransport, @unchecked Sendable {
         let (data, sw1, sw2) = try await withNFCErrorMapping(terminationMonitor) {
             try await tag.sendMiFareISO7816Command(nfcAPDU)
         }
-        NFCLog.debug("← SW:\(String(format: "%02X%02X", sw1, sw2)) \(data.hexDump)", source: "MiFare")
+        NFCLog.apduResponse(data: data, sw1: sw1, sw2: sw2, for: apdu, source: "MiFare")
         return ResponseAPDU(data: data, sw1: sw1, sw2: sw2)
     }
 }

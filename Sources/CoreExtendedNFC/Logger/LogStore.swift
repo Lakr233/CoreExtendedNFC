@@ -45,6 +45,21 @@ public final class LogStore: @unchecked Sendable {
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         logDirectory = dir
         resolvedQueue.setSpecific(key: queueKey, value: ObjectIdentifier(self))
+        upgradeExistingFileProtection()
+    }
+
+    /// Files written by earlier versions used the default protection class.
+    private func upgradeExistingFileProtection() {
+        let urls = [logFileURL] + (1 ... maxFiles).map { rotatedFileURL(index: $0) }
+        for url in urls where fileManager.fileExists(atPath: url.path) {
+            try? fileManager.setAttributes(Self.fileAttributes, ofItemAtPath: url.path)
+        }
+    }
+
+    /// Log files can contain card identifiers and protocol traces, so they are
+    /// unreadable while the device is locked unless already open for appending.
+    static var fileAttributes: [FileAttributeKey: Any] {
+        [.protectionKey: FileProtectionType.completeUnlessOpen]
     }
 
     var logFileURL: URL {
@@ -130,7 +145,7 @@ public final class LogStore: @unchecked Sendable {
         if !fileManager.fileExists(atPath: logFileURL.path) {
             let dir = logFileURL.deletingLastPathComponent()
             try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-            fileManager.createFile(atPath: logFileURL.path, contents: nil)
+            fileManager.createFile(atPath: logFileURL.path, contents: nil, attributes: Self.fileAttributes)
         }
     }
 
@@ -154,7 +169,7 @@ public final class LogStore: @unchecked Sendable {
             try? fileManager.removeItem(at: first)
         }
         try fileManager.moveItem(at: logFileURL, to: first)
-        fileManager.createFile(atPath: logFileURL.path, contents: nil)
+        fileManager.createFile(atPath: logFileURL.path, contents: nil, attributes: Self.fileAttributes)
     }
 
     func rotatedFileURL(index: Int) -> URL {
