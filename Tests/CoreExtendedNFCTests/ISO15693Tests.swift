@@ -52,8 +52,8 @@ struct ISO15693Tests {
         let transport = MockISO15693SecurityTransport()
         let manager = ISO15693SecurityManager(transport: transport)
 
-        try await manager.configureAFI(0xA1, lock: true)
-        try await manager.configureDSFID(0x07, lock: true)
+        try await manager.configureAFI(0xA1, permanentlyLock: true)
+        try await manager.configureDSFID(0x07, permanentlyLock: true)
 
         #expect(transport.operations == [
             "writeAFI:A1",
@@ -61,6 +61,17 @@ struct ISO15693Tests {
             "writeDSFID:07",
             "lockDSFID",
         ])
+    }
+
+    @Test
+    func `Security manager AFI and DSFID updates never lock by default`() async throws {
+        let transport = MockISO15693SecurityTransport()
+        let manager = ISO15693SecurityManager(transport: transport)
+
+        try await manager.configureAFI(0xA1)
+        try await manager.configureDSFID(0x07)
+
+        #expect(transport.operations == ["writeAFI:A1", "writeDSFID:07"])
     }
 
     @Test

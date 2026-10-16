@@ -21,20 +21,40 @@ public struct ISO15693SecurityManager: Sendable {
         self.transport = transport
     }
 
-    /// Update AFI and optionally lock it afterwards.
-    public func configureAFI(_ afi: UInt8, lock: Bool = false) async throws {
+    /// Update the AFI and, only when `permanentlyLock` is `true`, lock it.
+    ///
+    /// - Warning: `permanentlyLock: true` sends LOCK AFI (ISO/IEC 15693-3 §10.4.7),
+    ///   which is irreversible: the AFI can never be changed again on that tag.
+    public func configureAFI(_ afi: UInt8, permanentlyLock: Bool = false) async throws {
         try await transport.writeAFI(afi)
-        if lock {
+        if permanentlyLock {
             try await transport.lockAFI()
         }
     }
 
-    /// Update DSFID and optionally lock it afterwards.
-    public func configureDSFID(_ dsfid: UInt8, lock: Bool = false) async throws {
+    /// Update the AFI and optionally lock it.
+    @available(*, deprecated, renamed: "configureAFI(_:permanentlyLock:)",
+               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    public func configureAFI(_ afi: UInt8, lock: Bool) async throws {
+        try await configureAFI(afi, permanentlyLock: lock)
+    }
+
+    /// Update the DSFID and, only when `permanentlyLock` is `true`, lock it.
+    ///
+    /// - Warning: `permanentlyLock: true` sends LOCK DSFID (ISO/IEC 15693-3 §10.4.9),
+    ///   which is irreversible: the DSFID can never be changed again on that tag.
+    public func configureDSFID(_ dsfid: UInt8, permanentlyLock: Bool = false) async throws {
         try await transport.writeDSFID(dsfid)
-        if lock {
+        if permanentlyLock {
             try await transport.lockDSFID()
         }
+    }
+
+    /// Update the DSFID and optionally lock it.
+    @available(*, deprecated, renamed: "configureDSFID(_:permanentlyLock:)",
+               message: "Locking is irreversible; use `permanentlyLock:` to opt in explicitly")
+    public func configureDSFID(_ dsfid: UInt8, lock: Bool) async throws {
+        try await configureDSFID(dsfid, permanentlyLock: lock)
     }
 
     /// Send a manufacturer-specific custom command.
