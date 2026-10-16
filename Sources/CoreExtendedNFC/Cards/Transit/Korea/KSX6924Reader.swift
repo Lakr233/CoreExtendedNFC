@@ -156,6 +156,12 @@ public struct KSX6924Reader: Sendable {
 
     /// Metrodroid `SnapperTransitData.check`: every SFI 4 record is 46 bytes with bytes 26..<46
     /// set to 0xFF. An empty record file is not treated as Snapper.
+    ///
+    /// A T-Money record keeps its BCD date-time at 26..<33 (``KSX6924Constants/recordDateTime``),
+    /// so any record with real T-Money trip data already fails the filler test. The type byte
+    /// is deliberately not used: Snapper's SFI 4 records also carry type 1 / 2 at byte 0
+    /// (Metrodroid `SnapperTransaction.parseTransaction`, 2 = top-up), so rejecting those
+    /// values would misreport real Snapper cards as T-Money.
     static func isSnapper(records: [Data]) -> Bool {
         guard !records.isEmpty else { return false }
         return records.allSatisfy { record in

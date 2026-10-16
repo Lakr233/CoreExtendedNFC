@@ -238,6 +238,28 @@ struct KSX6924Tests {
     }
 
     @Test
+    func `Snapper discriminator keeps Snapper records whose type byte is 1 or 2`() {
+        // Metrodroid SnapperTransaction.parseTransaction reads the transaction type from
+        // byte 0 of the SFI 4 record and treats 2 as a top-up, so real Snapper records
+        // carry the same type values as T-Money trips; the type byte cannot rule Snapper out.
+        var topUp = Data(repeating: 0x00, count: 26) + Data(repeating: 0xFF, count: 20)
+        topUp[0] = 0x02
+        var trip = topUp
+        trip[0] = 0x01
+        #expect(KSX6924Reader.isSnapper(records: [trip, topUp]))
+    }
+
+    @Test
+    func `Snapper discriminator rejects any record with a T-Money timestamp`() {
+        // A T-Money record keeps its BCD date-time at 26..<33, so the FF filler is absent.
+        let snapper = Data(repeating: 0x00, count: 26) + Data(repeating: 0xFF, count: 20)
+        var tMoney = snapper
+        tMoney.replaceSubrange(26 ..< 33, with: [0x20, 0x25, 0x03, 0x15, 0x08, 0x30, 0x00])
+        #expect(!KSX6924Reader.isSnapper(records: [tMoney]))
+        #expect(!KSX6924Reader.isSnapper(records: [snapper, tMoney, snapper]))
+    }
+
+    @Test
     func `AID labels follow Metrodroid`() {
         let names = Dictionary(uniqueKeysWithValues: KSX6924Constants.allAIDs.map { ($0.aid.hexString, $0.name) })
         #expect(names["D4100000300001"] == "MOIBA")
