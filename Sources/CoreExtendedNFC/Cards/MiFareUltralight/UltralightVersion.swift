@@ -29,6 +29,15 @@ public struct UltralightVersionResponse: Sendable, Equatable {
     /// Identify the exact card type from version response.
     public var cardType: CardType {
         guard vendorID == 0x04 else { return .mifareUltralight } // 0x04 = NXP
+        // Ultralight EV1 and NTAG21x report major version 01h; NTAG210u (02h) and
+        // NTAG213 TT (03h) share the NTAG210 / NTAG213 page layouts. Other majors
+        // share storage codes but not memory layouts — e.g. Ultralight Nano 02h/03h
+        // (11 pages, storage 0Bh) and NTAG 223 DNA 04h (60 pages, storage 0Fh) — so
+        // they get the generic map rather than a wrong one (proxmark3
+        // client/src/cmdhfmfu.c GetHF14AMfU_Type and the MAX_* page counts).
+        let isNTAG210u = productType == 0x04 && majorVersion == 0x02 && storageSize == 0x0B
+        let isNTAG213TT = productType == 0x04 && majorVersion == 0x03 && storageSize == 0x0F
+        guard majorVersion == 0x01 || isNTAG210u || isNTAG213TT else { return .mifareUltralight }
 
         // productType: 0x03 = Ultralight, 0x04 = NTAG
         switch productType {

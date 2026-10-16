@@ -120,7 +120,9 @@ open class JapanICReader: @unchecked Sendable {
                     continue
                 }
 
-                if let tx = Self.parseHistoryBlock(block) {
+                // Unused slots are not always all zeros (e.g. `00 00 00 80 00…` on PASMO);
+                // like Metrodroid SuicaTransitData, drop records without a valid date.
+                if let tx = Self.parseHistoryBlock(block), tx.date != nil {
                     NFCLog.debug(
                         "Japan IC history block #\(i) parsed type=\(tx.type.rawValue) balanceAfter=\(tx.balanceAfter.map { NFCLog.cardValue($0) } ?? "unavailable") entry=\(NFCLog.cardValue(tx.entryStation ?? "")) exit=\(NFCLog.cardValue(tx.exitStation ?? ""))",
                         source: "JapanIC")

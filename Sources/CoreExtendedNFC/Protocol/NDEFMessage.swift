@@ -33,12 +33,29 @@ public struct NDEFMessage: Sendable, Equatable {
 
     /// Serialised message bytes, throwing ``NFCError/invalidParameter(_:)`` when a
     /// record cannot be encoded (type or ID longer than 255 bytes, payload longer than
-    /// 2³² − 1 bytes, or no records at all).
+    /// 2³² − 1 bytes, or no records at all) or breaks the per-TNF rules of NDEF 1.0
+    /// §3.2.6: an Empty record (TNF 00h) with a type, ID or payload, an Unknown record
+    /// (TNF 05h) with a type, or a record with TNF 06h (Unchanged, only valid on chunks,
+    /// which the serialiser never produces) or 07h (Reserved).
     public func validatedData() throws -> Data {
         guard !records.isEmpty else {
             throw NFCError.invalidParameter("An NDEF message needs at least one record")
         }
         for record in records {
+            if let violation = NDEFRecord.tnfViolation(
+                record.typeNameFormat,
+                typeLength: record.type.count,
+                identifierLength: record.identifier.count,
+                payloadLength: record.payload.count
+            ) {
+                throw NFCError.invalidParameter(violation)
+            }
+            guard record.typeNameFormat != .unchanged else {
+                throw NFCError.invalidParameter("TNF Unchanged (06h) is only valid on middle and terminating chunks")
+            }
+            guard record.typeNameFormat != .reserved else {
+                throw NFCError.invalidParameter("NDEF TNF 07h is reserved and must not be written")
+            }
             guard record.type.count <= 0xFF else {
                 throw NFCError.invalidParameter("NDEF record type is \(record.type.count) bytes; the limit is 255")
             }
@@ -107,7 +124,9 @@ public struct NDEFRecord: Sendable, Equatable {
         case .mimeMedia:
             return .mime(type: String(data: type, encoding: .utf8) ?? type.hexString, data: payload)
         case .absoluteURI:
-            return .uri(String(data: payload, encoding: .utf8) ?? payload.hexString)
+            // NDEF 1.0 §3.2.6: for TNF 03h the TYPE field holds the absolute URI
+            // (RFC 3986); the payload, if any, is the resource it identifies.
+            return .uri(String(data: type, encoding: .utf8) ?? type.hexString)
         case .external:
             return .external(type: String(data: type, encoding: .utf8) ?? type.hexString, data: payload)
         case .unknown, .unchanged, .reserved:
@@ -198,8 +217,43 @@ public struct NDEFRecord: Sendable, Equatable {
         )
     }
 
+    /// NDEF 1.0 §3.2.6 field constraints for one record, or `nil` when the record
+    /// honours them: TNF 00h (Empty) has no type, ID or payload; TNF 05h (Unknown)
+    /// and 06h (Unchanged) have no type; the reserved TNF 07h is held to the Unknown rule.
+    static func tnfViolation(
+        _ tnf: NDEFTypeNameFormat,
+        typeLength: Int,
+        identifierLength: Int,
+        payloadLength: Int
+    ) -> String? {
+        switch tnf {
+        case .empty:
+            guard typeLength == 0, identifierLength == 0, payloadLength == 0 else {
+                return "An NDEF record with TNF Empty (00h) must have no type, ID or payload"
+            }
+        case .unknown, .unchanged, .reserved:
+            // NDEF 1.0 §3.2.6: a parser SHOULD treat the reserved TNF 07h as Unknown (05h).
+            guard typeLength == 0 else {
+                let name = switch tnf {
+                case .unknown: "Unknown (05h)"
+                case .unchanged: "Unchanged (06h)"
+                default: "reserved 07h (treated as Unknown)"
+                }
+                return "An NDEF record with TNF \(name) must have no type"
+            }
+        case .wellKnown, .mimeMedia, .absoluteURI, .external:
+            break
+        }
+        return nil
+    }
+
     /// Parse an NDEF message (NDEF 1.0 §3). Chunked payloads (§2.3.3) are reassembled
     /// into one record carrying the initial chunk's TNF, type and ID.
+    ///
+    /// The parse is strict: records that break the per-TNF field rules of §3.2.6
+    /// (see ``NDEFMessage/validatedData()``; the reserved TNF 07h is read as Unknown) and any byte after
+    /// the record carrying ME are rejected with ``NFCError/invalidResponse(_:)``, as
+    /// Android's `NdefMessage` parser does.
     public static func parseMessage(_ data: Data) throws -> [NDEFRecord] {
         let data = Data(data) // Rebase so integer offsets index from zero.
         var records: [NDEFRecord] = []
@@ -259,6 +313,15 @@ public struct NDEFRecord: Sendable, Equatable {
                 throw NFCError.invalidResponse(data)
             }
 
+            guard tnfViolation(
+                tnf,
+                typeLength: typeLength,
+                identifierLength: identifierLength,
+                payloadLength: payloadLength
+            ) == nil else {
+                throw NFCError.invalidResponse(data)
+            }
+
             let type = Data(data[offset ..< offset + typeLength])
             offset += typeLength
             let identifier = Data(data[offset ..< offset + identifierLength])
@@ -314,7 +377,11 @@ public struct NDEFRecord: Sendable, Equatable {
             }
         }
 
-        guard pendingChunk == nil, sawMessageBegin, sawMessageEnd, !records.isEmpty else {
+        // ME marks the last record of the message (NDEF 1.0 §3.2.2), so nothing may follow
+        // it (Android CTS NdefTest.java:94-100 rejects such messages as too long).
+        guard offset == data.count,
+              pendingChunk == nil, sawMessageBegin, sawMessageEnd, !records.isEmpty
+        else {
             throw NFCError.invalidResponse(data)
         }
 
@@ -405,25 +472,38 @@ public struct NDEFRecord: Sendable, Equatable {
     }
 
     /// Smart Poster RTD 1.0 §3: the payload is an NDEF message whose URI record is
-    /// mandatory and whose Text records carry titles. Only direct URI ("U") and Text
-    /// ("T") children are decoded; nested records (including nested Smart Posters)
-    /// are not parsed, so a deeply nested payload costs linear time instead of 2^depth.
+    /// mandatory and whose Text records carry titles. Only direct URI ("U"), Text
+    /// ("T") and absolute-URI (TNF 03h) children are decoded; a URI record wins over an
+    /// absolute-URI record, which is used only when no URI record is present (as
+    /// Android's `NdefRecord.toUri()` accepts both). Nested records (including nested
+    /// Smart Posters) are not parsed, so a deeply nested payload costs linear time
+    /// instead of 2^depth.
     public static func parseSmartPoster(_ payload: Data) -> Payload {
         guard let nestedRecords = try? parseMessage(payload) else {
             return .unknown(data: payload)
         }
         var uri: String?
+        var absoluteURI: String?
         var title: String?
-        for record in nestedRecords where record.typeNameFormat == .wellKnown {
-            if uri == nil, record.type == Data([0x55]), case let .uri(value) = parseURIPayload(record.payload) {
-                uri = value
-            } else if title == nil, record.type == Data([0x54]),
-                      case let .text(_, value) = parseTextPayload(record.payload)
-            {
-                title = value
+        for record in nestedRecords {
+            switch record.typeNameFormat {
+            case .wellKnown:
+                if uri == nil, record.type == Data([0x55]), case let .uri(value) = parseURIPayload(record.payload) {
+                    uri = value
+                } else if title == nil, record.type == Data([0x54]),
+                          case let .text(_, value) = parseTextPayload(record.payload)
+                {
+                    title = value
+                }
+            case .absoluteURI:
+                if absoluteURI == nil, case let .uri(value) = record.parsedPayload {
+                    absoluteURI = value
+                }
+            default:
+                break
             }
         }
-        return .smartPoster(uri: uri, title: title)
+        return .smartPoster(uri: uri ?? absoluteURI, title: title)
     }
 
     /// URI RTD 1.0 Table 3: choose the code with the longest matching prefix, so

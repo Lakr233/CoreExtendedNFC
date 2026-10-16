@@ -57,10 +57,14 @@ public extension CoreExtendedNFC {
     /// Type 2 and Type 5 writes follow the NFC Forum write procedure: the NDEF TLV
     /// length is first written as zero, then the message, and the real length last,
     /// so an interrupted write leaves an empty message rather than a truncated one.
-    /// On Type 2 tags the NDEF TLV is written at the start of the user area (page 4);
-    /// Lock Control and Memory Control TLVs are not preserved, which suits the NXP
-    /// Ultralight and NTAG memory maps. A Type 2 message that fills the data area
-    /// exactly is written without a Terminator TLV. A Type 5 tag whose CC requires
+    /// On Type 2 tags the NDEF TLV is written at the start of the user area (page 4),
+    /// after any Lock Control and Memory Control TLVs found there (NFC Forum T2T 1.0
+    /// §2.3.4 / §2.3.5), which are kept unchanged. When such a TLV declares lock or
+    /// reserved bytes inside the data area, the message and its padding stop before
+    /// the page holding the first of them, and a tag whose reserved bytes share a page
+    /// with the control TLVs is refused with ``NFCError/unsupportedOperation(_:)``.
+    /// A Type 2 message that fills the data area exactly is written without a
+    /// Terminator TLV. A Type 5 tag whose CC requires
     /// the special frame format (CC byte 3 b4) is refused with
     /// ``NFCError/unsupportedOperation(_:)``.
     static func writeNDEF(
@@ -214,16 +218,55 @@ public extension CoreExtendedNFC {
         let commands = UltralightCommands(transport: transport)
         let ccPage = try await commands.readPages(startPage: 3)
         let capacity = try NDEFTagMapping.type2WritableCapacity(cc: ccPage, memoryMap: memory)
-        try await writeType2Area(message, capacity: capacity, memory: memory, commands: commands)
+
+        // READ returns pages 3-6; keep the Lock / Memory Control TLVs at the start of
+        // the data area, reading pages 7-10 once when one of them runs past page 6.
+        let dataAreaOffset = Int(memory.userDataStart) * 4
+        var leadingBytes = Data(ccPage.prefix(16).dropFirst(4).prefix(capacity))
+        var layout = try NDEFTagMapping.type2WriteLayout(
+            leadingBytes: leadingBytes,
+            dataAreaOffset: dataAreaOffset,
+            capacity: capacity
+        )
+        if layout == nil {
+            let nextPage = Int(memory.userDataStart) + leadingBytes.count / 4
+            if let page = UInt8(exactly: nextPage) {
+                leadingBytes.append(try await commands.readPages(startPage: page).prefix(16))
+                leadingBytes = Data(leadingBytes.prefix(capacity))
+                layout = try NDEFTagMapping.type2WriteLayout(
+                    leadingBytes: leadingBytes,
+                    dataAreaOffset: dataAreaOffset,
+                    capacity: capacity
+                )
+            }
+        }
+        guard let layout else {
+            throw NFCError.unsupportedOperation("Type 2 control TLVs are too long; NDEF writing is not supported")
+        }
+        try await writeType2Area(
+            message,
+            capacity: layout.capacity,
+            preservedPrefix: layout.preservedPrefix,
+            endsDataArea: layout.endsDataArea,
+            memory: memory,
+            commands: commands
+        )
     }
 
     static func writeType2Area(
         _ message: Data,
         capacity: Int,
+        preservedPrefix: Data = Data(),
+        endsDataArea: Bool = true,
         memory: UltralightMemoryMap,
         commands: UltralightCommands
     ) async throws {
-        let bytes = try NDEFTagMapping.buildType2Area(message: message, capacity: capacity)
+        let bytes = try NDEFTagMapping.buildType2Area(
+            message: message,
+            capacity: capacity,
+            preservedPrefix: preservedPrefix,
+            endsDataArea: endsDataArea
+        )
 
         // Resolve every page address before the first write so an impossible layout
         // is refused up front instead of leaving the tag half-written.
@@ -237,7 +280,7 @@ public extension CoreExtendedNFC {
         let writes = NDEFTagMapping.lengthLastWriteOrder(
             pages,
             blockSize: 4,
-            tlvOffset: Int(memory.userDataStart) * 4
+            tlvOffset: Int(memory.userDataStart) * 4 + preservedPrefix.count
         )
 
         for write in writes {

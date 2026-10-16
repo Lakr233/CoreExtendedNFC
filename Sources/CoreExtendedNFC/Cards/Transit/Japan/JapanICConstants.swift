@@ -55,9 +55,10 @@ public enum JapanICConstants {
     /// (payment/admission) (Metrodroid SuicaUtil.getProcessTypeName).
     public static let processTypeMask: UInt8 = 0x7F
 
-    /// Process types (byte 1 & 0x7F) that add value: charge, auto-charge at entry/exit,
-    /// bus deposit, bonus charge, register deposit.
-    public static let topupProcessTypes: Set<UInt8> = [0x02, 0x14, 0x15, 0x1F, 0x48, 0x49]
+    /// Process types (byte 1 & 0x7F) that add value: charge, new issue (initial deposit),
+    /// auto-charge at entry/exit, bus deposit, bonus charge, register deposit
+    /// (Metrodroid SuicaUtil.getProcessTypeName: 07h = "new issue").
+    public static let topupProcessTypes: Set<UInt8> = [0x02, 0x07, 0x14, 0x15, 0x1F, 0x48, 0x49]
 
     /// Process type 0x02 (charge): the record carries no station codes.
     public static let chargeProcessType: UInt8 = 0x02

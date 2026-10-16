@@ -7,6 +7,8 @@ public enum NDEFTagMapping {
     /// NFC Forum T2T 1.0 §6.4.1 NDEF detection: the tag is only in NDEF state
     /// when CC0 (page 3 byte 0) is E1h and the mapping major version (CC1 b7-b4)
     /// is at most 1. The TLV scan is limited to the data area size CC2 × 8.
+    /// Lock and reserved bytes declared by Lock Control and Memory Control TLVs
+    /// are skipped while reading (see ``extractType2TLVNDEF(from:dataAreaOffset:)``).
     public static func extractType2Message(from pages: [MemoryDump.Page]) -> Data? {
         guard let ccPage = pages.first(where: { $0.number == 3 }), ccPage.data.count >= 4 else {
             return nil
@@ -15,13 +17,159 @@ public enum NDEFTagMapping {
         guard cc[0] == 0xE1, cc[1] >> 4 <= 1 else { return nil }
         let dataAreaSize = Int(cc[2]) * 8
 
-        let payload = pages
+        let dataPages = pages
             .sorted(by: { $0.number < $1.number })
             .filter { $0.number >= 4 }
-            .reduce(into: Data()) { result, page in
-                result.append(page.data)
+        let payload = dataPages.reduce(into: Data()) { result, page in
+            result.append(page.data)
+        }
+        return extractType2TLVNDEF(
+            from: Data(payload.prefix(dataAreaSize)),
+            dataAreaOffset: Int(dataPages.first?.number ?? 4) * type2PageSize
+        )
+    }
+
+    /// Bytes per Type 2 page (NFC Forum T2T 1.0 §2.1).
+    static let type2PageSize = 4
+
+    /// Lock Control TLV tag (NFC Forum T2T 1.0 §2.3.4).
+    static let lockControlTLV: UInt8 = 0x01
+
+    /// Memory Control TLV tag (NFC Forum T2T 1.0 §2.3.5).
+    static let memoryControlTLV: UInt8 = 0x02
+
+    /// Absolute byte range (counted from byte 0 of page 0) of the lock bytes or reserved
+    /// bytes that a Lock Control (01h) or Memory Control (02h) TLV with the 3-byte
+    /// `value` declares, or `nil` for a value that is not 3 bytes long.
+    ///
+    /// NFC Forum T2T 1.0 §2.3.4 / §2.3.5 (nfcpy `tt2.py`): byte 0 holds PageAddr (b7-b4)
+    /// and ByteOffset (b3-b0), byte 1 the size (00h means 256), byte 2 b3-b0
+    /// BytesPerPage; the area starts at PageAddr × 2^BytesPerPage + ByteOffset. The
+    /// size counts lock bits for a Lock Control TLV (⌈bits / 8⌉ bytes) and bytes for a
+    /// Memory Control TLV.
+    public static func type2ControlArea(tag: UInt8, value: Data) -> Range<Int>? {
+        let bytes = [UInt8](value)
+        guard bytes.count == 3, tag == lockControlTLV || tag == memoryControlTLV else { return nil }
+        let pageAddress = Int(bytes[0] >> 4)
+        let byteOffset = Int(bytes[0] & 0x0F)
+        let bytesPerPage = Int(bytes[2] & 0x0F)
+        let position = pageAddress * (1 << bytesPerPage) + byteOffset
+        let size = bytes[1] == 0 ? 256 : Int(bytes[1])
+        let byteCount = tag == lockControlTLV ? (size + 7) / 8 : size
+        return position ..< position + byteCount
+    }
+
+    /// Find the NDEF TLV in a Type 2 data area and return its value, skipping the
+    /// lock and reserved bytes that Lock Control and Memory Control TLVs declare
+    /// (NFC Forum T2T 1.0 §2.3.4 / §2.3.5, nfcpy `tt2.py` `_read_ndef_data`).
+    ///
+    /// `data` is the data area (CC2 × 8 bytes from page 4) and `dataAreaOffset` its
+    /// absolute byte address (16 for page 4), which control TLV positions are
+    /// relative to. Bytes that a control TLV declares are skipped wherever they fall
+    /// after that TLV, including inside the NDEF TLV's length or value. A control TLV
+    /// whose length is not 3 is skipped like any other unknown TLV.
+    public static func extractType2TLVNDEF(from data: Data, dataAreaOffset: Int) -> Data? {
+        let bytes = [UInt8](data)
+        var reserved: [Range<Int>] = []
+        var index = 0
+
+        /// Next byte of the area that no control TLV reserves, or `nil` at the end.
+        func nextByte() -> UInt8? {
+            while index < bytes.count, reserved.contains(where: { $0.contains(dataAreaOffset + index) }) {
+                index += 1
             }
-        return extractTLVNDEF(from: Data(payload.prefix(dataAreaSize)))
+            guard index < bytes.count else { return nil }
+            defer { index += 1 }
+            return bytes[index]
+        }
+
+        while let tag = nextByte() {
+            switch tag {
+            case 0x00:
+                continue
+            case 0xFE:
+                return nil
+            default:
+                guard let first = nextByte() else { return nil }
+                var length = Int(first)
+                if first == 0xFF {
+                    guard let high = nextByte(), let low = nextByte() else { return nil }
+                    length = Int(high) << 8 | Int(low)
+                }
+                var value = Data(capacity: length)
+                for _ in 0 ..< length {
+                    guard let byte = nextByte() else { return nil }
+                    value.append(byte)
+                }
+                if tag == 0x03 {
+                    return value
+                }
+                if let area = type2ControlArea(tag: tag, value: value) {
+                    reserved.append(area)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Plan an NDEF write that keeps the Lock Control and Memory Control TLVs found
+    /// at the start of a Type 2 data area (NFC Forum T2T 1.0 §2.3.4 / §2.3.5).
+    ///
+    /// `leadingBytes` are the first bytes of the data area, whose absolute address is
+    /// `dataAreaOffset` (16 for page 4), and `capacity` is the writable size of the
+    /// data area. NULL TLVs and control TLVs at the start are kept byte for byte as the
+    /// returned `preservedPrefix`; the NDEF TLV goes right after them. The returned
+    /// `capacity` (counted from the start of the data area, prefix included) stops at
+    /// the page holding the first byte a control TLV reserves, so neither the
+    /// message nor its padding touches lock or reserved bytes. `endsDataArea` is
+    /// `false` when it was shortened that way.
+    ///
+    /// Returns `nil` when a control TLV runs past `leadingBytes`, so the caller can
+    /// read more bytes and try again. Throws ``NFCError/unsupportedOperation(_:)``
+    /// when a control TLV reserves bytes in a page the control TLVs occupy. A data area
+    /// without control TLVs yields an empty prefix and the full capacity.
+    public static func type2WriteLayout(
+        leadingBytes: Data,
+        dataAreaOffset: Int,
+        capacity: Int
+    ) throws -> (preservedPrefix: Data, capacity: Int, endsDataArea: Bool)? {
+        let bytes = [UInt8](leadingBytes)
+        var index = 0
+        var prefixLength = 0
+        var reserved: [Range<Int>] = []
+        scan: while index < bytes.count {
+            switch bytes[index] {
+            case 0x00:
+                index += 1
+            case lockControlTLV, memoryControlTLV:
+                guard let (length, headerBytes) = parseTLVLength(leadingBytes, offset: index + 1) else {
+                    return nil
+                }
+                let valueStart = index + 1 + headerBytes
+                guard valueStart + length <= bytes.count else { return nil }
+                let value = Data(bytes[valueStart ..< valueStart + length])
+                if let area = type2ControlArea(tag: bytes[index], value: value) {
+                    reserved.append(area)
+                }
+                index = valueStart + length
+                prefixLength = index
+            default:
+                break scan
+            }
+        }
+
+        let prefixEnd = dataAreaOffset + prefixLength
+        var end = dataAreaOffset + capacity
+        for area in reserved where area.upperBound > dataAreaOffset && area.lowerBound < end {
+            end = min(end, area.lowerBound / type2PageSize * type2PageSize)
+        }
+        guard end >= prefixEnd else {
+            throw NFCError.unsupportedOperation(
+                "Type 2 control TLVs reserve bytes next to the control TLVs; NDEF writing is not supported"
+            )
+        }
+        let usable = end - dataAreaOffset
+        return (Data(bytes.prefix(prefixLength)), usable, usable == capacity)
     }
 
     /// Extract the NDEF message from Type 5 blocks.
@@ -117,18 +265,28 @@ public enum NDEFTagMapping {
     /// and zero padding. A message whose NDEF TLV fills the area exactly is
     /// written without a terminator (NFC Forum T2T 1.0 §2.3, nfcpy `tt2.py`).
     ///
-    /// The NDEF TLV always starts at the first byte of the area: Lock Control and
-    /// Memory Control TLVs, and the reserved or lock bytes they describe, are not
-    /// preserved. NXP Ultralight and NTAG products keep their lock and
-    /// configuration bytes outside the user area, so the layout suits them.
-    public static func buildType2Area(message: Data, capacity: Int) throws -> Data {
-        var tlv = encodeNDEFTLV(message)
+    /// The NDEF TLV starts right after `preservedPrefix`, the NULL, Lock Control and
+    /// Memory Control TLVs kept from the tag (see
+    /// ``type2WriteLayout(leadingBytes:dataAreaOffset:capacity:)``); with an empty
+    /// prefix it starts at the first byte of the area. `capacity` includes the
+    /// prefix. Pass `endsDataArea: false` when `capacity` stops short of the data
+    /// area (before reserved bytes), which keeps the Terminator TLV.
+    public static func buildType2Area(
+        message: Data,
+        capacity: Int,
+        preservedPrefix: Data = Data(),
+        endsDataArea: Bool = true
+    ) throws -> Data {
+        var tlv = preservedPrefix + encodeNDEFTLV(message)
         // The Terminator TLV is optional when the NDEF TLV ends the data area.
-        if tlv.count - 1 == capacity {
+        if endsDataArea, tlv.count - 1 == capacity {
             tlv.removeLast()
         }
         guard tlv.count <= capacity else {
-            throw NFCError.ndefCapacityExceeded(required: tlv.count - 1, capacity: capacity)
+            throw NFCError.ndefCapacityExceeded(
+                required: tlv.count - preservedPrefix.count - 1,
+                capacity: max(0, capacity - preservedPrefix.count)
+            )
         }
         return tlv + Data(repeating: 0x00, count: capacity - tlv.count)
     }

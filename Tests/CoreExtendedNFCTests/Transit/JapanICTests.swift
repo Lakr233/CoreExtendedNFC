@@ -166,7 +166,10 @@ struct JapanICTests {
 
         #expect(result.serialNumber == "0101011278224813")
         #expect(result.balanceRaw == 10)
-        #expect(result.transactions.count == 12)
+        // Unused `00 00 00 80 …` slots carry no date and are dropped, as in Metrodroid
+        // SuicaTransitData; only the four real records remain.
+        #expect(result.transactions.count == 4)
+        #expect(result.transactions.allSatisfy { $0.date != nil })
 
         let first = try #require(result.transactions.first)
         #expect(first.type == .purchase)
@@ -174,11 +177,10 @@ struct JapanICTests {
         #expect(first.entryStation == nil)
         #expect(first.exitStation == nil)
 
-        let sparse = result.transactions[4]
-        #expect(sparse.type == .trip)
-        #expect(sparse.balanceAfter == 0)
-        #expect(sparse.date == nil)
-        #expect(sparse.entryStation == nil) // unused block: no date, no stations
+        // Process 07h (new issue) credits the initial 500 yen.
+        let issue = try #require(result.transactions.last)
+        #expect(issue.type == .topup)
+        #expect(issue.balanceAfter == 500)
     }
 
     @Test

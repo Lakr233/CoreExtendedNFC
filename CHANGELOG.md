@@ -56,6 +56,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `UltralightCommands.probeUltralightCMemory()` is `async throws` and rethrows session loss.
 - `UltralightCAccessConfiguration.requiresAuthenticationForReads` is now `true` when AUTH1 bit 0 is `0` (it was inverted), and an AUTH0 of `30h` or higher means no protection (`firstProtectedPage == nil`), not only exactly `30h`.
 - GET_VERSION identification: NTAG I2C (product subtype `05h`) is `.mifareUltralight`; the 1k variant was reported as `.ntag216`, and the undocumented Ultralight storage code `06h` is no longer MF0UL11.
+- GET_VERSION identification also requires the major version of the matching datasheet (`01h`; NTAG210u `02h`, NTAG213 TT `03h`): Ultralight Nano (`02h`/`03h`) and NTAG 223 DNA (`04h`) were mapped to MF0UL11 / NTAG213 and are now `.mifareUltralight` (proxmark3 `cmdhfmfu.c` version table).
 
 #### ISO 15693
 
@@ -73,6 +74,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Reading an erased Type 3, Type 4 or Type 5 tag (empty NDEF message) throws `ndefMessageNotFound`, as Type 2 already did (was a parse error).
 - On Type 2, `ndefCapacityExceeded(required:)` no longer counts the Terminator TLV, and a message that fills the data area exactly is accepted and written without one.
 - Type 5 tags whose CC requires the special frame format (CC byte 3 b4) are refused with `unsupportedOperation`.
+- Parsing is strict (NDEF 1.0 §3.2.6, Android `NdefMessage`): bytes after the record carrying ME, TNF Empty with a type / ID / payload, and TNF Unknown or Unchanged with a type throw `invalidResponse`. The reserved TNF `07h` is read like Unknown. `validatedData()` (and so `writeNDEF`) also refuses those records and any `.unchanged` / `.reserved` record with `invalidParameter`.
+- Absolute-URI records (TNF `03h`) decode the URI from the TYPE field (was the payload); a Smart Poster without a `U` record takes its URI from an absolute-URI child.
+- Type 2 reads skip the lock and reserved bytes declared by Lock Control / Memory Control TLVs (T2T 1.0 §2.3.4 / §2.3.5). Type 2 writes keep NULL and control TLVs at the start of the data area (so a preserved control TLV costs its bytes of capacity), stop before declared reserved bytes, and may read pages 7-10 once.
 
 #### DESFire
 
@@ -95,6 +99,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - KS X 6924 history comes from SFI 4 records. CEPAS timestamps count from 1995-01-01 00:00 Singapore time.
 - Japan IC: ticket-machine and fare-adjustment records (console types `03`, `07`, `08`, `12`-`15`) have `exitStation == nil`; bus records (console type `05`) have no stations and put the line and stop codes in `metadata["busLineCode"]` / `metadata["busStopCode"]`.
 - CEPAS: type `76` (bus refund) is a `.topup` and `04` (service charge) a `.purchase`, both with an amount (were `.unknown` without one).
+- Japan IC: history slots without a valid date (unused slots such as `00 00 00 80 …`) are dropped, as Metrodroid does; process `07h` (new issue, initial deposit) is a `.topup`.
 
 #### MemoryDump
 
@@ -213,6 +218,7 @@ Types and members:
 - **FeliCa:** 3-byte block list elements, service attribute codes, Type 3 attribute validation, 16-service read chunks.
 - **Transit:** Japan IC console / process tables and purchase times, KS X 6924 SFI 4 records and Snapper detection, T-Union top-up type, AID labels.
 - **MemoryDump:** imports, exports and diffs never trap or truncate.
+- **Spec test vectors (self-check round 2):** executable tests for FIPS 197 / SP 800-38B / FIPS 180-4 examples, ICAO 9303-11 Appendices D, F, G and I plus Parts 3-6 and 10 specimens, proxmark3 DESFire / Ultralight vectors, AN10833 and MF1S50 access conditions, ndeflib / nfcpy / Android CTS NDEF vectors, and Metrodroid / FareBot transit dumps (`Tests/CoreExtendedNFCTests/Vectors/`).
 - **Logging:** UTF-8-safe `readTail`, no queue deadlock, race-free logger configuration, file protection on log files.
 - **My Number:** the retry counter is checked before VERIFY, items are de-duplicated so VERIFY is sent once, and the individual number is no longer found by regex.
 - **PACE (spec verification):** the first supported PACEInfo is used instead of always the first (ICAO 9303-11 §4.4.4.1); MSE:Set AT sends the domain parameter ID in tag `84` (§4.4.4.1); PACEDomainParameterInfo is no longer parsed as PACEInfo (§9.2); unsupported parameters fall back to BAC before any PACE APDU.
