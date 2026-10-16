@@ -2,8 +2,16 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Core API</title><link rel="stylesheet" href="../styles.css"></head>
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="../guide/index.html">Guide</a><a href="index.html" aria-current="page">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="../research/index.html">Research</a></nav>
 <main><h1>Core API</h1><p class="lede">The <code>CoreExtendedNFC</code> namespace exposes the high-level flows used by apps.</p>
-<pre><code class="language-swift">public static func scan(message: String? = nil) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager)
-public static func scanAndDump(message: String? = nil) async throws -> (CardInfo, MemoryDump)
+<pre><code class="language-swift">public static func scan(
+    pollingTargets: [NFCSessionManager.PollingTarget] = [.all],
+    message: String? = nil,
+    manager: NFCSessionManager = NFCSessionManager()
+) async throws -> (CardInfo, any NFCTagTransport, NFCSessionManager)
+public static func scanAndDump(
+    pollingTargets: [NFCSessionManager.PollingTarget] = [.all],
+    message: String? = nil,
+    manager: NFCSessionManager = NFCSessionManager()
+) async throws -> (CardInfo, MemoryDump)
 public static func dumpCard(info: CardInfo, transport: any NFCTagTransport) async throws -> MemoryDump
 public static func readNDEF(info: CardInfo, transport: any NFCTagTransport) async throws -> NDEFMessage
 public static func writeNDEF(_ message: NDEFMessage, info: CardInfo, transport: any NFCTagTransport) async throws
@@ -15,22 +23,59 @@ public static func readPassport(
     performActiveAuth: Bool = true,
     trustAnchorsDER: [Data] = [],
     message: String? = nil,
+    manager: NFCSessionManager = NFCSessionManager(),
+    onProgress: (@Sendable (String) -> Void)? = nil
+) async throws -> PassportModel
+public static func readPassport(            // over a transport you already hold; no session handling
+    transport: any NFCTagTransport,
+    mrzKey: String,
+    dataGroups: [DataGroupId] = [.com, .dg1, .dg2, .sod],
+    performActiveAuth: Bool = true,
+    trustAnchorsDER: [Data] = [],
     onProgress: (@Sendable (String) -> Void)? = nil
 ) async throws -> PassportModel
 public static func readTransitBalance(info: CardInfo, transport: any NFCTagTransport) async throws -> TransitBalance
 
 // My Number
-static func readMyNumberCard(items: [MyNumberCardItem] = [.tokenInfo], cardInfoInputSupportPIN: String? = nil, message: String? = nil) async throws -> MyNumberCardData
-static func readMyNumberCard(info: CardInfo, transport: any NFCTagTransport, items: [MyNumberCardItem] = [.tokenInfo], cardInfoInputSupportPIN: String? = nil) async throws -> MyNumberCardData
-static func lookupMyNumberRemainingPINAttempts(info: CardInfo, transport: any NFCTagTransport, pinType: MyNumberPINType) async throws -> Int
+static func readMyNumberCard(
+    items: [MyNumberCardItem] = [.tokenInfo],
+    cardInfoInputSupportPIN: String? = nil,
+    message: String? = nil,
+    manager: NFCSessionManager = NFCSessionManager(),
+    onProgress: (@Sendable (String) -> Void)? = nil
+) async throws -> MyNumberCardData
+static func readMyNumberCard(transport: any NFCTagTransport, items: [MyNumberCardItem] = [.tokenInfo], cardInfoInputSupportPIN: String? = nil, onProgress: (@Sendable (String) -> Void)? = nil) async throws -> MyNumberCardData
+static func lookupMyNumberRemainingPINAttempts(transport: any NFCTagTransport, pinType: MyNumberPINType) async throws -> Int
 
 // Ultralight / NTAG
-static func writePage(_ page: UInt8, data: Data, memoryMap: UltralightMemoryMap? = nil, allowIrreversible: Bool = false, transport: any NFCTagTransport) async throws
+static func readUltralightPages(startPage: UInt8, transport: any NFCTagTransport) async throws -> Data
+static func writeUltralightPage(_ page: UInt8, data: Data, memoryMap: UltralightMemoryMap? = nil, allowIrreversible: Bool = false, transport: any NFCTagTransport) async throws
+static func fastReadUltralightPages(from startPage: UInt8, to endPage: UInt8, transport: any NFCTagTransport) async throws -> Data
+static func compatibilityWriteUltralightPage(_ page: UInt8, data: Data, memoryMap: UltralightMemoryMap? = nil, allowIrreversible: Bool = false, transport: any NFCTagTransport) async throws
+static func readNTAGSignature(transport: any NFCTagTransport) async throws -> Data
+static func readNTAGCounter(counterID: UInt8 = 0x02, transport: any NFCTagTransport) async throws -> UInt32
+static func authenticateUltralightPassword(password: Data, transport: any NFCTagTransport) async throws -> Data
+static func readUltralightAuthenticationConfiguration(configStartPage: UInt8, transport: any NFCTagTransport) async throws -> (auth0Page: UInt8, accessBits: UInt8)
 static func restoreUltralight(dump: MemoryDump, info: CardInfo, transport: any NFCTagTransport) async throws
 
-// ISO 15693 (the `lock:` overloads are deprecated)
+// DESFire
+static func getDESFireApplicationIDs(transport: any NFCTagTransport) async throws -> [Data]
+static func selectDESFireApplication(_ aid: Data, transport: any NFCTagTransport) async throws
+static func getDESFireFileIDs(transport: any NFCTagTransport) async throws -> [UInt8]
+static func getDESFireFileSettings(_ fileID: UInt8, transport: any NFCTagTransport) async throws -> DESFireFileSettings
+
+// ISO 15693 (block ranges are checked against 0...255)
+static func readISO15693Blocks(range: ClosedRange&lt;Int&gt;, transport: any NFCTagTransport) async throws -> [Data]
+static func getISO15693BlockSecurityStatus(range: ClosedRange&lt;Int&gt;, transport: any NFCTagTransport) async throws -> [Bool]
 static func configureISO15693AFI(_ afi: UInt8, permanentlyLock: Bool = false, transport: any NFCTagTransport) async throws
 static func configureISO15693DSFID(_ dsfid: UInt8, permanentlyLock: Bool = false, transport: any NFCTagTransport) async throws
+static func sendISO15693CustomCommand(code: Int, parameters: Data = Data(), transport: any NFCTagTransport) async throws -> Data
+static func challengeISO15693(cryptoSuiteIdentifier: Int, message: Data = Data(), transport: any NFCTagTransport) async throws
+static func authenticateISO15693(cryptoSuiteIdentifier: Int, message: Data, transport: any NFCTagTransport) async throws -> ISO15693SecurityResponse
+static func updateISO15693Key(keyIdentifier: Int, message: Data, transport: any NFCTagTransport) async throws -> ISO15693SecurityResponse
+
+// Type 4
+static func readType4CapabilityContainer(transport: any NFCTagTransport) async throws -> Type4CC
 
 // Export, import, diff
 static func exportJSON(dump: MemoryDump, prettyPrinted: Bool = true) throws -> String
@@ -38,16 +83,19 @@ static func exportAll(dump: MemoryDump) throws -> [MemoryDump.ExportArtifact]
 static func importFlipperNFC(_ text: String) throws -> MemoryDump
 static func importProxmark3MFU(_ data: Data) throws -> MemoryDump
 static func diffDumps(_ lhs: MemoryDump, _ rhs: MemoryDump) -> MemoryDump.DiffSummary</code></pre>
+<h2 id="deprecated">Deprecated names</h2>
+<p>The 1.x facade names still compile and forward to the names above: <code>readPages</code>, <code>writePage</code>, <code>fastRead</code>, <code>compatibilityWrite</code>, <code>readSignature</code>, <code>readCounter</code>, <code>passwordAuth</code>, <code>readAuthConfig</code>, <code>getApplicationIDs</code>, <code>selectApplication</code>, <code>getFileIDs</code>, <code>getFileSettings</code>, <code>iso15693CustomCommand</code>, <code>iso15693Challenge</code>, <code>iso15693Authenticate</code>, <code>iso15693KeyUpdate</code> and <code>readType4CC</code>. Also deprecated: the <code>NSRange</code> overloads of <code>readISO15693Blocks</code> and <code>getISO15693BlockSecurityStatus</code>, the <code>lock:</code> overloads of <code>configureISO15693AFI</code> / <code>configureISO15693DSFID</code>, and the <code>info:</code> overloads of <code>readMyNumberCard</code> and <code>lookupMyNumberRemainingPINAttempts</code>, whose <code>info</code> argument was never used. The typealiases <code>ActiveAuthStatus</code>, <code>PassiveAuthStatus</code> and <code>ActiveAuthPublicKey</code> name <code>ActiveAuthenticationStatus</code>, <code>PassiveAuthenticationStatus</code> and <code>ActiveAuthenticationPublicKey</code>. See <a href="../guide/migrating-to-2.html#renames">Migrating to 2.0</a> for the full table.</p>
 <h2 id="sessions">Sessions and cancellation</h2>
-<p><code>scan()</code> returns a live <code>NFCSessionManager</code>; keep it alive while using the transport and call <code>invalidate()</code> or <code>invalidate(errorMessage:)</code> when done. If refinement fails, the session is closed before the error is thrown. <code>scanAndDump</code>, <code>readPassport</code> and <code>readMyNumberCard</code> manage their own session.</p>
+<p><code>scan()</code> returns a live <code>NFCSessionManager</code>; keep it alive while using the transport and call <code>invalidate()</code> or <code>invalidate(errorMessage:)</code> when done. If refinement fails, the session is closed before the error is thrown. <code>scanAndDump</code>, <code>readPassport</code> and <code>readMyNumberCard</code> manage their own session and invalidate it before returning. The <code>transport:</code> overloads of <code>readPassport</code> and <code>readMyNumberCard</code> neither start nor end a session.</p>
+<p><code>pollingTargets</code> limits which tag technologies are polled, for example <code>[.iso14443]</code>. Each session-owning call accepts a <code>manager:</code>, so you can pass your own <code>NFCSessionManager</code> or a subclass of it; <code>scan</code> returns that instance. See <a href="../guide/migrating-to-2.html#subclassing">Subclassing</a> for the overridable hooks.</p>
 <p>Only one scan can be pending per <code>NFCSessionManager</code>; a concurrent <code>scan</code> throws <code>NFCError.scanInProgress</code>. Cancelling the calling task while waiting for or connecting to a tag invalidates the session and throws <code>CancellationError</code>. Ending a pending scan with <code>invalidate()</code> throws <code>NFCError.sessionInvalidatedByCaller</code>. When the user dismisses the NFC sheet, failures are reported as <code>NFCError.userCanceled</code> and no error message is shown on the sheet. All three report <code>error.isNFCCancellation == true</code>. <code>NFCSessionManager.wasCanceledByUser</code> covers a failure that raced the user's cancel. See <a href="errors.html">Errors</a>.</p>
 <h2 id="passport">Passport reads</h2>
-<p><code>readPassport</code> reads EF.CardAccess, tries PACE when it is advertised, and falls back to BAC. EF.COM and the SOD are read first. A data group is selected when either lists it. Only the SOD hash list can rule a data group out; if <code>dataGroups</code> contains <code>.com</code> but not <code>.sod</code> and COM omits a requested group, the SOD is also read as the index. DG1 is read next, then the other groups, DG15 and Active Authentication. EAC-protected DG3 and DG4 are read last. Files are capped at 10 MB (DG2-DG7) or 64 KB (everything else). The call throws when nothing could be read, or when DG1 was requested but not read. Otherwise it returns a partial model, and <code>dataGroupReadStatus</code> records <code>read</code>, <code>notPresent</code>, <code>unavailable</code>, <code>failed</code> or <code>notRead</code> per group. <code>onProgress</code> receives localized progress messages that are also shown on the NFC sheet.</p>
-<p>Pass DER-encoded CSCA certificates as <code>trustAnchorsDER</code>. Without them, Passive Authentication reports <code>.fallback</code> at best. See <a href="../guide/passport.html">Passport</a> for the status meanings.</p>
+<p><code>readPassport</code> reads EF.CardAccess, tries PACE when it is advertised, and falls back to BAC. EF.COM and EF.SOD are read first. A data group is selected when either lists it. Only the EF.SOD hash list can rule a data group out; if <code>dataGroups</code> contains <code>.com</code> but not <code>.sod</code> and EF.COM omits a requested group, EF.SOD is also read as the index. DG1 is read next, then the other groups, DG15 and Active Authentication. EAC-protected DG3 and DG4 are read last. Files are capped at 10 MB (DG2-DG7) or 64 KB (everything else). The call throws when nothing could be read, or when DG1 was requested but not read. Otherwise it returns a partial model, and <code>dataGroupReadStatus</code> records <code>read</code>, <code>notPresent</code>, <code>unavailable</code>, <code>failed</code> or <code>notRead</code> per group. <code>onProgress</code> receives localized progress messages that are also shown on the NFC sheet.</p>
+<p>Pass DER-encoded CSCA certificates as <code>trustAnchorsDER</code>. Without them, Passive Authentication reports <code>.fallback</code> at best. See <a href="../guide/passport.html">Passport</a> for the status meanings. To build a model from stored data-group bytes without NFC, use <code>PassportModel(rawDataGroups:cardAccessRaw:performPassiveAuthentication:trustAnchorsDER:dataGroupReadStatus:)</code>; see <a href="models.html#passport-model">Models</a>.</p>
 <h2 id="logging">Logging</h2>
 <pre><code class="language-swift">NFCLogConfiguration.logger = MyLogger()   // any NFCLogger
 NFCLogConfiguration.logPayloads = false   // default</code></pre>
-<p>By default, frames are logged as header, lengths and status word only. With <code>logPayloads = true</code>, payload bytes, UIDs and block contents are included too. Even then, PIN, password and authentication exchanges (VERIFY, CHANGE REFERENCE DATA, GET CHALLENGE, the AUTHENTICATE commands, MIFARE <code>PWD_AUTH</code> and PACK, Ultralight C and DESFire authentication) are logged as <code>&lt;redacted n bytes&gt;</code>, and secure-messaging APDUs log only header and status word.</p>
+<p>By default, frames are logged as header, lengths and status word only. With <code>logPayloads = true</code>, payload bytes, UIDs and block contents are included too. Even then, PIN, password and authentication exchanges (VERIFY, CHANGE REFERENCE DATA, GET CHALLENGE, the AUTHENTICATE commands, MIFARE <code>PWD_AUTH</code> and PACK, Ultralight C and DESFire authentication) are logged as <code>&lt;redacted n bytes&gt;</code>, and Secure Messaging APDUs log only header and status word.</p>
 <h2 id="transit">Transit</h2>
 <p><code>readTransitBalance</code> supports Japan IC, Octopus, Singapore CEPAS, Korea KS X 6924, and China T-Union. Pass the original card information and transport from <code>NFCSessionManager.scan</code>; do not call <code>refineCardInfo</code> or use <code>CoreExtendedNFC.scan</code>, which refines automatically. FeliCa cards are routed by system code; ISO 7816 cards are probed for CEPAS, then KS X 6924 and T-Union. CEPAS communication, malformed-response, and history errors are propagated rather than treated as a different card family. Only <code>NFCError.applicationNotFound(aid:)</code> or <code>.tagNotSupported</code> from a reader moves on to the next one. When no reader recognizes the card, <code>NFCError.tagNotSupported</code> is thrown.</p>
 <p>The CEPAS reader provides read-only purse and recent-log access. One traditional EZ-Link card has been read successfully on iPhone Air using the CEPAS reader directly; the integrated automatic scan, offline operation, comparison with a ticket-machine reference, and other card variants remain unverified on physical cards. SimplyGo history is unsupported. See the <a href="../guide/transit.html#singapore">test guide</a>.</p>

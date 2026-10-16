@@ -35,21 +35,53 @@ Sources/CoreExtendedNFC/
 │   ├── FeliCa/            Type 3 NDEF, frame assembly
 │   ├── ISO15693/          Block read/write, system info
 │   ├── Type4/             NDEF via ISO 7816 SELECT/READ BINARY
+│   ├── IndividualNumber/  Japanese My Number card APDU flows
+│   ├── Transit/           Japan IC, Octopus, CEPAS, KS X 6924, T-Union
 │   └── Passport/          BAC, PACE, CA, AA, SM; DG parsers in DataGroups/
 │
 ├── Crypto/             AES-CMAC, ISO 9797 MAC, key derivation, padding, hashing
+├── Concurrency/        LockedValue (lock-protected shared state)
+├── Logger/             NFCLogger, NFCLogConfiguration, LogStore, payload redaction
 ├── Models/             CardType, CardInfo, MemoryDump, AccessBits, MRZ, Passport
+├── Resources/          Localizable.xcstrings (en, zh-Hans)
 └── Utilities/          Hex, byte, parity helpers
 ```
 
-## Public API (CoreExtendedNFC.swift)
+## Public API (CoreExtendedNFC*.swift)
 
 ```swift
-CoreExtendedNFC.scan()           → (CardInfo, NFCTagTransport, NFCSessionManager)
-CoreExtendedNFC.scanAndDump()    → (CardInfo, MemoryDump)
-CoreExtendedNFC.dumpCard()       → MemoryDump
-CoreExtendedNFC.readPassport()   → PassportModel
+// Session-owning flows; manager: accepts an NFCSessionManager subclass
+CoreExtendedNFC.scan(pollingTargets:message:manager:)          → (CardInfo, any NFCTagTransport, NFCSessionManager)
+CoreExtendedNFC.scanAndDump(pollingTargets:message:manager:)   → (CardInfo, MemoryDump)
+CoreExtendedNFC.readPassport(mrzKey:dataGroups:performActiveAuth:trustAnchorsDER:message:manager:onProgress:) → PassportModel
+CoreExtendedNFC.readMyNumberCard(items:cardInfoInputSupportPIN:message:manager:onProgress:)                  → MyNumberCardData
+
+// Over a connected transport (no session handling)
+CoreExtendedNFC.dumpCard(info:transport:)                      → MemoryDump
+CoreExtendedNFC.readNDEF / writeNDEF / formatNDEF(info:transport:)
+CoreExtendedNFC.readPassport(transport:mrzKey:dataGroups:performActiveAuth:trustAnchorsDER:onProgress:) → PassportModel
+CoreExtendedNFC.readMyNumberCard(transport:items:cardInfoInputSupportPIN:onProgress:)                  → MyNumberCardData
+CoreExtendedNFC.lookupMyNumberRemainingPINAttempts(transport:pinType:)                                 → Int
+CoreExtendedNFC.readTransitBalance(info:transport:)            → TransitBalance
+
+// Offline
+PassportModel(rawDataGroups:cardAccessRaw:performPassiveAuthentication:trustAnchorsDER:dataGroupReadStatus:)
 ```
+
+Family facades are named verb + family + noun: `readUltralightPages`, `writeUltralightPage`, `readNTAGSignature`, `getDESFireApplicationIDs`, `readISO15693Blocks(range: ClosedRange<Int>, ...)`, `authenticateISO15693`, `readType4CapabilityContainer`, and so on. The 1.x names (`readPages`, `writePage`, `getApplicationIDs`, `iso15693Authenticate`, `readType4CC`, ...) are deprecated forwarders; do not use them in new code. User-facing changes are recorded in `CHANGELOG.md`, and upgrade steps in `docs/guide/migrating-to-2.html`.
+
+## Access Policy
+
+The library is open by default: callers may subclass, override, overload and extend it.
+
+- Transports, `NFCSessionManager`, `LogStore`, `SecureMessagingTransport` and every reader / command type are `open class ...: @unchecked Sendable` with immutable (`public let`) stored state. Main I/O entry points in the class body are `open`; members in extensions are `public` (Swift cannot override them). Static hooks on open classes are `open class func`.
+- Every `open class` that is `@unchecked Sendable` carries the doc comment: "Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable."
+- Value models (`CardInfo`, `MemoryDump`, `PassportModel`, `TransitBalance`, ...) stay structs with public members. Parsers, constants and helpers are `public`. Do not add `@frozen`.
+- Kept sealed for stability or security; do not open these:
+  - `SecureMessagingTransport`: keys, SSC, exchange gate, `protect` / `unprotect` / MAC / IV helpers stay private; `sendAPDU` is `public`, not `open`.
+  - `NFCSessionManager`: scan state stays private; `scan(for:message:)`, `invalidate*`, `setAlertMessage` and the delegate callbacks are `public`, not `open`. Customization goes through `sessionDidBecomeActive`, `sessionDidInvalidate`, `invalidateAfterFailure`, `failureOutcome`, `invalidationError`, `pollingOptions` and `identifyTag`.
+  - `LockedValue`, `AsyncExchangeGate`, `SessionTerminationMonitor` and `OpenSSLPACECurve` stay `public final` with private lock / pointer state. `OpenSSLPACECurve` is intentionally not `Sendable`: it owns a `BN_CTX` and is used inside a single PACE run.
+  - OpenSSL `OpaquePointer` helpers in `ActiveAuthenticationVerifier` and `SODParser`, and `LogStore.performSync`, stay private.
 
 ## Build & Test
 
@@ -62,20 +94,22 @@ Tests use `MockTransport` to simulate NFC tag responses.
 
 ## Boundary Rules
 
-| Layer      | CoreNFC import? |
-| ---------- | --------------- |
-| Transport/ | YES             |
-| Protocol/  | **NO**          |
-| Models/    | **NO**          |
-| Cards/     | **NO**          |
-| Crypto/    | **NO**          |
-| Utilities/ | **NO**          |
+| Layer        | CoreNFC import? |
+| ------------ | --------------- |
+| Transport/   | YES             |
+| Protocol/    | **NO**          |
+| Models/      | **NO**          |
+| Cards/       | **NO**          |
+| Crypto/      | **NO**          |
+| Logger/      | **NO**          |
+| Concurrency/ | **NO**          |
+| Utilities/   | **NO**          |
 
 **Only Transport/ and NFCSessionManager may import CoreNFC.** Everything else is pure logic.
 
 ## Coding Conventions
 
-- **Swift 6.2** strict concurrency. All public types must be `Sendable`.
+- **Swift 6.2** strict concurrency. All public types must be `Sendable` (the one exception is `OpenSSLPACECurve`; see Access Policy).
 - **async throws** for all NFC operations. No completion handlers.
 - File naming: PascalCase noun (`UltralightCommands.swift`). One primary type per file.
 - Card code under `Cards/<Family>/`.
@@ -99,8 +133,8 @@ MRZ input → MRZKeyGenerator (ICAO 9303 Part 3, weights 7,3,1)
          → EF.CardAccess → PACE (ECDH Generic Mapping, NIST P-256/384/521, OpenSSL)
            or BAC key derivation (ICAO 9303 Part 11 Appendix D) as fallback
          → Secure Messaging (DO'87/DO'99/DO'8E, ISO 9797-1 MAC or AES-CMAC)
-         → Read COM + SOD (index), DG1 (MRZ, mandatory), DG2 (face), DG14, DG15 (AA key), EAC DG3/DG4 last
-         → Passive Authentication (RFC 5652 CMS, hash verification, CSCA chain via trustAnchorsDER)
+         → Read EF.COM + EF.SOD (index), DG1 (MRZ, mandatory), DG2 (face), DG14, DG15 (AA key), EAC DG3/DG4 last
+         → Passive Authentication (RFC 5652 CMS, hash verification, DSC certification path validation to a CSCA in trustAnchorsDER)
          → Active Authentication (INTERNAL AUTHENTICATE, ICAO 9303 Part 11 §6.1);
            succeeded only with fully verified PA and a matching DG15 hash
 ```

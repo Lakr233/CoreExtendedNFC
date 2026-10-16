@@ -36,7 +36,7 @@
 
 <h2 id="install">Install</h2>
 <pre><code class="language-swift">dependencies: [
-    .package(url: "https://github.com/Lakr233/CoreExtendedNFC.git", from: "1.1.2"),
+    .package(url: "https://github.com/Lakr233/CoreExtendedNFC.git", from: "2.0.0"),
 ],
 targets: [
     .target(name: "App", dependencies: [
@@ -44,6 +44,7 @@ targets: [
     ]),
 ]
 </code></pre>
+<p>Upgrading from 1.x? See <a href="guide/migrating-to-2.html">Migrating to 2.0</a> and the <a href="https://github.com/Lakr233/CoreExtendedNFC/blob/main/CHANGELOG.md">changelog</a>.</p>
 
 <h2 id="quick-start">Quick Start</h2>
 <pre><code class="language-swift">import CoreExtendedNFC
@@ -77,12 +78,13 @@ let passport = try await CoreExtendedNFC.readPassport(
 <tr><td>MIFARE Classic 1K / 4K</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
 </tbody>
 </table>
-<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 parity-bit authentication. DESFire has no write API. ISO 15693 tags with more than 256 blocks are read with extended commands; tags that reject them are dumped up to block 255 and marked partially readable.</p>
+<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 authentication (iOS cannot send the encrypted parity bits it needs). DESFire has no write API. ISO 15693 tags with more than 256 blocks are read with extended commands; tags that reject them are dumped up to block 255 and marked partially readable.</p>
 
 <h2 id="where-next">Next Steps</h2>
 <ul class="hub-list">
 <li><a href="guide/index.html">Guide</a><span class="summary">Task-oriented scanning, dump, NDEF, passport, transit, My Number, and Info.plist setup notes.</span></li>
 <li><a href="api/index.html">API Reference</a><span class="summary">Public Swift surface grouped by top-level API, card commands, models, and protocol helpers.</span></li>
+<li><a href="guide/migrating-to-2.html">Migrating to 2.0</a><span class="summary">Upgrade checklist from 1.1.2 with before/after code, renamed functions, and the subclassing contract.</span></li>
 <li><a href="research/index.html">Research Notes</a><span class="summary">Real-card validation, iOS polling identifiers, transit-card findings, and My Number data layout.</span></li>
 </ul>
 

@@ -1,12 +1,21 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · My Number Card</title><link rel="stylesheet" href="../styles.css"></head>
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="index.html" aria-current="page">Guide</a><a href="../api/index.html">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="../research/index.html">Research</a></nav>
-<main><h1>My Number Card</h1><p class="lede">The My Number reader targets JPKI and card-info-input-support applet paths used by Japanese Individual Number cards.</p>
+<main><h1>My Number Card</h1><p class="lede">The My Number reader targets JPKI and card-info-input-support application (AP) paths used by Japanese Individual Number cards.</p>
 <pre><code class="language-swift">let card = try await CoreExtendedNFC.readMyNumberCard(
     items: [.tokenInfo, .individualNumber],
-    cardInfoInputSupportPIN: "1234"
+    cardInfoInputSupportPIN: "1234",
+    onProgress: { message in print(message) }   // localized, also shown on the NFC sheet
+)
+
+// Over a transport you already hold (no session handling):
+let token = try await CoreExtendedNFC.readMyNumberCard(transport: transport, items: [.tokenInfo])
+let attempts = try await CoreExtendedNFC.lookupMyNumberRemainingPINAttempts(
+    transport: transport,
+    pinType: .cardInfoInputSupport
 )</code></pre>
+<p><code>readMyNumberCard</code> also accepts a <code>manager:</code> to run the session on your own <code>NFCSessionManager</code> or a subclass. To customize the read itself, subclass <code>MyNumberCardReader</code> and override <code>read(items:cardInfoInputSupportPIN:onProgress:)</code>.</p>
 <table><thead><tr><th>Applet</th><th>AID</th><th>Use</th></tr></thead><tbody><tr><td>JPKI</td><td><code>D392F000260100000001</code></td><td>Token information from EF <code>0006</code>.</td></tr><tr><td>Card-info input support</td><td><code>D3921000310001010408</code></td><td>PIN domain and protected reads.</td></tr><tr><td>Individual number</td><td><code>D3921000310001010100</code></td><td>Individual-number data flow.</td></tr></tbody></table>
-<p>Requesting <code>.individualNumber</code> without a PIN throws <code>NFCError.pinRequired(.cardInfoInputSupport)</code>; a PIN that is not exactly 4 digits, or an empty <code>items</code> list, throws <code>NFCError.invalidParameter</code>. Before sending the PIN, the reader sends an empty VERIFY to read the retry counter. If the PIN is already blocked (<code>63C0</code>, <code>6983</code>, <code>6984</code>), the PIN is never transmitted and <code>NFCError.pinVerificationFailed(remainingAttempts: 0)</code> is thrown. A wrong PIN throws the same error with the counter the card reports, or <code>nil</code> when it reports none. <code>lookupMyNumberRemainingPINAttempts(info:transport:pinType:)</code> returns the counter without sending a PIN.</p>
+<p>Requesting <code>.individualNumber</code> without a PIN throws <code>NFCError.pinRequired(.cardInfoInputSupport)</code>; a PIN that is not exactly 4 digits, or an empty <code>items</code> list, throws <code>NFCError.invalidParameter</code>. Before sending the PIN, the reader sends an empty VERIFY to read the retry counter. If the PIN is already blocked (<code>63C0</code>, <code>6983</code>, <code>6984</code>), the PIN is never transmitted and <code>NFCError.pinVerificationFailed(remainingAttempts: 0)</code> is thrown. A wrong PIN throws the same error with the counter the card reports, or <code>nil</code> when it reports none. <code>lookupMyNumberRemainingPINAttempts(transport:pinType:)</code> returns the counter without sending a PIN; the 1.x overload with an unused <code>info:</code> argument is deprecated.</p>
 <p>The byte-level EF layout is documented in <a href="../research/my-number-card.html">My Number Card Data Format</a>.</p>
 <nav class="pager"><a class="prev" href="transit.html">Transit Cards</a><a class="next" href="ios-configuration.html">iOS Configuration</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

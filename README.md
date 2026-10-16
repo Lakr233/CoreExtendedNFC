@@ -10,7 +10,7 @@ Identify cards, read/write memory, dump tags, read eMRTD passports — async/awa
 
 ## Why This Exists
 
-CoreNFC gives you the transport layer: session management, tag discovery, NDEF support, and raw tag-specific commands such as ISO 7816 APDUs, MiFare commands, FeliCa commands, and ISO 15693 block/custom commands.
+CoreNFC gives you the transport layer: session management, tag discovery, NDEF support, and raw tag-specific commands such as ISO 7816 APDUs, MIFARE commands, FeliCa commands, and ISO 15693 block/custom commands.
 
 What it does not provide is a built-in high-level protocol library. It doesn't know what an Ultralight page layout looks like, how to chain DESFire Additional Frames, how to negotiate BAC or PACE with a passport chip, or how to export a dump in Flipper or Proxmark3 formats.
 
@@ -19,8 +19,8 @@ This library does.
 **What it covers:**
 
 - **Card identification** — Decode ATQA + SAK bytes into 25+ card types, then refine with safe probes (Ultralight C, NTAG210/212, DESFire EV1–EV3, FeliCa Lite / Lite-S)
-- **Memory operations** — Read, write, and dump tag memory across Ultralight, NTAG, DESFire, FeliCa, ISO 15693, and Type 4 NDEF tags
-- **DESFire application layer** — Enumerate apps and files, handle Additional Frame chaining, authenticated reads (ISO & EV2)
+- **Memory operations** — Read, write, and dump tag memory across Ultralight, NTAG, DESFire, FeliCa, ISO 15693, and NFC Forum Type 4 Tags
+- **DESFire application layer** — Enumerate applications and files, handle Additional Frame chaining, authenticated reads (ISO & EV2)
 - **Passport / eMRTD reading** — PACE (ECDH Generic Mapping on NIST curves) with BAC fallback, Secure Messaging, data group parsing (MRZ, face photo), Passive Authentication against your CSCA trust anchors, Active Authentication, and a per-stage security report
 - **Transit cards** — Balance and history for Japan IC, Hong Kong Octopus, Singapore CEPAS, Korea KS X 6924 (including Snapper), and China T-Union
 - **My Number card (Japan)** — JPKI token read, individual-number read with card-info-input-support PIN, PIN-attempt lookup
@@ -83,7 +83,7 @@ do {
     let passport = try await CoreExtendedNFC.readPassport(
         mrzKey: "L898902C<369080619406236",
         dataGroups: [.com, .dg1, .dg2, .sod],
-        trustAnchorsDER: cscaCertificates   // DER CSCA certificates; [] skips chain validation
+        trustAnchorsDER: cscaCertificates   // DER CSCA certificates; [] skips certification path validation
     )
     print(passport.mrz?.lastName ?? "?")
     print(passport.securityReport.passiveAuthentication.status)
@@ -92,9 +92,9 @@ do {
 }
 ```
 
-`readPassport` prefers PACE when EF.CardAccess advertises it and falls back to BAC. It reads COM and the SOD first and selects a data group only when one of them lists it. It throws when DG1 was requested but could not be read, or when nothing could be read; otherwise it returns a partial model and records each data group's outcome in `dataGroupReadStatus`. File sizes are capped (10 MB for image data groups, 64 KB for the rest).
+`readPassport` prefers PACE when EF.CardAccess advertises it and falls back to BAC. It reads EF.COM and EF.SOD first and selects a data group only when one of them lists it. It throws when DG1 was requested but could not be read, or when nothing could be read; otherwise it returns a partial model and records each data group's outcome in `dataGroupReadStatus`. File sizes are capped (10 MB for image data groups, 64 KB for the rest).
 
-Without `trustAnchorsDER`, Passive Authentication reports `.fallback` at best (signature not chained to a CSCA). Active Authentication is `.succeeded` only when Passive Authentication is fully verified and DG15 matches its SOD hash; a valid signature over an unauthenticated DG15 is `.fallback`. `PassportModel.reverifyingSecurity(trustAnchorsDER:)` re-runs both judgements offline on a saved model.
+Without `trustAnchorsDER`, Passive Authentication reports `.fallback` at best (the Document Signer certificate (DSC) has no validated certification path to a CSCA in `trustAnchorsDER`). Active Authentication is `.succeeded` only when Passive Authentication is fully verified and DG15 matches its hash in EF.SOD; a valid signature over an unauthenticated DG15 is `.fallback`. `PassportModel.reverifyingSecurity(trustAnchorsDER:)` re-runs both judgements offline on a saved model.
 
 ## Card Operations
 
@@ -152,7 +152,23 @@ let data = try await CoreExtendedNFC.readMyNumberCard(
 print(data.tokenInfo ?? "-", data.individualNumber ?? "-")
 ```
 
-See the [My Number card reference](docs/research/my-number-card.html) for the official applet and data layout.
+See the [My Number card reference](docs/research/my-number-card.html) for the official application (AP) and data layout.
+
+**Customizing the session**
+
+```swift
+// Poll only ISO 14443 tags and run the session on your own NFCSessionManager subclass.
+let (info, transport, manager) = try await CoreExtendedNFC.scan(
+    pollingTargets: [.iso14443],
+    manager: AppSessionManager()
+)
+defer { manager.invalidate() }
+
+// Read a passport over a transport you already hold.
+let passport = try await CoreExtendedNFC.readPassport(transport: transport, mrzKey: mrzKey)
+```
+
+Transports, `NFCSessionManager` and the reader / command types are `open` classes. Subclasses must keep any added mutable state lock-protected or immutable. See [Subclassing](docs/guide/migrating-to-2.html#subclassing).
 
 **Card Identification (pure logic, no hardware)**
 
@@ -168,7 +184,7 @@ NFCLogConfiguration.logger = MyLogger()   // conforms to NFCLogger
 NFCLogConfiguration.logPayloads = false   // default: headers, lengths and status words only
 ```
 
-PIN, password and authentication exchanges are always logged as `<redacted n bytes>`, and secure-messaging APDUs log only the header and status word, even when `logPayloads` is `true`.
+PIN, password and authentication exchanges are always logged as `<redacted n bytes>`, and Secure Messaging APDUs log only the header and status word, even when `logPayloads` is `true`.
 
 **Errors**
 
@@ -178,11 +194,13 @@ Every failure is an `NFCError` (`Equatable`). Check `error.isNFCCancellation` (u
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Lakr233/CoreExtendedNFC.git", from: "1.1.2"),
+    .package(url: "https://github.com/Lakr233/CoreExtendedNFC.git", from: "2.0.0"),
 ]
 ```
 
 Requires iOS 15+ and a Swift 6.2 toolchain (Xcode with the iOS SDK). SwiftPM also fetches `openssl-spm`.
+
+Upgrading from 1.x? 2.0 has source and behaviour changes (typed errors, write guards, renamed functions, stricter passport trust). See [Migrating to 2.0](docs/guide/migrating-to-2.html) and the [changelog](CHANGELOG.md).
 
 Your host app needs:
 
@@ -237,7 +255,7 @@ Real-world card validation is listed in [Tested Cards](docs/research/tested-card
 
 ## Standards
 
-ICAO 9303 (Parts 3/10/11) · BSI TR-03110 · ISO 7816-4 · ISO 14443-3 · ISO 15693-3 · ISO 9797-1 · RFC 4493 · RFC 5652 · NFC Forum Type 2/3/4/5 · NXP AN10833
+ICAO Doc 9303 (Parts 3/10/11) · BSI TR-03110 · ISO/IEC 14443-3/-4 · ISO/IEC 7816-4 · ISO/IEC 15693-3 · ISO/IEC 9797-1 · RFC 4493 · RFC 5280 · RFC 5652 · NIST FIPS 197/180-4 · JIS X 6319-4 · KS X 6924 · NFC Forum NDEF/RTD/T2T–T5T · NXP AN10833
 
 ## License
 

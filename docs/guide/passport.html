@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Passport</title><link rel="stylesheet" href="../styles.css"></head>
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="index.html" aria-current="page">Guide</a><a href="../api/index.html">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="../research/index.html">Research</a></nav>
-<main><h1>Passport / eMRTD</h1><p class="lede">Passport reading starts from the MRZ-derived key, establishes Secure Messaging with PACE or BAC, and reads LDS data groups from the eMRTD applet.</p>
+<main><h1>Passport / eMRTD</h1><p class="lede">Passport reading starts from the MRZ-derived key, establishes Secure Messaging with PACE or BAC, and reads LDS data groups from the eMRTD application.</p>
 <h2 id="read">Read Data Groups</h2><pre><code class="language-swift">// ICAO 9303 Part 11 Appendix D example: "L898902C&lt;369080619406236"
 let mrzKey = MRZKeyGenerator.computeMRZKey(
     documentNumber: "L898902C",
@@ -16,22 +16,40 @@ let passport = try await CoreExtendedNFC.readPassport(
     trustAnchorsDER: cscaCertificates,          // DER CSCA certificates from your trust list
     onProgress: { message in print(message) }   // localized progress text
 )</code></pre>
+<p>To read over a transport you already hold, for example from <code>scan(pollingTargets: [.iso14443])</code>, use the <code>transport:</code> overload. It runs the same workflow but neither updates the NFC sheet nor ends the session:</p>
+<pre><code class="language-swift">let (_, transport, manager) = try await CoreExtendedNFC.scan(pollingTargets: [.iso14443])
+defer { manager.invalidate() }
+let passport = try await CoreExtendedNFC.readPassport(
+    transport: transport,
+    mrzKey: mrzKey,
+    trustAnchorsDER: cscaCertificates
+)</code></pre>
+<p>The session-owning <code>readPassport</code> also accepts a <code>manager:</code> for your own <code>NFCSessionManager</code> or a subclass. To change how data groups are read, subclass <code>PassportReader</code> and override its <code>open</code> methods; see <a href="migrating-to-2.html#subclassing">Subclassing</a>.</p>
 <h2 id="flow">Read Flow</h2>
 <ol>
 <li>EF.CardAccess is read. When it advertises PACE, PACE runs first. If PACE fails, the reader falls back to BAC; a lost tag or cancelled task ends the read.</li>
-<li>EF.COM and the SOD are read first. A data group is selected when either lists it, and only the SOD hash list can rule one out. When COM is requested without the SOD and COM omits a requested group, the SOD is read as the index too.</li>
-<li>DG1, then the other groups, DG15 and Active Authentication. EAC-protected DG3 and DG4 go last, so a chip that ends secure messaging on them cannot cost DG1, DG2, the SOD or AA.</li>
-<li>When secure messaging ends, the remaining groups are marked <code>notRead</code> and everything read so far is kept.</li>
+<li>EF.COM and EF.SOD are read first. A data group is selected when either lists it, and only the EF.SOD hash list can rule one out. When EF.COM is requested without EF.SOD and EF.COM omits a requested group, EF.SOD is read as the index too.</li>
+<li>DG1, then the other groups, DG15 and Active Authentication. EAC-protected DG3 and DG4 go last, so a chip that ends Secure Messaging on them cannot cost DG1, DG2, EF.SOD or AA.</li>
+<li>When Secure Messaging ends, the remaining groups are marked <code>notRead</code> and everything read so far is kept.</li>
 </ol>
 <p><code>readPassport</code> throws when nothing could be read, or when DG1 was requested but not read; DG1 is mandatory. Otherwise it returns a partial model. <code>passport.dataGroupReadStatus</code> explains each group: <code>read</code>, <code>notPresent</code>, <code>unavailable</code> (absent or protected), <code>failed</code>, or <code>notRead</code>. File sizes are capped at 10 MB for DG2-DG7 and 64 KB for the rest, so a corrupt length field cannot trigger huge reads. When the user dismisses the sheet, the error is <code>NFCError.userCanceled</code>; check <code>error.isNFCCancellation</code> to stay silent.</p>
 <h2 id="security">Security Report</h2>
 <p><code>passport.securityReport</code> has one stage each for CardAccess, PACE, BAC, Chip Authentication, Passive Authentication and Active Authentication.</p>
 <ul>
-<li><strong>Passive Authentication</strong> is <code>succeeded</code> only when the hashes match, the SOD signature verifies, and its signer chains to a certificate in <code>trustAnchorsDER</code>. Without trust anchors, matching hashes and a valid signature are <code>fallback</code>. A bad signature, broken chain or hash mismatch is <code>failed</code>.</li>
-<li><strong>Active Authentication</strong> is <code>succeeded</code> only when the chip signs the challenge, Passive Authentication is fully verified, and DG15 matches its SOD hash. A valid signature over an unauthenticated DG15 is <code>fallback</code> (<code>ActiveAuthStatus.verifiedUnauthenticatedKey</code>), because a clone can carry its own key pair. A DG15 that does not match its hash is <code>failed</code>.</li>
+<li><strong>Passive Authentication</strong> is <code>succeeded</code> only when the hashes match, the EF.SOD signature verifies, and the Document Signer certificate (DSC) has a validated certification path to a CSCA in <code>trustAnchorsDER</code>. Without trust anchors, matching hashes and a valid signature are <code>fallback</code>. A bad signature, failed certification path validation or hash mismatch is <code>failed</code>.</li>
+<li><strong>Active Authentication</strong> is <code>succeeded</code> only when the chip signs the challenge, Passive Authentication is fully verified, and DG15 matches its hash in EF.SOD. A valid signature over an unauthenticated DG15 is <code>fallback</code> (<code>ActiveAuthenticationStatus.verifiedUnauthenticatedKey</code>), because a clone can carry its own key pair. A DG15 that does not match its hash is <code>failed</code>.</li>
 </ul>
 <p>Re-check a saved model offline, for example after loading new CSCA certificates:</p>
 <pre><code class="language-swift">let result = passport.reverifyPassiveAuthentication(trustAnchorsDER: cscas)
 let updated = passport.reverifyingSecurity(trustAnchorsDER: cscas)   // PA and AA re-judged</code></pre>
+<p>The status types are <code>PassiveAuthenticationStatus</code> (on <code>passiveAuthResult</code>) and <code>ActiveAuthenticationStatus</code> (on <code>activeAuthResult</code>); the DG15 key is an <code>ActiveAuthenticationPublicKey</code>. The 1.x names <code>PassiveAuthStatus</code>, <code>ActiveAuthStatus</code> and <code>ActiveAuthPublicKey</code> are deprecated typealiases.</p>
+<h2 id="offline">Offline Models</h2>
+<p>To rebuild a model from data-group bytes you stored, for example in a file or database, use <code>PassportModel(rawDataGroups:)</code>. It applies the reader's own parsers to EF.COM, DG1, DG2, DG7, DG11, DG12, DG14, DG15 and EF.SOD, and runs Passive Authentication unless <code>performPassiveAuthentication</code> is <code>false</code>. Passive Authentication verifies a CMS signature, so keep it off the main thread. Active Authentication needs the chip, so <code>activeAuthResult</code> is <code>nil</code> and the chip stages of the security report are <code>skipped</code>.</p>
+<pre><code class="language-swift">let model = PassportModel(
+    rawDataGroups: savedDataGroups,     // [DataGroupId: Data], TLV-wrapped
+    cardAccessRaw: savedCardAccess,     // optional
+    trustAnchorsDER: cscas
+)
+print(model.mrz?.documentNumber ?? "-")</code></pre>
 <h2 id="scope">Current Scope</h2><p>PACE (ECDH Generic Mapping on the NIST curves P-256, P-384 and P-521, MRZ password) is implemented with OpenSSL. It rejects a chip mapping or ephemeral public key that reflects the terminal's own key. Other PACE mappings and curves throw <code>unsupportedOperation</code>, and the reader falls back to BAC. BAC, Secure Messaging, data-group parsing, Passive Authentication and Active Authentication are implemented. Chip Authentication is read from DG14 but not performed, because its ECDH key agreement is not implemented; the stage reports <code>notSupported</code> when advertised.</p>
 <nav class="pager"><a class="prev" href="ndef.html">NDEF</a><a class="next" href="transit.html">Transit Cards</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>CoreExtendedNFC · Migrating to 2.0</title>
+<link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+<nav class="topbar" aria-label="Primary">
+  <a class="home" href="../index.html">CoreExtendedNFC</a>
+  <a href="../index.html">Overview</a>
+  <a href="index.html" aria-current="page">Guide</a>
+  <a href="../api/index.html">API</a>
+  <a href="../architecture.html">Architecture</a>
+  <a href="../build.html">Build</a>
+  <a href="../research/index.html">Research</a>
+</nav>
+<main>
+<h1>Migrating to 2.0</h1>
+<p class="lede">What to change when moving from 1.1.2 to 2.0.0. The Swift 6.2 toolchain, the iOS 15 deployment target and the async/await API are unchanged. The full list is in <a href="https://github.com/Lakr233/CoreExtendedNFC/blob/main/CHANGELOG.md">CHANGELOG.md</a>.</p>
+
+<nav class="on-this-page" aria-label="On this page">
+<strong>On this page</strong>
+<a href="#checklist">Checklist</a>
+<a href="#errors">Errors</a>
+<a href="#cancellation">Cancellation</a>
+<a href="#ultralight">Ultralight writes</a>
+<a href="#iso15693">ISO 15693</a>
+<a href="#transit">Transit amounts</a>
+<a href="#felica">FeliCa</a>
+<a href="#passport">Passport</a>
+<a href="#renames">Renamed functions</a>
+<a href="#logging">Logging</a>
+<a href="#subclassing">Subclassing</a>
+<a href="#sealed">What stays sealed</a>
+</nav>
+
+<h2 id="checklist">What You Must Change</h2>
+<p>Items 1-8 can stop your code from compiling or change what it does at run time. Item 9 only produces deprecation warnings.</p>
+<ol>
+<li><a href="#errors">Exhaustive <code>switch</code> over <code>NFCError</code></a>: add the new cases or a <code>default</code>. The same applies to <code>ActiveAuthenticationStatus</code> (<code>.verifiedUnauthenticatedKey</code>) and <code>DESFireFileType</code> (<code>.transactionMAC</code>).</li>
+<li><a href="#cancellation">Cancel detection</a>: replace checks for <code>sessionInvalidated</code> or message text with <code>error.isNFCCancellation</code>.</li>
+<li><a href="#ultralight">Ultralight / NTAG page writes</a>: lock, OTP and configuration pages need <code>allowIrreversible: true</code>; pages above 15 need a <code>memoryMap</code>.</li>
+<li><a href="#iso15693">ISO 15693</a>: <code>lock:</code> becomes <code>permanentlyLock:</code>; <code>dsfid</code>, <code>afi</code> and <code>icReference</code> are optional.</li>
+<li><a href="#transit">Transit</a>: <code>TransitTransaction.amount</code> and <code>balanceAfter</code> are <code>Int?</code>.</li>
+<li><a href="#felica">FeliCa</a>: <code>FeliCaCommands.readPlainServices</code> now throws.</li>
+<li><a href="#passport">Passport</a>: pass <code>trustAnchorsDER</code>, or expect <code>fallback</code> where you used to see <code>succeeded</code>.</li>
+<li><a href="#logging">Logging</a>: <code>Logger.app</code> and the other app-template statics are gone; <code>debugFile</code> / <code>infoFile</code> / <code>errorFile</code> are <code>nfcDebugFile</code> / <code>nfcInfoFile</code> / <code>nfcErrorFile</code>.</li>
+<li><a href="#renames">Renamed facade functions and types</a>: follow the fix-its; the old names forward to the new ones.</li>
+</ol>
+
+<h2 id="errors">Exhaustive NFCError Switches</h2>
+<p><code>NFCError</code> gains <code>userCanceled</code>, <code>systemBusy</code>, <code>sessionInvalidatedByCaller</code>, <code>scanInProgress</code>, <code>checksumMismatch</code>, <code>responseChainTooLong(maxFrames:)</code>, <code>applicationNotFound(aid:)</code>, <code>iso15693Error(code:)</code>, <code>pinVerificationFailed(remainingAttempts:)</code>, <code>pinRequired(_:)</code>, <code>irreversibleWriteRefused(page:)</code>, <code>tagNotNDEFFormatted</code>, <code>ndefMessageNotFound</code>, <code>ndefCapacityExceeded(required:capacity:)</code>, <code>invalidParameter(_:)</code> and <code>malformedDump(_:)</code>. A switch that listed every 1.1.2 case no longer compiles.</p>
+<p>Before (1.1.2):</p>
+<pre><code class="language-swift">switch error {
+case .nfcNotAvailable: return "NFC is not available"
+case .tagConnectionLost: return "Hold the tag still"
+// ... one line for every 1.1.2 case, no default
+}</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">switch error {
+case .nfcNotAvailable: return "NFC is not available"
+case .tagConnectionLost: return "Hold the tag still"
+case .tagNotNDEFFormatted: return "Format the tag first"
+case let .ndefCapacityExceeded(required, capacity): return "Needs \(required) bytes; the tag holds \(capacity)"
+default: return error.localizedDescription   // NFCError is a LocalizedError
+}</code></pre>
+<p>Some conditions changed case: the FeliCa attribute-block checksum is <code>checksumMismatch</code> (was <code>crcMismatch</code>), ISO 15693 codes <code>0x12</code> / <code>0x14</code> and Type 4 <code>6982</code> / <code>6985</code> are <code>tagLocked</code>, and an unrecognized transit card is <code>tagNotSupported</code>. Messages you matched as text in <code>unsupportedOperation</code> or <code>invalidResponse</code> now have typed cases. See <a href="../api/errors.html">Errors</a>.</p>
+
+<h2 id="cancellation">Cancellation</h2>
+<p>When the user dismisses the NFC sheet, 2.0 throws <code>NFCError.userCanceled</code> instead of <code>sessionInvalidated(String)</code>. Cancelling the task throws <code>CancellationError</code>, and ending a pending scan with <code>invalidate()</code> throws <code>sessionInvalidatedByCaller</code>. <code>isNFCCancellation</code> covers all three.</p>
+<p>Before:</p>
+<pre><code class="language-swift">do {
+    let (info, dump) = try await CoreExtendedNFC.scanAndDump()
+} catch NFCError.sessionInvalidated(let reason) where reason.contains("cancel") {
+    return
+} catch {
+    showAlert(error)
+}</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">do {
+    let (info, dump) = try await CoreExtendedNFC.scanAndDump()
+} catch where error.isNFCCancellation {
+    return   // dismissed, task cancelled, or ended by the app: stay silent
+} catch {
+    showAlert(error)
+}</code></pre>
+<p>A second concurrent <code>scan</code> on the same <code>NFCSessionManager</code> now throws <code>NFCError.scanInProgress</code>.</p>
+
+<h2 id="ultralight">Ultralight / NTAG Writes</h2>
+<p>Page writes refuse anything that may be irreversible and throw <code>NFCError.irreversibleWriteRefused(page:)</code> before sending. This covers pages 0-2, page 3 (OTP) when the write would change a bit, and pages outside the user area when you pass a memory map. Without a memory map, the top-level functions also refuse every page above 15. WRITE now requires the <code>0Ah</code> ACK.</p>
+<p>Before:</p>
+<pre><code class="language-swift">try await CoreExtendedNFC.writePage(20, data: payload, transport: transport)
+try await CoreExtendedNFC.writePage(41, data: config, transport: transport)   // CFG page</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">let map = CoreExtendedNFC.ultralightMemoryMap(for: info.type)
+
+// User memory of a larger tag: pass the memory map.
+try await CoreExtendedNFC.writeUltralightPage(20, data: payload, memoryMap: map, transport: transport)
+
+// Lock, OTP, CFG, PWD/PACK or key pages: explicit opt-in. This can brick the tag.
+try await CoreExtendedNFC.writeUltralightPage(
+    41,
+    data: config,
+    memoryMap: map,
+    allowIrreversible: true,
+    transport: transport
+)</code></pre>
+<p><code>UltralightCommands.writePage(_:data:memoryMap:allowIrreversible:)</code> and <code>compatibilityWrite</code> take the same parameters. <code>UltralightDump.restore(dump:map:target:)</code> validates every page, and the card type when <code>target</code> is given, before it writes anything. See <a href="../api/card-commands.html#ultralight-writes">Card commands</a>.</p>
+
+<h2 id="iso15693">ISO 15693</h2>
+<p>Locking AFI or DSFID is irreversible, so it now needs <code>permanentlyLock: true</code>. The <code>lock:</code> overloads are deprecated, and their <code>lock:</code> argument has no default, so <code>configureAFI(x)</code> always calls the variant that does not lock. Facade block ranges take <code>ClosedRange&lt;Int&gt;</code> and are checked against <code>0...255</code>.</p>
+<p>Before:</p>
+<pre><code class="language-swift">try await CoreExtendedNFC.configureISO15693AFI(0x01, lock: true, transport: transport)
+let blocks = try await CoreExtendedNFC.readISO15693Blocks(
+    range: NSRange(location: 0, length: 4),
+    transport: transport
+)
+let system = try await CoreExtendedNFC.getISO15693SystemInfo(transport: transport)
+let afi: UInt8 = system.afi
+let dump = try await reader.readAllBlocks(transport: iso15693Transport)</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">try await CoreExtendedNFC.configureISO15693AFI(0x01, permanentlyLock: true, transport: transport)
+let blocks = try await CoreExtendedNFC.readISO15693Blocks(range: 0...3, transport: transport)
+let system = try await CoreExtendedNFC.getISO15693SystemInfo(transport: transport)
+if let afi = system.afi {        // dsfid, afi and icReference are UInt8?
+    show(afi)
+}
+let dump = try await ISO15693Reader(transport: iso15693Transport).readAllBlocks(info: info)</code></pre>
+<p>Tags that do not report their memory size are rejected by dump and NDEF write. Tags with more than 256 blocks are handled with the extended commands, and a dump stops at block 255 (marked <code>partiallyReadable</code>) when the tag rejects them.</p>
+
+<h2 id="transit">Transit Amounts</h2>
+<p><code>TransitTransaction.amount</code> and <code>balanceAfter</code> are <code>Int?</code>. <code>amount</code> is an unsigned magnitude, so take the direction from <code>type</code>. Do not show <code>nil</code> as zero.</p>
+<p>Before:</p>
+<pre><code class="language-swift">let spent = balance.transactions.map(\.amount).reduce(0, +)</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">let spent = balance.transactions.reduce(0) { total, transaction in
+    guard let amount = transaction.amount else { return total }
+    switch transaction.type {
+    case .trip, .purchase: return total + amount
+    case .topup, .unknown: return total
+    }
+}</code></pre>
+<p>Tag loss and cancellation during a transit read now throw instead of returning a zero balance or truncated history.</p>
+
+<h2 id="felica">FeliCa</h2>
+<p><code>FeliCaCommands.readPlainServices</code> is <code>async throws</code> (was <code>async</code>), so a lost tag is reported instead of returning an empty result.</p>
+<pre><code class="language-swift">// Before
+let snapshots = await commands.readPlainServices(probes)
+// After
+let snapshots = try await commands.readPlainServices(probes)</code></pre>
+
+<h2 id="passport">Passport / eMRTD</h2>
+<p>Trust is judged strictly. The Passive Authentication stage is <code>succeeded</code> only when the Document Signer certificate (DSC) has a validated certification path to a CSCA in <code>trustAnchorsDER</code> (<code>PassiveAuthenticationStatus.fullyVerified</code>). Active Authentication is <code>succeeded</code> only when, in addition, DG15 matches its hash in EF.SOD. Without trust anchors both stages are <code>fallback</code> at best, and a valid AA signature over an unauthenticated key has status <code>.verifiedUnauthenticatedKey</code>.</p>
+<p>Before:</p>
+<pre><code class="language-swift">let passport = try await CoreExtendedNFC.readPassport(mrzKey: mrzKey)
+let genuine = passport.securityReport.activeAuthentication.status == .succeeded
+let status: ActiveAuthStatus? = passport.activeAuthResult?.status</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">let passport = try await CoreExtendedNFC.readPassport(
+    mrzKey: mrzKey,
+    trustAnchorsDER: cscaCertificates   // DER CSCA certificates from your trust list
+)
+let report = passport.securityReport
+let genuine = report.passiveAuthentication.status == .succeeded
+    &amp;&amp; report.activeAuthentication.status == .succeeded
+let status: ActiveAuthenticationStatus? = passport.activeAuthResult?.status</code></pre>
+<p>Other changes:</p>
+<ul>
+<li><code>ActiveAuthStatus</code>, <code>PassiveAuthStatus</code> and <code>ActiveAuthPublicKey</code> are deprecated typealiases for <code>ActiveAuthenticationStatus</code>, <code>PassiveAuthenticationStatus</code> and <code>ActiveAuthenticationPublicKey</code>.</li>
+<li><code>readPassport</code> returns a partial model with <code>dataGroupReadStatus</code> when some data groups cannot be read, and throws when DG1 was requested but not read. Secure-messaging and transport errors propagate instead of being skipped.</li>
+<li>For a transport you already hold, call <code>readPassport(transport:mrzKey:dataGroups:performActiveAuth:trustAnchorsDER:onProgress:)</code>. It neither starts nor ends a session.</li>
+<li>To rebuild a model from stored bytes, use <code>PassportModel(rawDataGroups:cardAccessRaw:performPassiveAuthentication:trustAnchorsDER:dataGroupReadStatus:)</code> instead of parsing DG1 yourself.</li>
+<li><strong>Stored data:</strong> the raw values of <code>SecurityProtocol.taECDSASHA224</code> and <code>.taECDSASHA256</code> were swapped in 1.x. Data encoded by 1.x decodes to the other case for these two OIDs. Re-parse DG14 or EF.CardAccess bytes instead of relying on saved enum values.</li>
+</ul>
+<pre><code class="language-swift">let model = PassportModel(
+    rawDataGroups: savedDataGroups,     // [DataGroupId: Data], TLV-wrapped
+    trustAnchorsDER: cscaCertificates
+)
+print(model.mrz?.documentNumber ?? "-", model.securityReport.passiveAuthentication.status)</code></pre>
+
+<h2 id="renames">Renamed Facade Functions</h2>
+<p>Top-level functions follow verb + family + noun. The old names still compile with a deprecation warning and a fix-it.</p>
+<table>
+<thead><tr><th>1.1.2</th><th>2.0</th></tr></thead>
+<tbody>
+<tr><td><code>readPages(startPage:transport:)</code></td><td><code>readUltralightPages(startPage:transport:)</code></td></tr>
+<tr><td><code>writePage(_:data:transport:)</code></td><td><code>writeUltralightPage(_:data:memoryMap:allowIrreversible:transport:)</code></td></tr>
+<tr><td><code>fastRead(from:to:transport:)</code></td><td><code>fastReadUltralightPages(from:to:transport:)</code></td></tr>
+<tr><td><code>compatibilityWrite(_:data:transport:)</code></td><td><code>compatibilityWriteUltralightPage(_:data:memoryMap:allowIrreversible:transport:)</code></td></tr>
+<tr><td><code>readSignature(transport:)</code></td><td><code>readNTAGSignature(transport:)</code></td></tr>
+<tr><td><code>readCounter(counterID:transport:)</code></td><td><code>readNTAGCounter(counterID:transport:)</code></td></tr>
+<tr><td><code>passwordAuth(password:transport:)</code></td><td><code>authenticateUltralightPassword(password:transport:)</code></td></tr>
+<tr><td><code>readAuthConfig(configStartPage:transport:)</code></td><td><code>readUltralightAuthenticationConfiguration(configStartPage:transport:)</code></td></tr>
+<tr><td><code>getApplicationIDs(transport:)</code></td><td><code>getDESFireApplicationIDs(transport:)</code></td></tr>
+<tr><td><code>selectApplication(_:transport:)</code></td><td><code>selectDESFireApplication(_:transport:)</code></td></tr>
+<tr><td><code>getFileIDs(transport:)</code></td><td><code>getDESFireFileIDs(transport:)</code></td></tr>
+<tr><td><code>getFileSettings(_:transport:)</code></td><td><code>getDESFireFileSettings(_:transport:)</code></td></tr>
+<tr><td><code>iso15693CustomCommand(code:parameters:transport:)</code></td><td><code>sendISO15693CustomCommand(code:parameters:transport:)</code></td></tr>
+<tr><td><code>iso15693Challenge(cryptoSuiteIdentifier:message:transport:)</code></td><td><code>challengeISO15693(cryptoSuiteIdentifier:message:transport:)</code></td></tr>
+<tr><td><code>iso15693Authenticate(cryptoSuiteIdentifier:message:transport:)</code></td><td><code>authenticateISO15693(cryptoSuiteIdentifier:message:transport:)</code></td></tr>
+<tr><td><code>iso15693KeyUpdate(keyIdentifier:message:transport:)</code></td><td><code>updateISO15693Key(keyIdentifier:message:transport:)</code></td></tr>
+<tr><td><code>readISO15693Blocks(range: NSRange, transport:)</code></td><td><code>readISO15693Blocks(range: ClosedRange&lt;Int&gt;, transport:)</code></td></tr>
+<tr><td><code>getISO15693BlockSecurityStatus(range: NSRange, transport:)</code></td><td><code>getISO15693BlockSecurityStatus(range: ClosedRange&lt;Int&gt;, transport:)</code></td></tr>
+<tr><td><code>configureISO15693AFI(_:lock:transport:)</code></td><td><code>configureISO15693AFI(_:permanentlyLock:transport:)</code></td></tr>
+<tr><td><code>configureISO15693DSFID(_:lock:transport:)</code></td><td><code>configureISO15693DSFID(_:permanentlyLock:transport:)</code></td></tr>
+<tr><td><code>readType4CC(transport:)</code></td><td><code>readType4CapabilityContainer(transport:)</code></td></tr>
+<tr><td><code>readMyNumberCard(info:transport:items:cardInfoInputSupportPIN:)</code></td><td><code>readMyNumberCard(transport:items:cardInfoInputSupportPIN:onProgress:)</code></td></tr>
+<tr><td><code>lookupMyNumberRemainingPINAttempts(info:transport:pinType:)</code></td><td><code>lookupMyNumberRemainingPINAttempts(transport:pinType:)</code></td></tr>
+</tbody>
+</table>
+<p>Lower-level renames: <code>ISO15693SecurityManager.configureAFI(_:lock:)</code> / <code>configureDSFID(_:lock:)</code> → <code>permanentlyLock:</code>; <code>ISO15693Reader.readAllBlocks(transport:)</code> → <code>readAllBlocks(info:)</code>; <code>ISO15693Reader.writeBlock(_:data:transport:)</code> → <code>writeBlock(at:data:)</code>; <code>Type4Tag</code> → <code>Type4Reader</code> (<code>readCC()</code> is <code>readCapabilityContainer()</code>). Methods on <code>UltralightCommands</code> and <code>DESFireCommands</code> keep their names.</p>
+
+<h2 id="logging">Logging</h2>
+<p>The library no longer declares <code>Logger.app</code>, <code>.ui</code>, <code>.network</code>, <code>.model</code>, <code>.database</code>, <code>.syncEngine</code>, <code>.chatService</code> or <code>Logger.loggingSubsystem</code>. These were app-template leftovers that took common names in your app's <code>Logger</code> namespace. The file-logging helpers are renamed, with no forwarders.</p>
+<p>Before:</p>
+<pre><code class="language-swift">Logger.app.debugFile("Scanned \(info.type.description)")
+Logger.network.errorFile("Upload failed")</code></pre>
+<p>After:</p>
+<pre><code class="language-swift">import OSLog
+
+extension Logger {
+    static let app = Logger(subsystem: Bundle.main.bundleIdentifier ?? "App", category: "App")
+}
+
+Logger.app.nfcDebugFile("Scanned \(info.type.description)")
+Logger.app.nfcErrorFile("Upload failed", category: "Network")</code></pre>
+<p>Library logging goes through <code>NFCLogConfiguration.logger</code>. Payload bytes, UIDs and block contents are hidden unless you set <code>NFCLogConfiguration.logPayloads = true</code>.</p>
+
+<h2 id="subclassing">Subclassing and Extension</h2>
+<p>2.0 opens the library for subclassing. These types are <code>open class</code>:</p>
+<ul>
+<li>Session and transports: <code>NFCSessionManager</code>, <code>MiFareTransport</code>, <code>ISO7816Transport</code>, <code>FeliCaTransport</code>, <code>ISO15693Transport</code>, <code>SecureMessagingTransport</code>, <code>LogStore</code>.</li>
+<li>Readers and commands (structs in 1.1.2): <code>UltralightCommands</code>, <code>UltralightDump</code>, <code>DESFireCommands</code>, <code>DESFireDump</code>, <code>FeliCaCommands</code>, <code>FeliCaType3Reader</code>, <code>ISO15693Reader</code>, <code>ISO15693SecurityManager</code>, <code>Type4Reader</code>, <code>PassportReader</code>, <code>MyNumberCardReader</code>, <code>JapanICReader</code>, <code>OctopusReader</code>, <code>KSX6924Reader</code>, <code>TUnionReader</code>, <code>CEPASReader</code>.</li>
+</ul>
+<p>The readers keep their initializers and only hold immutable state, so existing call sites compile; they are now reference types. The main I/O entry points are <code>open</code> and can be overridden. Methods declared in extensions, such as parsers, are <code>public</code> but cannot be overridden (a Swift rule). Value models such as <code>CardInfo</code>, <code>MemoryDump</code>, <code>PassportModel</code> and <code>TransitBalance</code> stay structs.</p>
+<h3>Thread-safety contract</h3>
+<p>Every open class is <code>@unchecked Sendable</code>, so the compiler does not check what a subclass adds. Subclasses must preserve thread safety: any mutable state you add must be lock-protected or immutable. <code>LockedValue</code> is public for this purpose; keep its critical sections short and never <code>await</code> inside them.</p>
+<h3>NFCSessionManager hooks</h3>
+<p>The session bookkeeping (<code>scan(for:message:)</code>, <code>invalidate()</code>, <code>setAlertMessage(_:)</code> and the CoreNFC delegate callbacks) is <code>public</code> but not overridable. Override these hooks instead:</p>
+<table>
+<thead><tr><th>Hook</th><th>Called</th></tr></thead>
+<tbody>
+<tr><td><code>sessionDidBecomeActive(_:)</code></td><td>After the session became active.</td></tr>
+<tr><td><code>sessionDidInvalidate(_:error:)</code></td><td>After a session ended and any pending scan was failed, with the mapped error.</td></tr>
+<tr><td><code>invalidateAfterFailure(_:)</code></td><td>When a top-level flow fails; ends the session and returns the error to rethrow.</td></tr>
+<tr><td><code>class func failureOutcome(for:userCanceled:)</code></td><td>Chooses the error to rethrow and the sheet message after a failure.</td></tr>
+<tr><td><code>class func invalidationError(from:)</code></td><td>Maps the CoreNFC error that ended a session to <code>NFCError</code>.</td></tr>
+<tr><td><code>class func pollingOptions(from:)</code></td><td>Turns <code>PollingTarget</code> values into CoreNFC polling options.</td></tr>
+<tr><td><code>class func identifyTag(_:monitor:)</code></td><td>Wraps a connected tag in a transport and describes it, on the connecting task.</td></tr>
+</tbody>
+</table>
+<pre><code class="language-swift">import CoreNFC
+import CoreExtendedNFC
+
+final class AppSessionManager: NFCSessionManager {
+    private let events = LockedValue&lt;[String]&gt;([])   // added state is lock-protected
+
+    override func sessionDidBecomeActive(_ session: NFCTagReaderSession) {
+        events.withLock { $0.append("active") }
+    }
+
+    override func sessionDidInvalidate(_ session: NFCTagReaderSession, error: any Error) {
+        events.withLock { $0.append("ended: \(error.localizedDescription)") }
+    }
+
+    // Hand out a tracing transport for ISO 7816 tags.
+    override class func identifyTag(
+        _ tag: NFCTag,
+        monitor: SessionTerminationMonitor?
+    ) throws -&gt; (CardInfo, any NFCTagTransport) {
+        let (info, transport) = try super.identifyTag(tag, monitor: monitor)
+        guard case let .iso7816(iso7816Tag) = tag else { return (info, transport) }
+        return (info, TracingISO7816Transport(tag: iso7816Tag, terminationMonitor: monitor))
+    }
+}
+
+final class TracingISO7816Transport: ISO7816Transport {
+    override func sendAPDU(_ apdu: CommandAPDU) async throws -&gt; ResponseAPDU {
+        let response = try await super.sendAPDU(apdu)
+        NFCLog.debug("INS \(apdu.ins) -&gt; SW \(response.statusWord)", source: "Trace")
+        return response
+    }
+}</code></pre>
+<h3>Injecting a manager</h3>
+<p><code>scan</code>, <code>scanAndDump</code>, <code>readPassport</code> and <code>readMyNumberCard</code> take a <code>manager:</code> argument (default <code>NFCSessionManager()</code>). <code>scan</code> returns that manager unchanged; the other three invalidate it before returning.</p>
+<pre><code class="language-swift">let (info, transport, manager) = try await CoreExtendedNFC.scan(
+    pollingTargets: [.iso14443],
+    manager: AppSessionManager()
+)
+defer { manager.invalidate() }</code></pre>
+<p>The facade functions construct the stock readers. To use a reader subclass, create it yourself over a transport from <code>scan</code>:</p>
+<pre><code class="language-swift">final class AuditedPassportReader: PassportReader {
+    override func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -&gt; Data {
+        let data = try await super.readDataGroup(dgId, transport: transport)
+        NFCLog.info("\(dgId.name): \(data.count) bytes", source: "App")
+        return data
+    }
+}
+
+let passport = try await AuditedPassportReader(transport: transport)
+    .readPassport(mrzKey: mrzKey, trustAnchorsDER: cscaCertificates)</code></pre>
+<p>To customize My Number reads, override <code>MyNumberCardReader.read(items:cardInfoInputSupportPIN:onProgress:)</code>. The two-argument <code>read(items:cardInfoInputSupportPIN:)</code> is not overridable and forwards to it.</p>
+
+<h2 id="sealed">What Stays Sealed</h2>
+<p>Some members stay <code>private</code> or non-overridable because overriding them would break session state or security:</p>
+<ul>
+<li><strong><code>SecureMessagingTransport</code></strong>: the session keys, the send sequence counter, <code>protect</code> / <code>unprotect</code> and the MAC and IV helpers are private, and <code>sendAPDU</code> is <code>public</code> but not <code>open</code>. It owns the exchange gate and the SSC; an override could desynchronize the counter or leak keys. <code>send</code>, <code>identifier</code>, <code>isSessionEnded</code> and <code>sessionEndedReason</code> are available.</li>
+<li><strong><code>NFCSessionManager</code></strong>: the scan state and its continuation are private, and the scan, invalidate, alert-message and delegate methods are not overridable, so every continuation is resumed exactly once.</li>
+<li><strong><code>LockedValue</code>, <code>AsyncExchangeGate</code>, <code>SessionTerminationMonitor</code></strong>: <code>final</code>, with private lock state.</li>
+<li><strong><code>OpenSSLPACECurve</code></strong>: <code>final</code>, with only a <code>Data</code>-in / <code>Data</code>-out API. It is intentionally not <code>Sendable</code>: it owns an OpenSSL <code>BN_CTX</code> and is used within a single PACE run.</li>
+<li><strong>OpenSSL pointer helpers</strong> in <code>ActiveAuthenticationVerifier</code> and <code>SODParser</code>, and <code>LogStore</code>'s internal queue helper, stay private.</li>
+</ul>
+
+<nav class="pager"><a class="prev" href="ios-configuration.html">iOS Configuration</a><span class="parent"><a href="index.html">Guide</a></span></nav>
+<footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer>
+</main>
+</body>
+</html>
