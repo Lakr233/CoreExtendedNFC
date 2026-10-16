@@ -20,12 +20,18 @@ nonisolated enum NDEFTagOperation: Sendable {
     /// Whether `error` from a write means the tag has no NDEF Capability
     /// Container yet (a factory-blank Ultralight / NTAG / ICODE), so formatting
     /// it would let the write succeed.
-    ///
-    /// CoreExtendedNFC reports this as ``NFCError/unsupportedOperation(_:)``
-    /// with a "not NDEF formatted" reason.
     static func isNotFormattedError(_ error: Error) -> Bool {
-        guard case let .unsupportedOperation(reason)? = error as? NFCError else { return false }
-        return reason.range(of: "not NDEF formatted", options: .caseInsensitive) != nil
+        guard case .tagNotNDEFFormatted? = error as? NFCError else { return false }
+        return true
+    }
+
+    /// Whether ``CoreExtendedNFC/formatNDEF(info:transport:)`` can format tags of
+    /// `family`. Type 3 and Type 4 tags keep their NDEF layout in firmware.
+    static func canFormat(_ family: CardFamily) -> Bool {
+        switch family {
+        case .ntag, .mifareUltralight, .iso15693: true
+        default: false
+        }
     }
 }
 
@@ -51,11 +57,13 @@ extension UIViewController {
 
     private func performNDEFTagOperation(_ operation: NDEFTagOperation, runner: SingleTaskRunner) async {
         let manager = NFCSessionManager()
+        var family: CardFamily?
         do {
             let (coarseInfo, transport) = try await manager.scan(for: [.all])
             // The screen may have been closed while the system sheet was up.
             try Task.checkCancellation()
             let info = try await CoreExtendedNFC.refineCardInfo(coarseInfo, transport: transport)
+            family = info.type.family
             switch operation {
             case .format:
                 manager.setAlertMessage(String(localized: "Formatting…"))
@@ -78,7 +86,10 @@ extension UIViewController {
             if presentNFCErrorAlertIfNeeded(for: error, session: manager) {
                 return
             }
-            if case let .write(message, summary) = operation, NDEFTagOperation.isNotFormattedError(error) {
+            if case let .write(message, summary) = operation,
+               NDEFTagOperation.isNotFormattedError(error),
+               let family, NDEFTagOperation.canFormat(family)
+            {
                 offerFormatAndWrite(message, summary: summary, runner: runner)
             } else {
                 presentErrorAlert(for: error)

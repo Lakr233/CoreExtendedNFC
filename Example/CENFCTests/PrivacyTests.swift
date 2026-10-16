@@ -267,13 +267,24 @@ struct PassportScreenPrivacyTests {
 struct NDEFFormatOfferTests {
     @Test
     func `Only the not-formatted write error offers Format`() {
-        #expect(NDEFTagOperation.isNotFormattedError(
+        #expect(NDEFTagOperation.isNotFormattedError(NFCError.tagNotNDEFFormatted))
+        #expect(!NDEFTagOperation.isNotFormattedError(NFCError.tagLocked))
+        #expect(!NDEFTagOperation.isNotFormattedError(NFCError.ndefCapacityExceeded(required: 200, capacity: 137)))
+        #expect(!NDEFTagOperation.isNotFormattedError(NFCError.ndefMessageNotFound))
+        // The old reason text no longer counts: matching is on the typed case only.
+        #expect(!NDEFTagOperation.isNotFormattedError(
             NFCError.unsupportedOperation("The tag is not NDEF formatted; format it first")
         ))
-        #expect(!NDEFTagOperation.isNotFormattedError(NFCError.tagLocked))
-        #expect(!NDEFTagOperation.isNotFormattedError(
-            NFCError.unsupportedOperation("NDEF message exceeds Type 2 user memory")
-        ))
+        #expect(!NDEFTagOperation.isNotFormattedError(CancellationError()))
+    }
+
+    @Test
+    func `Format is offered only for tag families the library can format`() {
+        #expect(NDEFTagOperation.canFormat(.ntag))
+        #expect(NDEFTagOperation.canFormat(.mifareUltralight))
+        #expect(NDEFTagOperation.canFormat(.iso15693))
+        #expect(!NDEFTagOperation.canFormat(.felica))
+        #expect(!NDEFTagOperation.canFormat(.type4))
     }
 
     @Test
