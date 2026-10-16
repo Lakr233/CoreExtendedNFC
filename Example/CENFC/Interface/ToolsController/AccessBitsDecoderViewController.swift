@@ -113,28 +113,28 @@ class AccessBitsDecoderViewController: StackScrollController {
 
     private func dataBlockMeaning(_ condition: UInt8) -> String {
         switch condition {
-        case 0: String(localized: "Read/Write with Key A or B")
-        case 1: String(localized: "Read-only with Key A or B")
-        case 2: String(localized: "Read/Write with Key A, Read with Key B")
-        case 3: String(localized: "Read/Write with Key B, Read with Key A or B")
-        case 4: String(localized: "Read/Write with Key B")
+        case 0: String(localized: "Read, write, increment and decrement with Key A or B (transport configuration)")
+        case 1: String(localized: "Read with Key A or B, write with Key B")
+        case 2: String(localized: "Read-only with Key A or B")
+        case 3: String(localized: "Value block: read with Key A or B, write and increment with Key B, decrement with Key A or B")
+        case 4: String(localized: "Value block: read and decrement with Key A or B, no write or increment")
         case 5: String(localized: "Read with Key B only")
-        case 6: String(localized: "Read/Write with Key B (decrement with Key A or B)")
-        case 7: String(localized: "No access (transport configuration)")
+        case 6: String(localized: "Read and write with Key B only")
+        case 7: String(localized: "No access")
         default: String(localized: "Unknown")
         }
     }
 
     private func trailerBlockMeaning(_ condition: UInt8) -> String {
         switch condition {
-        case 0: String(localized: "Key A: write A or B. Access: read A or B, write never. Key B: read/write A or B")
-        case 1: String(localized: "Key A: write never. Access: read A or B, write never. Key B: read/write never")
-        case 2: String(localized: "Key A: write never. Access: read A, write never. Key B: read A, write never")
-        case 3: String(localized: "Key A: write B. Access: read A or B, write B. Key B: read never, write B")
-        case 4: String(localized: "Key A: write B. Access: read A or B, write never. Key B: read never, write B")
-        case 5: String(localized: "Key A: write never. Access: read A or B, write never. Key B: read never, write never")
-        case 6: String(localized: "Key A: write never. Access: read A or B, write B. Key B: read never, write never")
-        case 7: String(localized: "Key A: write never. Access: read A or B, write never. Key B: read never, write never")
+        case 0: String(localized: "Key A: write A. Access bits: read A, write never. Key B: read A, write A")
+        case 1: String(localized: "Key A: write B. Access bits: read A or B, write never. Key B: read never, write B")
+        case 2: String(localized: "Key A: write never. Access bits: read A, write never. Key B: read A, write never")
+        case 3: String(localized: "Key A: write never. Access bits: read A or B, write never. Key B: read never, write never")
+        case 4: String(localized: "Key A: write A. Access bits: read A, write A. Key B: read A, write A (transport configuration)")
+        case 5: String(localized: "Key A: write never. Access bits: read A or B, write B. Key B: read never, write never")
+        case 6: String(localized: "Key A: write B. Access bits: read A or B, write B. Key B: read never, write B")
+        case 7: String(localized: "Key A: write never. Access bits: read A or B, write never. Key B: read never, write never")
         default: String(localized: "Unknown")
         }
     }

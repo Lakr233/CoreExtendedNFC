@@ -268,7 +268,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "根据 MIFARE Classic 数据手册定义的访问条件。扇区尾部的第 6-8 字节使用 C1/C2/C3 位及其补码校验来编码全部 4 个块的权限。"
+            "value" : "根据 MIFARE Classic 数据手册定义的访问条件。扇区尾块的第 6-8 字节使用 C1/C2/C3 位及其补码校验来编码全部 4 个块的权限。"
           }
         }
       }
@@ -1100,7 +1100,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "指令"
+            "value" : "命令"
           }
         }
       }
@@ -1164,7 +1164,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从 DG1 读取的完整机器可读区（MRZ）文本。"
+            "value" : "从 DG1 读取的完整机读区（MRZ）文本。"
           }
         }
       }
@@ -1409,18 +1409,18 @@
         }
       }
     },
-    "CRC computed per ISO/IEC 14443-3 using polynomial 0x8408." : {
+    "CRC computed per ISO/IEC 14443-3 using polynomial x^16 + x^12 + x^5 + 1 (0x1021, reflected 0x8408)." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CRC computed per ISO/IEC 14443-3 using polynomial 0x8408."
+            "value" : "CRC computed per ISO/IEC 14443-3 using polynomial x^16 + x^12 + x^5 + 1 (0x1021, reflected 0x8408)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "根据 ISO/IEC 14443-3 使用多项式 0x8408 计算的 CRC。"
+            "value" : "根据 ISO/IEC 14443-3 使用多项式 x^16 + x^12 + x^5 + 1（0x1021，反射形式 0x8408）计算的 CRC。"
           }
         }
       }
@@ -1489,18 +1489,18 @@
         }
       }
     },
-    "Data groups present on the chip as advertised by COM." : {
+    "Data groups listed in EF.COM." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Data groups present on the chip as advertised by COM."
+            "value" : "Data groups listed in EF.COM."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "芯片上存在的数据组（由 COM 数据组声明）。"
+            "value" : "EF.COM 中列出的数据组。"
           }
         }
       }
@@ -1948,7 +1948,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入 MIFARE Classic 扇区尾部的第 6-8 字节。"
+            "value" : "输入 MIFARE Classic 扇区尾块的第 6-8 字节。"
           }
         }
       }
@@ -1965,22 +1965,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以所选格式输入数据，结果将自动更新。"
-          }
-        }
-      }
-    },
-    "Enter hex bytes separated by spaces. Example: 30 04 (MiFare READ page 4)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter hex bytes separated by spaces. Example: 30 04 (MiFare READ page 4)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入以空格分隔的十六进制字节。示例：30 04（MiFare 读取第 4 页）"
           }
         }
       }
@@ -2012,7 +1996,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入护照 MRZ（机器可读区）上的证件号码、出生日期和有效期。这些信息用于与芯片进行 BAC（基本访问控制）认证。"
+            "value" : "输入护照 MRZ（机读区）上的证件号码、出生日期和有效期。这些信息用于与芯片进行 BAC（基本访问控制）认证。"
           }
         }
       }
@@ -2268,7 +2252,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "FeliCa 制造商 ID，生产时分配的 8 字节唯一标识符。"
+            "value" : "FeliCa 制造 ID（IDm），生产时分配的 8 字节唯一标识符。"
           }
         }
       }
@@ -2413,22 +2397,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在格式化…"
-          }
-        }
-      }
-    },
-    "Frame Size for proximity Coupling device Integer, max frame the card accepts." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Frame Size for proximity Coupling device Integer, max frame the card accepts."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "近距离耦合设备帧大小整数值，卡片可接受的最大帧长度。"
           }
         }
       }
@@ -2897,18 +2865,18 @@
         }
       }
     },
-    "Interface byte encoding frame waiting time and startup guard time." : {
+    "Interface byte encoding the frame waiting time integer (FWI) and start-up frame guard time integer (SFGI)." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Interface byte encoding frame waiting time and startup guard time."
+            "value" : "Interface byte encoding the frame waiting time integer (FWI) and start-up frame guard time integer (SFGI)."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "编码帧等待时间和启动保护时间的接口字节。"
+            "value" : "接口字节，编码帧等待时间整数（FWI）和启动帧保护时间整数（SFGI）。"
           }
         }
       }
@@ -3164,7 +3132,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ISO 15693 识别使用了远距离卡盘存信息和制造商代码。"
+            "value" : "ISO 15693 识别使用了疏耦合卡（VICC）盘存信息和制造商代码。"
           }
         }
       }
@@ -3213,118 +3181,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "JSON 大小"
-          }
-        }
-      }
-    },
-    "Key A: write A|B. Access: read A|B, write never. Key B: read/write A|B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write A|B. Access: read A|B, write never. Key B: read/write A|B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入 A|B。访问位：读取 A|B，写入禁止。密钥 B：读写 A|B"
-          }
-        }
-      }
-    },
-    "Key A: write B. Access: read A|B, write B. Key B: read never, write B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write B. Access: read A|B, write B. Key B: read never, write B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入 B。访问位：读取 A|B，写入 B。密钥 B：读取禁止，写入 B"
-          }
-        }
-      }
-    },
-    "Key A: write B. Access: read A|B, write never. Key B: read never, write B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write B. Access: read A|B, write never. Key B: read never, write B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入 B。访问位：读取 A|B，写入禁止。密钥 B：读取禁止，写入 B"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A, write never. Key B: read A, write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A, write never. Key B: read A, write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入禁止。访问位：读取 A，写入禁止。密钥 B：读取 A，写入禁止"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A|B, write B. Key B: read never, write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A|B, write B. Key B: read never, write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入禁止。访问位：读取 A|B，写入 B。密钥 B：读取禁止，写入禁止"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A|B, write never. Key B: read never, write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A|B, write never. Key B: read never, write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入禁止。访问位：读取 A|B，写入禁止。密钥 B：读取禁止，写入禁止"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A|B, write never. Key B: read/write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A|B, write never. Key B: read/write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：写入禁止。访问位：读取 A|B，写入禁止。密钥 B：读写禁止"
           }
         }
       }
@@ -3409,18 +3265,18 @@
         }
       }
     },
-    "Logical Data Structure version from the COM data group." : {
+    "Logical Data Structure version from EF.COM." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Logical Data Structure version from the COM data group."
+            "value" : "Logical Data Structure version from EF.COM."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "来自 COM 数据组的逻辑数据结构版本。"
+            "value" : "来自 EF.COM 的逻辑数据结构版本。"
           }
         }
       }
@@ -3441,18 +3297,18 @@
         }
       }
     },
-    "Manufacturer-defined data returned during anticollision or selection." : {
+    "Historical bytes from the ATS (answer to RATS), defined by the card manufacturer." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manufacturer-defined data returned during anticollision or selection."
+            "value" : "Historical bytes from the ATS (answer to RATS), defined by the card manufacturer."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "防冲突或选择过程中返回的制造商定义数据。"
+            "value" : "来自 ATS（RATS 应答）的历史字节，由卡片制造商定义。"
           }
         }
       }
@@ -3633,18 +3489,18 @@
         }
       }
     },
-    "NDEF App Select Response" : {
+    "NDEF Tag Application SELECT Response" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "NDEF App Select Response"
+            "value" : "NDEF Tag Application SELECT Response"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "NDEF 应用选择响应"
+            "value" : "NDEF 标签应用 SELECT 响应"
           }
         }
       }
@@ -3713,18 +3569,18 @@
         }
       }
     },
-    "NFC Forum External Type Record. Uses a reverse-domain type identifier." : {
+    "NFC Forum External Type Record. The type is a domain name, a colon and a type name, for example example.com:mytype." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "NFC Forum External Type Record. Uses a reverse-domain type identifier."
+            "value" : "NFC Forum External Type Record. The type is a domain name, a colon and a type name, for example example.com:mytype."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "NFC Forum 外部类型记录。使用反向域名类型标识符。"
+            "value" : "NFC Forum 外部类型记录。类型由域名、冒号和类型名组成，例如 example.com:mytype。"
           }
         }
       }
@@ -3869,22 +3725,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "否"
-          }
-        }
-      }
-    },
-    "No access (transport configuration)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No access (transport configuration)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无访问权限（出厂配置）"
           }
         }
       }
@@ -4065,22 +3905,6 @@
         }
       }
     },
-    "Only poll ISO 18092 / FeliCa tags for cleaner Sony Type 3 sessions." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only poll ISO 18092 / FeliCa tags for cleaner Sony Type 3 sessions."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅轮询 ISO 18092 / FeliCa 标签，以获得更纯净的 Sony Type 3 会话。"
-          }
-        }
-      }
-    },
     "Only poll vicinity cards for longer-range ISO 15693 workflows." : {
       "localizations" : {
         "en" : {
@@ -4092,7 +3916,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仅轮询远距离卡，适用于 ISO 15693 长距离工作流程。"
+            "value" : "仅轮询疏耦合卡（VICC），适用于 ISO 15693 长距离工作流程。"
           }
         }
       }
@@ -4385,22 +4209,6 @@
         }
       }
     },
-    "Passport-class chips need the dedicated Passport workflow because the session must enter BAC and secure messaging before LDS files can be read." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passport-class chips need the dedicated Passport workflow because the session must enter BAC and secure messaging before LDS files can be read."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "护照类芯片需要专用的护照工作流程，因为会话必须先进入 BAC 和安全信息传输，才能读取 LDS 文件。"
-          }
-        }
-      }
-    },
     "Permission" : {
       "localizations" : {
         "en" : {
@@ -4428,7 +4236,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "从 eMRTD 芯片的 DG1（机器可读区）解析的个人数据。"
+            "value" : "从 eMRTD 芯片的 DG1（机读区）解析的个人数据。"
           }
         }
       }
@@ -4849,22 +4657,6 @@
         }
       }
     },
-    "Read the Type 3 attribute and NDEF blocks when present, then probed plain-readable FeliCa services." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read the Type 3 attribute and NDEF blocks when present, then probed plain-readable FeliCa services."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "读取 Type 3 属性和 NDEF 块（如存在），然后探测可明文读取的 FeliCa 服务。"
-          }
-        }
-      }
-    },
     "Read Type 2 pages with READ, but stopped before Ultralight C secret key pages and any later 3DES-protected window." : {
       "localizations" : {
         "en" : {
@@ -4892,7 +4684,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仅使用密钥 B 读取"
+            "value" : "仅密钥 B 可读"
           }
         }
       }
@@ -4924,87 +4716,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用密钥 A 或 B 只读"
-          }
-        }
-      }
-    },
-    "Read/Write with Key A or B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key A or B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用密钥 A 或 B 读写"
-          }
-        }
-      }
-    },
-    "Read/Write with Key A, Read with Key B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key A, Read with Key B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用密钥 A 读写，使用密钥 B 读取"
-          }
-        }
-      }
-    },
-    "Read/Write with Key B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用密钥 B 读写"
-          }
-        }
-      }
-    },
-    "Read/Write with Key B (decrement with A|B)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key B (decrement with A|B)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用密钥 B 读写（密钥 A|B 可递减）"
-          }
-        }
-      }
-    },
-    "Read/Write with Key B, Read with Key A|B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key B, Read with Key A|B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用密钥 B 读写，使用密钥 A|B 读取"
+            "value" : "密钥 A 或 B 只读"
           }
         }
       }
@@ -5500,7 +5212,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "扇区尾部"
+            "value" : "扇区尾块"
           }
         }
       }
@@ -5565,22 +5277,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择确认字节，指示 ISO 14443-4 兼容性和芯片系列。"
-          }
-        }
-      }
-    },
-    "Selected the NDEF application and files, parsed the Capability Container, then saved the Type 4 NDEF payload." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Selected the NDEF application and files, parsed the Capability Container, then saved the Type 4 NDEF payload."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已选择 NDEF 应用和文件，解析了能力容器，并保存了 Type 4 NDEF 载荷。"
           }
         }
       }
@@ -7233,22 +6929,6 @@
         }
       }
     },
-    "The payload is binary and is shown as hex bytes. Edit it as hex." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The payload is binary and is shown as hex bytes. Edit it as hex."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "负载为二进制数据，以十六进制字节显示。请按十六进制编辑。"
-          }
-        }
-      }
-    },
     "This card uses a random UID, so the card presented cannot be verified. Make sure you present the same card." : {
       "localizations" : {
         "en" : {
@@ -7793,18 +7473,18 @@
         }
       }
     },
-    "Hashes match; signer not chained to a trusted CSCA" : {
+    "Hashes match; Document Signer certificate not validated to a trusted CSCA" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hashes match; signer not chained to a trusted CSCA"
+            "value" : "Hashes match; Document Signer certificate not validated to a trusted CSCA"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "哈希一致；签名者未链接到受信任的 CSCA"
+            "value" : "哈希一致；文档签名者证书未通过到受信任 CSCA 的证书路径验证"
           }
         }
       }
@@ -7825,18 +7505,18 @@
         }
       }
     },
-    "Hashes and signature valid; signer not chained to a trusted CSCA" : {
+    "Hashes and signature valid; Document Signer certificate not validated to a trusted CSCA" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hashes and signature valid; signer not chained to a trusted CSCA"
+            "value" : "Hashes and signature valid; Document Signer certificate not validated to a trusted CSCA"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "哈希与签名有效；签名者未链接到受信任的 CSCA"
+            "value" : "哈希与签名有效；文档签名者证书未通过到受信任 CSCA 的证书路径验证"
           }
         }
       }
@@ -7921,18 +7601,18 @@
         }
       }
     },
-    "Signer certificate not trusted" : {
+    "Document Signer certificate not trusted" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Signer certificate not trusted"
+            "value" : "Document Signer certificate not trusted"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "签名者证书不受信任"
+            "value" : "文档签名者证书不受信任"
           }
         }
       }
@@ -8316,7 +7996,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只有在卡片 UID 验证通过后才会发送指令。"
+            "value" : "只有在卡片 UID 验证通过后才会发送命令。"
           }
         }
       }
@@ -8401,18 +8081,18 @@
         }
       }
     },
-    "Frame Size for Proximity Coupling Device Integer. The largest frame the card accepts." : {
+    "Frame Size for proximity Card Integer (FSCI). The largest frame the card can receive." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Frame Size for Proximity Coupling Device Integer. The largest frame the card accepts."
+            "value" : "Frame Size for proximity Card Integer (FSCI). The largest frame the card can receive."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "近耦合设备帧长度整数（FSDI）。卡片可接受的最大帧长度。"
+            "value" : "近耦合卡帧长度整数（FSCI）。卡片可接收的最大帧长度。"
           }
         }
       }
@@ -8428,7 +8108,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此芯片所属的产品系列，决定了可用的指令。"
+            "value" : "此芯片所属的产品系列，决定了可用的命令。"
           }
         }
       }
@@ -8641,134 +8321,6 @@
         }
       }
     },
-    "Read/Write with Key B, Read with Key A or B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key B, Read with Key A or B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 B 可读写，密钥 A 或 B 可读"
-          }
-        }
-      }
-    },
-    "Read/Write with Key B (decrement with Key A or B)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read/Write with Key B (decrement with Key A or B)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 B 可读写（密钥 A 或 B 可减值）"
-          }
-        }
-      }
-    },
-    "Key A: write A or B. Access: read A or B, write never. Key B: read/write A or B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write A or B. Access: read A or B, write never. Key B: read/write A or B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：A 或 B 可写。访问位：A 或 B 可读，不可写。密钥 B：A 或 B 可读写"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A or B, write never. Key B: read/write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A or B, write never. Key B: read/write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：不可写。访问位：A 或 B 可读，不可写。密钥 B：不可读写"
-          }
-        }
-      }
-    },
-    "Key A: write B. Access: read A or B, write B. Key B: read never, write B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write B. Access: read A or B, write B. Key B: read never, write B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：B 可写。访问位：A 或 B 可读，B 可写。密钥 B：不可读，B 可写"
-          }
-        }
-      }
-    },
-    "Key A: write B. Access: read A or B, write never. Key B: read never, write B" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write B. Access: read A or B, write never. Key B: read never, write B"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：B 可写。访问位：A 或 B 可读，不可写。密钥 B：不可读，B 可写"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A or B, write never. Key B: read never, write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A or B, write never. Key B: read never, write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：不可写。访问位：A 或 B 可读，不可写。密钥 B：不可读，不可写"
-          }
-        }
-      }
-    },
-    "Key A: write never. Access: read A or B, write B. Key B: read never, write never" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Key A: write never. Access: read A or B, write B. Key B: read never, write never"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "密钥 A：不可写。访问位：A 或 B 可读，B 可写。密钥 B：不可读，不可写"
-          }
-        }
-      }
-    },
     "ATQA (Hex, 2 Bytes)" : {
       "localizations" : {
         "en" : {
@@ -8813,6 +8365,136 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "被动认证和主动认证用于验证数据完整性和芯片真实性。"
+          }
+        }
+      }
+    },
+    "Read, write, increment and decrement with Key A or B (transport configuration)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A 或 B 可读、写、增值和减值（运输配置）"
+          }
+        }
+      }
+    },
+    "Read with Key A or B, write with Key B" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A 或 B 可读，密钥 B 可写"
+          }
+        }
+      }
+    },
+    "Value block: read with Key A or B, write and increment with Key B, decrement with Key A or B" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值块：密钥 A 或 B 可读，密钥 B 可写和增值，密钥 A 或 B 可减值"
+          }
+        }
+      }
+    },
+    "Value block: read and decrement with Key A or B, no write or increment" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值块：密钥 A 或 B 可读和减值，不可写或增值"
+          }
+        }
+      }
+    },
+    "Read and write with Key B only" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅密钥 B 可读写"
+          }
+        }
+      }
+    },
+    "No access" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可访问"
+          }
+        }
+      }
+    },
+    "Key A: write A. Access bits: read A, write never. Key B: read A, write A" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：A 可写。访问位：A 可读，不可写。密钥 B：A 可读写"
+          }
+        }
+      }
+    },
+    "Key A: write B. Access bits: read A or B, write never. Key B: read never, write B" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：B 可写。访问位：A 或 B 可读，不可写。密钥 B：不可读，B 可写"
+          }
+        }
+      }
+    },
+    "Key A: write never. Access bits: read A, write never. Key B: read A, write never" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：不可写。访问位：A 可读，不可写。密钥 B：A 可读，不可写"
+          }
+        }
+      }
+    },
+    "Key A: write never. Access bits: read A or B, write never. Key B: read never, write never" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：不可写。访问位：A 或 B 可读，不可写。密钥 B：不可读，不可写"
+          }
+        }
+      }
+    },
+    "Key A: write A. Access bits: read A, write A. Key B: read A, write A (transport configuration)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：A 可写。访问位：A 可读写。密钥 B：A 可读写（运输配置）"
+          }
+        }
+      }
+    },
+    "Key A: write never. Access bits: read A or B, write B. Key B: read never, write never" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：不可写。访问位：A 或 B 可读，B 可写。密钥 B：不可读，不可写"
+          }
+        }
+      }
+    },
+    "Key A: write B. Access bits: read A or B, write B. Key B: read never, write B" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥 A：B 可写。访问位：A 或 B 可读，B 可写。密钥 B：不可读，B 可写"
           }
         }
       }
