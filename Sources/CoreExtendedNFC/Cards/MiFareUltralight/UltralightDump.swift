@@ -95,7 +95,7 @@ public struct UltralightDump: Sendable {
             if let lockStart = map.dynamicLockStart, page.number == lockStart { continue }
 
             try Task.checkCancellation()
-            try await commands.writePage(page.number, data: page.data)
+            try await commands.writePage(page.number, data: page.data, memoryMap: map)
         }
     }
 

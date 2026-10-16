@@ -13,6 +13,12 @@ public struct UltralightMemoryMap: Sendable, Equatable {
     /// First dynamic lock byte page (if applicable).
     public let dynamicLockStart: UInt8?
 
+    /// Whether `page` lies in the user data area. Every other page is a
+    /// manufacturer, lock, OTP, configuration, password or key page.
+    public func isUserDataPage(_ page: UInt8) -> Bool {
+        (userDataStart ... userDataEnd).contains(page)
+    }
+
     /// Number of user data bytes (4 bytes per page, inclusive range).
     var userDataByteCount: Int {
         Int(userDataEnd - userDataStart + 1) * 4

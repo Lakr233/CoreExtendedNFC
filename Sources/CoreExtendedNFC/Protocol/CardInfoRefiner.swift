@@ -35,10 +35,12 @@ enum CardInfoRefiner {
             // MF0ICU2 datasheet ("Authentication" section) aborts that state with
             // a NAK on any command other than the AF second step, so the dump
             // that follows would fail.
-            if await commands.probeUltralightCMemory() {
+            if try await commands.probeUltralightCMemory() {
                 return updated(info, type: .mifareUltralightC)
             }
             return info
+        } catch where isSessionTerminating(error) && !isMissingTagResponse(error) {
+            throw error
         } catch {
             return info
         }
@@ -55,6 +57,8 @@ enum CardInfoRefiner {
                 return info
             }
             return try await refineUltralight(updated(info, type: .mifareUltralight), transport: transport)
+        } catch where isSessionTerminating(error) && !isMissingTagResponse(error) {
+            throw error
         } catch {
             return info
         }

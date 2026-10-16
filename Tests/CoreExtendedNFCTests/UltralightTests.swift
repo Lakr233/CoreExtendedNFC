@@ -64,6 +64,99 @@ struct UltralightTests {
         }
     }
 
+    // MARK: - Irreversible page protection (MF0ICU1/MF0ICU2/MF0ULx1/NTAG21x memory maps)
+
+    @Test(arguments: [UInt8(0x00), 0x01, 0x02])
+    func `WRITE refuses UID and static lock pages without opt-in`(page: UInt8) async {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A])]
+        await #expect(throws: NFCError.self) {
+            try await UltralightCommands(transport: mock).writePage(page, data: Data([0x00, 0x00, 0xFF, 0xFF]))
+        }
+        #expect(mock.sentCommands.isEmpty)
+    }
+
+    @Test
+    func `WRITE refuses an OTP page 3 value that is not a read-write NDEF CC`() async {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A]), Data([0x0A])]
+        let commands = UltralightCommands(transport: mock)
+        // Read-only CC (CC3 = 0Fh) and arbitrary OTP bits both need the opt-in.
+        await #expect(throws: NFCError.self) {
+            try await commands.writePage(3, data: Data([0xE1, 0x10, 0x12, 0x0F]))
+        }
+        await #expect(throws: NFCError.self) {
+            try await commands.writePage(3, data: Data([0xFF, 0xFF, 0xFF, 0xFF]))
+        }
+        #expect(mock.sentCommands.isEmpty)
+    }
+
+    @Test
+    func `WRITE accepts a read-write NDEF CC on page 3 and opted-in irreversible writes`() async throws {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A]), Data([0x0A])]
+        let commands = UltralightCommands(transport: mock)
+        try await commands.writePage(3, data: Data([0xE1, 0x10, 0x12, 0x00]))
+        try await commands.writePage(2, data: Data([0x00, 0x00, 0xFF, 0xFF]), allowIrreversible: true)
+        #expect(mock.sentCommands == [
+            Data([0xA2, 0x03, 0xE1, 0x10, 0x12, 0x00]),
+            Data([0xA2, 0x02, 0x00, 0x00, 0xFF, 0xFF]),
+        ])
+    }
+
+    /// NTAG213 datasheet §8.5: user 04h-27h, dynamic lock 28h, CFG0 29h, CFG1 2Ah,
+    /// PWD 2Bh, PACK 2Ch.
+    @Test(arguments: [UInt8(0x28), 0x29, 0x2A, 0x2B, 0x2C])
+    func `WRITE refuses NTAG213 lock, config, PWD and PACK pages with a memory map`(page: UInt8) async {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A])]
+        await #expect(throws: NFCError.self) {
+            try await UltralightCommands(transport: mock)
+                .writePage(page, data: Data([0x00, 0x00, 0x00, 0x00]), memoryMap: .forType(.ntag213))
+        }
+        #expect(mock.sentCommands.isEmpty)
+    }
+
+    /// MF0ICU2 datasheet: lock bytes 28h-29h, AUTH0 2Ah, AUTH1 2Bh, 3DES key 2Ch-2Fh.
+    @Test(arguments: [UInt8(0x28), 0x29, 0x2A, 0x2B, 0x2C, 0x2F])
+    func `WRITE refuses Ultralight C lock, AUTH and key pages with a memory map`(page: UInt8) async {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A])]
+        await #expect(throws: NFCError.self) {
+            try await UltralightCommands(transport: mock)
+                .compatibilityWrite(page, data: Data([0x00, 0x00, 0x00, 0x00]), memoryMap: .forType(.mifareUltralightC))
+        }
+        #expect(mock.sentCommands.isEmpty)
+    }
+
+    /// MF0UL11 datasheet: user 04h-0Fh, CFG0 10h, CFG1 11h, PWD 12h, PACK 13h.
+    @Test
+    func `WRITE allows the last user page and refuses EV1 CFG0 with a memory map`() async throws {
+        let mock = MockTransport()
+        mock.responses = [Data([0x0A]), Data([0x0A])]
+        let commands = UltralightCommands(transport: mock)
+        let map = UltralightMemoryMap.forType(.mifareUltralightEV1_MF0UL11)
+        try await commands.writePage(0x0F, data: Data([1, 2, 3, 4]), memoryMap: map)
+        await #expect(throws: NFCError.self) {
+            try await commands.writePage(0x10, data: Data([0x00, 0x00, 0x00, 0x04]), memoryMap: map)
+        }
+        try await commands.writePage(0x10, data: Data([0x00, 0x00, 0x00, 0x04]), memoryMap: map, allowIrreversible: true)
+        #expect(mock.sentCommands == [
+            Data([0xA2, 0x0F, 1, 2, 3, 4]),
+            Data([0xA2, 0x10, 0x00, 0x00, 0x00, 0x04]),
+        ])
+    }
+
+    @Test
+    func `NDEF format still writes the Capability Container to page 3`() async throws {
+        let mock = MockTransport()
+        let info = CardInfo(type: .ntag213, uid: mock.identifier)
+        let userPages = Int(UltralightMemoryMap.forType(.ntag213).userDataEnd) - 3
+        mock.responses = Array(repeating: Data([0x0A]), count: userPages + 1)
+        try await CoreExtendedNFC.formatNDEF(info: info, transport: mock)
+        #expect(mock.sentCommands.last == Data([0xA2, 0x03, 0xE1, 0x10, 0x12, 0x00]))
+    }
+
     @Test
     func `FAST_READ command sends correct bytes`() async throws {
         let mock = MockTransport()
@@ -341,6 +434,67 @@ struct UltralightTests {
         #expect(!tag.sentCommands.contains { $0.first == 0x1A })
     }
 
+    @Test
+    func `Ultralight C model applies the same NAK recovery rule to every NAK`() async throws {
+        let tag = UltralightCTagModel()
+        // GET_VERSION NAK, then the tag is re-activated for the READ.
+        #expect(try await tag.send(Data([0x60])) == Data([0x00]))
+        #expect(try await tag.send(Data([0x30, 0x00])).count == 16)
+        // AUTHENTICATE leaves it mid-authentication: the READ is NAKed, the
+        // authentication state is dropped, and the next READ works again.
+        #expect(try await tag.send(Data([0x1A, 0x00])).first == 0xAF)
+        #expect(try await tag.send(Data([0x30, 0x00])) == Data([0x00]))
+        #expect(try await tag.send(Data([0x30, 0x00])).count == 16)
+        #expect(tag.reactivations == 2)
+    }
+
+    @Test
+    func `Ultralight C probe rethrows session loss instead of reporting plain Ultralight`() async {
+        let transport = ScriptedUltralightTransport(results: [
+            .success(Data([0x00])), // GET_VERSION NAK
+            .failure(NFCError.sessionInvalidated("Session invalidated")), // READ 0x2B
+        ])
+        do {
+            _ = try await CoreExtendedNFC.refineCardInfo(
+                CardInfo(type: .mifareUltralight, uid: transport.identifier),
+                transport: transport
+            )
+            Issue.record("expected sessionInvalidated")
+        } catch NFCError.sessionInvalidated {
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
+    @Test
+    func `Ultralight C probe rethrows cancellation`() async {
+        let transport = ScriptedUltralightTransport(results: [.failure(CancellationError())])
+        await #expect(throws: CancellationError.self) {
+            _ = try await UltralightCommands(transport: transport).probeUltralightCMemory()
+        }
+    }
+
+    @Test
+    func `Ultralight C probe treats a missing answer as plain Ultralight`() async throws {
+        let transport = ScriptedUltralightTransport(results: [.failure(NFCError.tagConnectionLost)])
+        #expect(try await UltralightCommands(transport: transport).probeUltralightCMemory() == false)
+    }
+
+    @Test
+    func `Refiner rethrows session loss from GET_VERSION`() async {
+        let transport = ScriptedUltralightTransport(results: [.failure(NFCError.userCanceled)])
+        do {
+            _ = try await CoreExtendedNFC.refineCardInfo(
+                CardInfo(type: .mifareUltralight, uid: transport.identifier),
+                transport: transport
+            )
+            Issue.record("expected userCanceled")
+        } catch NFCError.userCanceled {
+        } catch {
+            Issue.record("unexpected error \(error)")
+        }
+    }
+
     private static func rotateLeft(_ data: Data) -> Data {
         guard let first = data.first else { return Data() }
         return concat(Data(data.dropFirst()), Data([first]))
@@ -354,30 +508,35 @@ struct UltralightTests {
 }
 
 /// Minimal MF0ICU2 (Ultralight C) state model for identification tests.
-/// - GET_VERSION is not implemented: NAK. (Recovery from that NAK is left to
-///   the reader, as for every Ultralight path; this model stays ACTIVE.)
+///
+/// One rule for every NAK, matching the library's documented assumption
+/// (``UltralightCommands/probeUltralightCMemory()``): per the datasheet a NAK
+/// sends the tag to IDLE, and CoreNFC is assumed to re-activate it before the
+/// next command. The model therefore drops any pending state on a NAK and
+/// counts a re-activation when the next command arrives.
+/// - GET_VERSION is not implemented: NAK.
 /// - READ of 0x00-0x2B returns 4 pages, rolling over to page 0 after 0x2B.
 /// - AUTHENTICATE `1A 00` answers `AF ‖ ek(RndB)` and leaves the tag
-///   mid-authentication; any next command is NAKed and the tag goes IDLE
-///   (every later command NAKed too).
+///   mid-authentication; any next command other than the AF step is NAKed
+///   (mid-authentication is lost with the NAK, so the command is not executed).
 private final class UltralightCTagModel: NFCTagTransport, @unchecked Sendable {
     let identifier = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
     private(set) var sentCommands: [Data] = []
+    /// Number of times the (assumed) CoreNFC re-activation brought the tag back from IDLE.
+    private(set) var reactivations = 0
     private var midAuthentication = false
     private var idle = false
 
     func send(_ data: Data) async throws -> Data {
         sentCommands.append(data)
-        let nak = Data([0x00])
         if idle {
-            return nak
+            idle = false
+            reactivations += 1
         }
         if midAuthentication {
-            midAuthentication = false
-            idle = true
-            return nak
+            return nak()
         }
-        guard let command = data.first else { return nak }
+        guard let command = data.first else { return nak() }
         switch command {
         case 0x1A:
             midAuthentication = true
@@ -389,8 +548,33 @@ private final class UltralightCTagModel: NFCTagTransport, @unchecked Sendable {
                 return UInt8(truncatingIfNeeded: page * 4 + offset % 4)
             })
         default:
-            return nak
+            return nak()
         }
+    }
+
+    private func nak() -> Data {
+        midAuthentication = false
+        idle = true
+        return Data([0x00])
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("Type 2 tag model")
+    }
+}
+
+/// Transport that replays a fixed list of results, including thrown errors.
+private final class ScriptedUltralightTransport: NFCTagTransport, @unchecked Sendable {
+    let identifier = Data([0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+    private var results: [Result<Data, any Error>]
+
+    init(results: [Result<Data, any Error>]) {
+        self.results = results
+    }
+
+    func send(_: Data) async throws -> Data {
+        guard !results.isEmpty else { throw NFCError.tagConnectionLost }
+        return try results.removeFirst().get()
     }
 
     func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {

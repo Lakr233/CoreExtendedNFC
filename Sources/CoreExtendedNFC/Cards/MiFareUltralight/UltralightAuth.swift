@@ -9,6 +9,14 @@ public extension UltralightCommands {
     /// PWD_AUTH (0x1B): Authenticate with 4-byte password.
     /// Returns 2-byte PACK (Password Acknowledgment).
     /// Supported on Ultralight EV1 and NTAG.
+    ///
+    /// - Warning: When the tag's AUTHLIM field (ACCESS byte, bits 2-0) is non-zero,
+    ///   every failed PWD_AUTH increments a negative-attempt counter; once it
+    ///   reaches AUTHLIM the password-protected pages are locked permanently and
+    ///   no later PWD_AUTH can succeed (MF0ULx1 / NTAG213/215/216 datasheets,
+    ///   "Limiting negative verification attempts"). Do not retry or guess
+    ///   passwords on a tag whose AUTHLIM is unknown; read it first with
+    ///   ``readAuthConfig(configStartPage:)`` when AUTH0 allows it.
     func passwordAuth(password: Data) async throws -> Data {
         guard password.count == 4 else {
             throw NFCError.unsupportedOperation("Password must be exactly 4 bytes")

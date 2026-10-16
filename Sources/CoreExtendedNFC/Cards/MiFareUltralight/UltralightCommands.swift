@@ -19,10 +19,43 @@ public struct UltralightCommands: Sendable {
     }
 
     /// WRITE (0xA2): Write 4 bytes to a single page.
-    public func writePage(_ page: UInt8, data: Data) async throws {
+    ///
+    /// - Warning: Several Type 2 pages hold one-way bits or access settings, and a
+    ///   write to them can permanently brick the tag or lock out the owner
+    ///   (MF0ICU1/MF0ICU2/MF0ULx1/NTAG21x datasheets, "Memory organization"):
+    ///   - page 2 bytes 2-3: static lock bytes (set bits can never be cleared);
+    ///   - page 3: OTP / Capability Container (bits are OR-ed and never cleared);
+    ///   - dynamic lock bytes, CFG0/CFG1 (MIRROR, AUTH0, ACCESS with PROT,
+    ///     CFGLCK, AUTHLIM), PWD and PACK, and the Ultralight C AUTH0/AUTH1 and
+    ///     3DES key pages.
+    ///
+    ///   Such writes are refused with ``NFCError/unsupportedOperation(_:)``
+    ///   unless `allowIrreversible` is `true`. Pages 0-3 are always checked. The
+    ///   configuration pages depend on the product, so pass `memoryMap`
+    ///   (``UltralightMemoryMap/forType(_:)``) to also refuse every page outside
+    ///   the product's user data area; without it only pages 0-3 are checked.
+    ///   Page 3 is accepted without opt-in only for a standard read/write NDEF
+    ///   Capability Container (`E1 1x xx 00`, NFC Forum T2T 1.0 §6.1), which is
+    ///   what NDEF formatting writes; a read-only CC (CC3 ≠ 00h) or any other
+    ///   OTP value needs the opt-in.
+    ///
+    /// - Parameters:
+    ///   - page: Page address.
+    ///   - data: Exactly 4 bytes.
+    ///   - memoryMap: The tag's memory map, used to recognise lock and
+    ///     configuration pages. `nil` checks only pages 0-3.
+    ///   - allowIrreversible: Explicit opt-in to write lock, OTP and
+    ///     configuration pages.
+    public func writePage(
+        _ page: UInt8,
+        data: Data,
+        memoryMap: UltralightMemoryMap? = nil,
+        allowIrreversible: Bool = false
+    ) async throws {
         guard data.count == 4 else {
             throw NFCError.unsupportedOperation("Write data must be exactly 4 bytes")
         }
+        try Self.requireWritable(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
         var command = Data([0xA2, page])
         command.append(data)
         let response = try await transport.send(command)
@@ -52,10 +85,20 @@ public struct UltralightCommands: Sendable {
     /// Phase 1 sends `A0 Addr` and expects an ACK; phase 2 sends 16 data bytes
     /// (only the first 4 are written) and expects a second ACK
     /// (MF0ICU1 / MF0ULx1 / NTAG21x datasheets, COMPATIBILITY_WRITE).
-    public func compatibilityWrite(_ page: UInt8, data: Data) async throws {
+    ///
+    /// - Warning: Lock, OTP and configuration pages are refused unless
+    ///   `allowIrreversible` is `true`, exactly as for
+    ///   ``writePage(_:data:memoryMap:allowIrreversible:)``.
+    public func compatibilityWrite(
+        _ page: UInt8,
+        data: Data,
+        memoryMap: UltralightMemoryMap? = nil,
+        allowIrreversible: Bool = false
+    ) async throws {
         guard data.count == 4 else {
             throw NFCError.unsupportedOperation("Write data must be exactly 4 bytes")
         }
+        try Self.requireWritable(page, data: data, memoryMap: memoryMap, allowIrreversible: allowIrreversible)
         let addressResponse = try await transport.send(Data([0xA0, page]))
         try Self.requireACK(addressResponse, page: page)
 
@@ -78,9 +121,28 @@ public struct UltralightCommands: Sendable {
     /// Ultralight, or an Ultralight C whose AUTH0/AUTH1 read-protect page 0x2B;
     /// that card keeps the generic Ultralight type, which is a safe
     /// under-identification. Unlike ``probeUltralightCAuthentication()``,
-    /// this leaves the tag in its normal ACTIVE state.
-    public func probeUltralightCMemory() async -> Bool {
-        guard let response = try? await transport.send(Data([0x30, 0x2B])) else {
+    /// this does not leave the tag mid-authentication.
+    ///
+    /// ## NAK recovery assumption
+    /// Per the MF0ICU1/MF0ICU2 datasheets a NAK sends the tag back to IDLE.
+    /// Like every other Ultralight path in this library (GET_VERSION on
+    /// MF0ICU1/2, READ past AUTH0 during a dump), this probe assumes CoreNFC
+    /// re-activates the tag before the next command, so the tag is still
+    /// usable after a NAK. That re-activation is an on-device verification
+    /// item; the unit-test tag models apply the same rule to every NAK.
+    ///
+    /// - Throws: Session loss and task cancellation (``NFCError/sessionInvalidated(_:)``,
+    ///   ``NFCError/userCanceled``, `CancellationError`, ...). A missing answer
+    ///   (``NFCError/tagConnectionLost``) is treated as "not Ultralight C",
+    ///   because CoreNFC reports a NAKed or unanswered optional command the same
+    ///   way; the next mandatory command fails if the tag really left the field.
+    public func probeUltralightCMemory() async throws -> Bool {
+        let response: Data
+        do {
+            response = try await transport.send(Data([0x30, 0x2B]))
+        } catch where isSessionTerminating(error) && !isMissingTagResponse(error) {
+            throw error
+        } catch {
             return false
         }
         return response.count >= 16
@@ -101,6 +163,44 @@ public struct UltralightCommands: Sendable {
             return false
         }
         return response.count == 9 && response.first == 0xAF
+    }
+
+    /// Refuse a write to a lock, OTP or configuration page unless the caller opted in.
+    static func requireWritable(
+        _ page: UInt8,
+        data: Data,
+        memoryMap: UltralightMemoryMap?,
+        allowIrreversible: Bool
+    ) throws {
+        guard !allowIrreversible else { return }
+        let reason: String? = switch page {
+        case 0x00, 0x01:
+            "page \(page) holds the UID"
+        case 0x02:
+            "page 2 holds the static lock bytes"
+        case 0x03 where !isReadWriteNDEFCapabilityContainer(data):
+            "page 3 is one-time programmable (OTP / Capability Container)"
+        case 0x03:
+            nil
+        default:
+            if let memoryMap, !memoryMap.isUserDataPage(page) {
+                "page \(page) is a lock, configuration, password or key page"
+            } else {
+                nil
+            }
+        }
+        if let reason {
+            throw NFCError.unsupportedOperation(
+                "Refusing to write: \(reason) and the change may be irreversible. Pass allowIrreversible: true to write it anyway."
+            )
+        }
+    }
+
+    /// A standard NFC Forum Type 2 CC granting read and write access:
+    /// CC0 = E1h (NDEF magic), CC1 major version 1, CC3 = 00h (T2T 1.0 §6.1).
+    private static func isReadWriteNDEFCapabilityContainer(_ data: Data) -> Bool {
+        let bytes = [UInt8](data)
+        return bytes.count == 4 && bytes[0] == 0xE1 && bytes[1] >> 4 == 0x1 && bytes[3] == 0x00
     }
 
     private static func requireACK(_ response: Data, page: UInt8) throws {
