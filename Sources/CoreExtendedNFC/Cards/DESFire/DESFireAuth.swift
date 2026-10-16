@@ -271,7 +271,7 @@ extension DESFireCommands {
             message: finalResponse.data,
             iv: Data(challengeCiphertext.suffix(8))
         )
-        guard rotatedRndA == rotateLeft(rndAValue) else {
+        guard CryptoUtils.constantTimeEquals(rotatedRndA, rotateLeft(rndAValue)) else {
             throw NFCError.authenticationFailed
         }
 
@@ -349,7 +349,7 @@ extension DESFireCommands {
         let plain = [UInt8](decryptedResponse)
         let transactionIdentifier = Data(plain[0 ..< 4])
         let rotatedRndA = Data(plain[4 ..< 20])
-        guard rotatedRndA == rotateLeft(rndAValue) else {
+        guard CryptoUtils.constantTimeEquals(rotatedRndA, rotateLeft(rndAValue)) else {
             throw NFCError.authenticationFailed
         }
         let piccCapabilities = plain.count >= 26 ? Data(plain[20 ..< 26]) : Data()

@@ -15,8 +15,12 @@ public struct PassportReader: Sendable {
     ///   - mrzKey: The MRZ key string for BAC authentication.
     ///   - dataGroups: Which data groups to read (default: COM, DG1, DG2, SOD).
     ///   - performActiveAuth: Whether to attempt Active Authentication if DG15 is available.
+    ///   - trustAnchorsDER: DER-encoded CSCA certificates. Without them passive
+    ///     authentication can at best report `.fallback` (signature not chained to a CSCA).
     ///   - onProgress: Optional callback for progress messages.
     /// - Returns: A `PassportModel` with all parsed data.
+    /// - Throws: The first read error when nothing could be read, or when DG1 was
+    ///   requested but could not be read (DG1 is mandatory, ICAO 9303-10 §4.7).
     public func readPassport(
         mrzKey: String,
         dataGroups: [DataGroupId] = [.com, .dg1, .dg2, .sod],
@@ -127,23 +131,30 @@ public struct PassportReader: Sendable {
 
         // Step 3: Read each requested DataGroup.
         //
-        // EF.COM is read first and, once parsed, only the data groups it lists are
-        // selected: selecting an absent file draws a plain 6A82, and ICAO 9303-11 §9.8
-        // lets the chip end secure messaging on any unprotected reply. DG1 follows COM,
-        // and EAC-protected DG3/DG4 (likely a plain 6982 under BAC/PACE) go last, so
-        // an ICAO-strict chip ending the session there cannot cost DG1/DG2/SOD.
+        // EF.COM and the SOD are read first; a data group is selected when either lists
+        // it (ICAO 9303-10 §4.6.1: the SOD hash list is the authoritative index on
+        // LDS 1.8 chips, and COM may be incomplete). Selecting an absent file draws a
+        // plain 6A82, and ICAO 9303-11 §9.8 lets the chip end secure messaging on any
+        // unprotected reply. DG1 follows, then the other non-EAC data groups, then
+        // DG15 and Active Authentication; EAC-protected DG3/DG4 (likely a plain 6982
+        // under BAC/PACE) go last, so an ICAO-strict chip ending the session there
+        // cannot cost DG1/DG2/SOD or Active Authentication.
         var session = DataGroupReadSession(transport: smTransport)
         let readOrder = Self.readOrder(for: dataGroups)
+        let eacPass = readOrder.filter(Self.isEACProtected)
+        let mainPass = readOrder.filter { !Self.isEACProtected($0) }
+        var step = 0
 
-        for (index, dgId) in readOrder.enumerated() {
+        for dgId in mainPass {
             try Task.checkCancellation()
+            step += 1
             guard session.shouldSelect(dgId) else { continue }
-            onProgress?("Reading \(dgId.name) (\(index + 1)/\(readOrder.count))...")
+            onProgress?("Reading \(dgId.name) (\(step)/\(readOrder.count))...")
             try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
         }
 
         // Step 4: If AA was requested but DG15 wasn't in the list, read it when present.
-        if performActiveAuth, !readOrder.contains(.dg15), session.isListedInCOM(.dg15) ?? true,
+        if performActiveAuth, !readOrder.contains(.dg15), session.isListed(.dg15) ?? true,
            session.secureMessagingEnded == nil
         {
             try Task.checkCancellation()
@@ -151,140 +162,104 @@ public struct PassportReader: Sendable {
             try await session.read(.dg15) { try await readDataGroup(.dg15, transport: smTransport) }
         }
 
-        // A read that could not even deliver DG1 (or anything at all) is a failed read,
-        // not a partial one.
-        if let failure = session.firstFailure,
-           session.rawDataGroups.isEmpty || (readOrder.contains(.dg1) && session.rawDataGroups[.dg1] == nil)
-        {
+        // Step 5: Active Authentication, before any EAC data group can end the session.
+        var activeAuthResult: ActiveAuthenticationResult?
+        var activeAuthSkipReason: String?
+        let activeAuthPublicKey = session.rawDataGroups[.dg15].flatMap { try? DG15Parser.parse($0) }
+        if performActiveAuth, let publicKey = activeAuthPublicKey {
+            if let reason = session.secureMessagingEnded {
+                activeAuthSkipReason = "Active Authentication was not attempted because secure messaging ended: \(reason)"
+            } else {
+                try Task.checkCancellation()
+                onProgress?("Verifying chip authenticity...")
+                do {
+                    activeAuthResult = try await performActiveAuthentication(
+                        publicKey: publicKey,
+                        subjectPublicKeyInfo: session.rawDataGroups[.dg15].flatMap(DG15Parser.subjectPublicKeyInfo),
+                        securityInfos: session.rawDataGroups[.dg14].flatMap { try? DG14Parser.parse($0) },
+                        transport: smTransport
+                    )
+                } catch {
+                    if isSessionTerminating(error) { throw error }
+                    if case let NFCError.unexpectedStatusWord(sw1, sw2) = error {
+                        // An unprotected reply says nothing about the chip's AA key: the
+                        // chip has most likely dropped secure messaging (ICAO 9303-11 §9.8).
+                        activeAuthSkipReason = "Active Authentication could not run: the chip answered "
+                            + "INTERNAL AUTHENTICATE with an unprotected SW=\(String(format: "%02X%02X", sw1, sw2)), "
+                            + "so secure messaging has most likely ended."
+                    } else if let reason = await smTransport.sessionEndedReason {
+                        activeAuthSkipReason = "Active Authentication could not run because secure messaging ended: \(reason)"
+                    } else {
+                        activeAuthResult = ActiveAuthenticationResult(
+                            success: false,
+                            details: "Active Authentication transport failed: \(error.localizedDescription)",
+                            status: .commandFailed
+                        )
+                    }
+                }
+                if let reason = await smTransport.sessionEndedReason {
+                    session.markSecureMessagingEnded(reason)
+                }
+            }
+        }
+
+        // Step 6: EAC-protected data groups last.
+        for dgId in eacPass {
+            try Task.checkCancellation()
+            step += 1
+            guard session.shouldSelect(dgId) else { continue }
+            onProgress?("Reading \(dgId.name) (\(step)/\(readOrder.count))...")
+            try await session.read(dgId) { try await readDataGroup(dgId, transport: smTransport) }
+        }
+
+        // A read that could not deliver anything, or not the mandatory DG1 when it was
+        // requested, is a failed read, not a partial one.
+        if let failure = session.firstFailure, session.rawDataGroups.isEmpty {
             throw failure
+        }
+        if readOrder.contains(.dg1), session.rawDataGroups[.dg1] == nil {
+            throw session.firstFailure ?? NFCError.dataGroupNotAvailable(
+                "DG1 (MRZ) was requested but not read: \(session.status[.dg1]?.detail ?? "not selected")"
+            )
         }
         let rawDataGroups = session.rawDataGroups
 
-        // Step 5: Parse and assemble
+        // Step 7: Parse and assemble
         onProgress?("Processing...")
-        var model = assemblePassportModel(
+        let parsed = assemblePassportModel(
             rawDataGroups: rawDataGroups,
             trustAnchorsDER: trustAnchorsDER,
             cardAccess: cardAccess,
             cardAccessRaw: cardAccessRaw,
+            securityReport: PassportSecurityReport(),
+            dataGroupReadStatus: session.status
+        )
+
+        let activeAuthenticationStage: PassportSecurityStageResult = if let activeAuthSkipReason {
+            PassportSecurityStageResult(status: .skipped, detail: activeAuthSkipReason)
+        } else {
+            Self.activeAuthenticationStage(
+                requested: performActiveAuth,
+                publicKeyPresent: parsed.activeAuthPublicKey != nil,
+                result: activeAuthResult,
+                passiveAuthResult: parsed.passiveAuthResult
+            )
+        }
+
+        return parsed.replacing(
+            activeAuthResult: activeAuthResult,
             securityReport: PassportSecurityReport(
                 cardAccess: cardAccessStage,
                 pace: paceStage,
                 bac: bacStage,
-                chipAuthentication: .init(),
-                passiveAuthentication: .init(),
-                activeAuthentication: .init()
-            ),
-            dataGroupReadStatus: session.status
-        )
-
-        let chipAuthenticationStage = buildChipAuthenticationStage(model.securityInfos)
-        let passiveAuthenticationStage = buildPassiveAuthenticationStage(
-            passiveAuthResult: model.passiveAuthResult,
-            sodPresent: rawDataGroups[.sod] != nil
-        )
-
-        // Step 6: Perform Active Authentication if possible
-        var activeAuthenticationStage = buildActiveAuthenticationStage(
-            requested: performActiveAuth,
-            publicKey: model.activeAuthPublicKey,
-            result: nil
-        )
-        if performActiveAuth, model.activeAuthPublicKey != nil, let reason = session.secureMessagingEnded {
-            activeAuthenticationStage = PassportSecurityStageResult(
-                status: .skipped,
-                detail: "Active Authentication was not attempted because secure messaging ended: \(reason)"
-            )
-        }
-        if performActiveAuth, session.secureMessagingEnded == nil, let publicKey = model.activeAuthPublicKey {
-            onProgress?("Verifying chip authenticity...")
-            let aaResult: ActiveAuthenticationResult
-            do {
-                aaResult = try await performActiveAuthentication(
-                    publicKey: publicKey,
-                    subjectPublicKeyInfo: rawDataGroups[.dg15].flatMap(DG15Parser.subjectPublicKeyInfo),
-                    securityInfos: model.securityInfos,
-                    transport: smTransport
-                )
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                aaResult = ActiveAuthenticationResult(
-                    success: false,
-                    details: "Active Authentication transport failed: \(error.localizedDescription)",
-                    status: .commandFailed
-                )
-            }
-            activeAuthenticationStage = buildActiveAuthenticationStage(
-                requested: performActiveAuth,
-                publicKey: publicKey,
-                result: aaResult
-            )
-            // Re-assemble model with AA result
-            model = PassportModel(
-                cardAccess: model.cardAccess,
-                cardAccessRaw: model.cardAccessRaw,
-                ldsVersion: model.ldsVersion,
-                unicodeVersion: model.unicodeVersion,
-                availableDataGroups: model.availableDataGroups,
-                mrz: model.mrz,
-                faceImageData: model.faceImageData,
-                signatureImageData: model.signatureImageData,
-                additionalPersonalDetails: model.additionalPersonalDetails,
-                additionalDocumentDetails: model.additionalDocumentDetails,
-                securityInfos: model.securityInfos,
-                securityInfoRaw: model.securityInfoRaw,
-                activeAuthPublicKey: model.activeAuthPublicKey,
-                activeAuthPublicKeyRaw: model.activeAuthPublicKeyRaw,
-                sod: model.sod,
-                sodRaw: model.sodRaw,
-                passiveAuthResult: model.passiveAuthResult,
-                activeAuthResult: aaResult,
-                rawDataGroups: model.rawDataGroups,
-                securityReport: PassportSecurityReport(
-                    cardAccess: cardAccessStage,
-                    pace: paceStage,
-                    bac: bacStage,
-                    chipAuthentication: chipAuthenticationStage,
-                    passiveAuthentication: passiveAuthenticationStage,
-                    activeAuthentication: activeAuthenticationStage
+                chipAuthentication: buildChipAuthenticationStage(parsed.securityInfos),
+                passiveAuthentication: .passiveAuthentication(
+                    parsed.passiveAuthResult,
+                    sodPresent: rawDataGroups[.sod] != nil
                 ),
-                dataGroupReadStatus: model.dataGroupReadStatus
+                activeAuthentication: activeAuthenticationStage
             )
-        } else {
-            model = PassportModel(
-                cardAccess: model.cardAccess,
-                cardAccessRaw: model.cardAccessRaw,
-                ldsVersion: model.ldsVersion,
-                unicodeVersion: model.unicodeVersion,
-                availableDataGroups: model.availableDataGroups,
-                mrz: model.mrz,
-                faceImageData: model.faceImageData,
-                signatureImageData: model.signatureImageData,
-                additionalPersonalDetails: model.additionalPersonalDetails,
-                additionalDocumentDetails: model.additionalDocumentDetails,
-                securityInfos: model.securityInfos,
-                securityInfoRaw: model.securityInfoRaw,
-                activeAuthPublicKey: model.activeAuthPublicKey,
-                activeAuthPublicKeyRaw: model.activeAuthPublicKeyRaw,
-                sod: model.sod,
-                sodRaw: model.sodRaw,
-                passiveAuthResult: model.passiveAuthResult,
-                activeAuthResult: model.activeAuthResult,
-                rawDataGroups: model.rawDataGroups,
-                securityReport: PassportSecurityReport(
-                    cardAccess: cardAccessStage,
-                    pace: paceStage,
-                    bac: bacStage,
-                    chipAuthentication: chipAuthenticationStage,
-                    passiveAuthentication: passiveAuthenticationStage,
-                    activeAuthentication: activeAuthenticationStage
-                ),
-                dataGroupReadStatus: model.dataGroupReadStatus
-            )
-        }
-
-        return model
+        )
     }
 
     // MARK: - Private
@@ -626,38 +601,18 @@ public struct PassportReader: Sendable {
         )
     }
 
-    private func buildPassiveAuthenticationStage(
-        passiveAuthResult: PassiveAuthenticationResult?,
-        sodPresent: Bool
-    ) -> PassportSecurityStageResult {
-        guard let passiveAuthResult else {
-            return PassportSecurityStageResult(
-                status: sodPresent ? .failed : .notSupported,
-                detail: sodPresent
-                    ? "SOD was read, but passive authentication did not complete."
-                    : "SOD was not available, so passive authentication could not run."
-            )
-        }
-
-        if passiveAuthResult.dataGroupHashResults.isEmpty, passiveAuthResult.status != .unsupportedHashAlgorithm {
-            return PassportSecurityStageResult(
-                status: .skipped,
-                detail: "SOD was read, but no data group it covers was read, so no hashes were compared."
-            )
-        }
-
-        return PassportSecurityStageResult(
-            status: passiveAuthResult.allHashesValid ? .succeeded : .failed,
-            detail: passiveAuthResult.allHashesValid
-                ? "Passive Authentication status: \(passiveAuthResult.status.rawValue)."
-                : "Passive Authentication status: \(passiveAuthResult.status.rawValue) with \(passiveAuthResult.failedDataGroups.count) failed data groups."
-        )
-    }
-
-    private func buildActiveAuthenticationStage(
+    /// Security stage for Active Authentication.
+    ///
+    /// A valid signature only proves the chip holds the private key matching DG15. That
+    /// says the chip is genuine only when DG15 itself is authenticated: its hash must
+    /// match the SOD and the SOD signature must verify (ICAO 9303-11 §6.1, §5.1).
+    /// Otherwise a clone can carry its own key pair in an unauthenticated DG15, so the
+    /// stage is reported as `.fallback`, not `.succeeded`.
+    static func activeAuthenticationStage(
         requested: Bool,
-        publicKey: ActiveAuthPublicKey?,
-        result: ActiveAuthenticationResult?
+        publicKeyPresent: Bool,
+        result: ActiveAuthenticationResult?,
+        passiveAuthResult: PassiveAuthenticationResult?
     ) -> PassportSecurityStageResult {
         guard requested else {
             return PassportSecurityStageResult(
@@ -666,7 +621,7 @@ public struct PassportReader: Sendable {
             )
         }
 
-        guard publicKey != nil else {
+        guard publicKeyPresent else {
             return PassportSecurityStageResult(
                 status: .notAdvertised,
                 detail: "DG15 did not provide an Active Authentication public key."
@@ -680,16 +635,28 @@ public struct PassportReader: Sendable {
             )
         }
 
-        let status: PassportSecurityStageStatus = switch result.status {
+        switch result.status {
         case .verified:
-            .succeeded
+            let dg15HashVerified = passiveAuthResult?.dataGroupHashResults[.dg15] == true
+            let signatureVerified = switch passiveAuthResult?.status {
+            case .signatureVerified?, .fullyVerified?: true
+            default: false
+            }
+            guard dg15HashVerified, signatureVerified else {
+                let paStatus = passiveAuthResult?.status.rawValue ?? "not run"
+                return PassportSecurityStageResult(
+                    status: .fallback,
+                    detail: "\(result.details). The chip signed the challenge with the DG15 key, but DG15 is not "
+                        + "authenticated by a verified SOD signature (DG15 hash verified: \(dg15HashVerified), "
+                        + "passive authentication: \(paStatus)), so this does not prove the chip is genuine."
+                )
+            }
+            return PassportSecurityStageResult(status: .succeeded, detail: result.details)
         case .notImplemented, .unsupportedKeyType:
-            .notSupported
+            return PassportSecurityStageResult(status: .notSupported, detail: result.details)
         case .failed, .commandFailed:
-            .failed
+            return PassportSecurityStageResult(status: .failed, detail: result.details)
         }
-
-        return PassportSecurityStageResult(status: status, detail: result.details)
     }
 
     // MARK: - Active Authentication
@@ -755,9 +722,9 @@ public struct PassportReader: Sendable {
 // MARK: - Data group read loop
 
 extension PassportReader {
-    /// Order in which requested data groups are read: COM first (its list decides what
-    /// is selected), then DG1, then the rest as requested, with the EAC-protected DG3/DG4
-    /// last. Duplicates are dropped.
+    /// Order in which requested data groups are read: COM and the SOD first (their
+    /// lists decide what is selected), then DG1, then the rest as requested, with the
+    /// EAC-protected DG3/DG4 last. Duplicates are dropped.
     static func readOrder(for requested: [DataGroupId]) -> [DataGroupId] {
         var seen = Set<DataGroupId>()
         let unique = requested.filter { seen.insert($0).inserted }
@@ -765,9 +732,10 @@ extension PassportReader {
         func rank(_ dgId: DataGroupId) -> Int {
             switch dgId {
             case .com: 0
-            case .dg1: 1
-            case .dg3, .dg4: 3
-            default: 2
+            case .sod: 1
+            case .dg1: 2
+            case .dg3, .dg4: 4
+            default: 3
             }
         }
 
@@ -776,6 +744,44 @@ extension PassportReader {
                 (rank(lhs.element), lhs.offset) < (rank(rhs.element), rhs.offset)
             }
             .map(\.element)
+    }
+
+    /// DG3 (fingerprints) and DG4 (iris) need Extended Access Control; under BAC/PACE
+    /// alone the chip refuses them, often with an unprotected 6982.
+    static func isEACProtected(_ dgId: DataGroupId) -> Bool {
+        dgId == .dg3 || dgId == .dg4
+    }
+}
+
+extension PassportModel {
+    /// A copy with a new Active Authentication result and security report.
+    func replacing(
+        activeAuthResult: ActiveAuthenticationResult?,
+        securityReport: PassportSecurityReport
+    ) -> PassportModel {
+        PassportModel(
+            cardAccess: cardAccess,
+            cardAccessRaw: cardAccessRaw,
+            ldsVersion: ldsVersion,
+            unicodeVersion: unicodeVersion,
+            availableDataGroups: availableDataGroups,
+            mrz: mrz,
+            faceImageData: faceImageData,
+            signatureImageData: signatureImageData,
+            additionalPersonalDetails: additionalPersonalDetails,
+            additionalDocumentDetails: additionalDocumentDetails,
+            securityInfos: securityInfos,
+            securityInfoRaw: securityInfoRaw,
+            activeAuthPublicKey: activeAuthPublicKey,
+            activeAuthPublicKeyRaw: activeAuthPublicKeyRaw,
+            sod: sod,
+            sodRaw: sodRaw,
+            passiveAuthResult: passiveAuthResult,
+            activeAuthResult: activeAuthResult,
+            rawDataGroups: rawDataGroups,
+            securityReport: securityReport,
+            dataGroupReadStatus: dataGroupReadStatus
+        )
     }
 }
 
@@ -789,8 +795,10 @@ struct DataGroupReadSession {
     let transport: SecureMessagingTransport
     private(set) var rawDataGroups: [DataGroupId: Data] = [:]
     private(set) var status: [DataGroupId: PassportDataGroupReadResult] = [:]
-    /// Data groups listed in EF.COM, once COM was read and parsed.
+    /// Data groups listed in EF.COM, once COM was read and listed at least one.
     private(set) var listedInCOM: Set<DataGroupId>?
+    /// Data groups the SOD has a hash for, once the SOD was read and listed at least one.
+    private(set) var listedInSOD: Set<DataGroupId>?
     /// Why secure messaging ended, once it has.
     private(set) var secureMessagingEnded: String?
     /// First error that cost a data group (anything but "not available").
@@ -800,9 +808,18 @@ struct DataGroupReadSession {
         self.transport = transport
     }
 
-    /// Whether EF.COM lists `dgId`; `nil` when COM was not read or could not be parsed.
-    func isListedInCOM(_ dgId: DataGroupId) -> Bool? {
-        listedInCOM.map { $0.contains(dgId) }
+    /// Whether EF.COM or the SOD lists `dgId`; `nil` when neither index is known.
+    ///
+    /// An index that was not read, could not be parsed or lists nothing is unknown,
+    /// never "lists nothing": a COM without a usable tag list must not hide DG1.
+    func isListed(_ dgId: DataGroupId) -> Bool? {
+        if listedInCOM == nil, listedInSOD == nil { return nil }
+        return listedInCOM?.contains(dgId) == true || listedInSOD?.contains(dgId) == true
+    }
+
+    /// Record that secure messaging ended outside a data group read (e.g. during AA).
+    mutating func markSecureMessagingEnded(_ reason: String) {
+        if secureMessagingEnded == nil { secureMessagingEnded = reason }
     }
 
     /// Whether `dgId` should be selected. Records why when it should not.
@@ -814,11 +831,13 @@ struct DataGroupReadSession {
             )
             return false
         }
-        if dgId != .com, dgId != .sod, isListedInCOM(dgId) == false {
-            status[dgId] = PassportDataGroupReadResult(
-                state: .notPresent,
-                detail: "EF.COM does not list \(dgId.name)."
-            )
+        if dgId != .com, dgId != .sod, isListed(dgId) == false {
+            let detail = switch (listedInCOM != nil, listedInSOD != nil) {
+            case (true, true): "Neither EF.COM nor the SOD lists \(dgId.name)."
+            case (true, false): "EF.COM does not list \(dgId.name)."
+            default: "The SOD does not list \(dgId.name)."
+            }
+            status[dgId] = PassportDataGroupReadResult(state: .notPresent, detail: detail)
             return false
         }
         return true
@@ -831,11 +850,24 @@ struct DataGroupReadSession {
             rawDataGroups[dgId] = data
             status[dgId] = PassportDataGroupReadResult(state: .read, detail: "\(data.count) bytes")
             NFCLog.info("Read \(dgId.name): \(data.count) bytes", source: "Passport")
-            if dgId == .com, let parsed = try? COMParser.parse(data) {
+            if dgId == .com, let parsed = try? COMParser.parse(data), !parsed.dataGroups.isEmpty {
                 listedInCOM = Set(parsed.dataGroups)
             }
+            if dgId == .sod, let parsed = try? SODParser.parse(data), !parsed.dataGroupHashes.isEmpty {
+                listedInSOD = Set(parsed.dataGroupHashes.keys)
+            }
         } catch let NFCError.dataGroupNotAvailable(reason) {
-            status[dgId] = PassportDataGroupReadResult(state: .unavailable, detail: reason)
+            // A plain "not available" reply may itself be how a strict chip says the
+            // session is gone; the transport decides (two plain errors in a row).
+            if let ended = await transport.sessionEndedReason {
+                secureMessagingEnded = ended
+                status[dgId] = PassportDataGroupReadResult(
+                    state: .notRead,
+                    detail: "Secure messaging ended while reading this data group: \(ended) (\(reason))"
+                )
+            } else {
+                status[dgId] = PassportDataGroupReadResult(state: .unavailable, detail: reason)
+            }
         } catch {
             if isSessionTerminating(error) { throw error }
             if firstFailure == nil { firstFailure = error }

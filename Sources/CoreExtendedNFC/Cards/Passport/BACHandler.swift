@@ -38,9 +38,15 @@ public enum BACHandler {
         }
 
         // Step 1: Derive basic access keys from MRZ
-        let kseed = KeyDerivation.generateKseed(mrzKey: mrzKey)
-        let kenc = KeyDerivation.deriveKey(keySeed: kseed, mode: .enc)
-        let kmac = KeyDerivation.deriveKey(keySeed: kseed, mode: .mac)
+        var kseed = KeyDerivation.generateKseed(mrzKey: mrzKey)
+        var kenc = KeyDerivation.deriveKey(keySeed: kseed, mode: .enc)
+        var kmac = KeyDerivation.deriveKey(keySeed: kseed, mode: .mac)
+        // Best effort: wipe local copies of the document basic access keys on exit.
+        defer {
+            kseed.resetBytes(in: 0 ..< kseed.count)
+            kenc.resetBytes(in: 0 ..< kenc.count)
+            kmac.resetBytes(in: 0 ..< kmac.count)
+        }
 
         // Step 2: GET CHALLENGE — receive 8-byte random from chip
         NFCLog.debug("GET CHALLENGE", source: "Passport")
@@ -57,7 +63,8 @@ public enum BACHandler {
 
         // Step 3: Generate our random values
         let rndIFDValue = try rndIFD.map { Data($0) } ?? CryptoUtils.secureRandomBytes(count: 8)
-        let kIFDValue = try kIFD.map { Data($0) } ?? CryptoUtils.secureRandomBytes(count: 16)
+        var kIFDValue = try kIFD.map { Data($0) } ?? CryptoUtils.secureRandomBytes(count: 16)
+        defer { kIFDValue.resetBytes(in: 0 ..< kIFDValue.count) }
 
         // Step 4: Build concatenation S = rndIFD || rndICC || kIFD
         var s = Data()
@@ -95,7 +102,7 @@ public enum BACHandler {
         // Verify response MAC
         let paddedResponseEncrypted = ISO9797Padding.pad(responseEncrypted, blockSize: 8)
         let computedMac = try ISO9797MAC.mac(key: kmac, message: paddedResponseEncrypted)
-        guard computedMac == responseMac else {
+        guard CryptoUtils.constantTimeEquals(computedMac, responseMac) else {
             throw NFCError.bacFailed("Response MAC verification failed")
         }
 
@@ -111,17 +118,18 @@ public enum BACHandler {
         let kICC = Data(responseDecrypted[16 ..< 32])
 
         // Verify rndICC matches
-        guard rndICCPrime == rndICC else {
+        guard CryptoUtils.constantTimeEquals(rndICCPrime, rndICC) else {
             throw NFCError.bacFailed("rndICC mismatch in response")
         }
         // Verify rndIFD matches
-        guard rndIFDPrime == rndIFDValue else {
+        guard CryptoUtils.constantTimeEquals(rndIFDPrime, rndIFDValue) else {
             throw NFCError.bacFailed("rndIFD mismatch in response")
         }
 
         // Step 9: Compute new session keys
         // Kseed_new = kIFD XOR kICC
         var kseedNew = Data(count: 16)
+        defer { kseedNew.resetBytes(in: 0 ..< kseedNew.count) }
         for i in 0 ..< 16 {
             kseedNew[i] = kIFDValue[i] ^ kICC[i]
         }

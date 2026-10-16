@@ -236,7 +236,95 @@ struct PassportReaderSessionTests {
 
     @Test
     func `Read order puts COM and DG1 first and EAC data groups last`() {
-        #expect(PassportReader.readOrder(for: [.dg3, .sod, .dg2, .dg1, .com, .dg2]) == [.com, .dg1, .sod, .dg2, .dg3])
+        #expect(PassportReader.readOrder(for: [.dg3, .sod, .dg2, .dg1, .com, .dg2]) == [.com, .sod, .dg1, .dg2, .dg3])
+    }
+
+    // MARK: - COM / SOD as data group index (ICAO 9303-10 §4.6)
+
+    @Test
+    func `A COM without a data group list does not hide DG1`() async throws {
+        // 60 { 5F01 "0107", 5F36 "040000" } — no tag list (5C).
+        let com = vectorTLV(0x60, vectorTLV(0x5F01, Data("0107".utf8)) + vectorTLV(0x5F36, Data("040000".utf8)))
+        let dg1 = Self.makeDG1()
+        let chip = SimulatedBACChip(files: [DataGroupId.com.fileID: com, DataGroupId.dg1.fileID: dg1])
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.com, .dg1],
+            performActiveAuth: false
+        )
+
+        #expect(model.rawDataGroups[.dg1] == dg1)
+        #expect(model.mrz != nil)
+    }
+
+    @Test
+    func `A requested DG1 that cannot be read fails the read`() async {
+        // COM lists only DG2, and the chip has no DG1.
+        let com = Self.makeCOM(tags: [0x75])
+        let dg2 = ASN1Parser.encodeTLV(tag: 0x75, value: Data(repeating: 0xAB, count: 64))
+        let chip = SimulatedBACChip(files: [DataGroupId.com.fileID: com, DataGroupId.dg2.fileID: dg2])
+
+        await #expect(throws: NFCError.self) {
+            _ = try await PassportReader(transport: chip).readPassport(
+                mrzKey: Self.mrzKey,
+                dataGroups: [.com, .dg1, .dg2],
+                performActiveAuth: false
+            )
+        }
+    }
+
+    @Test
+    func `A data group listed only in the SOD is read and used for Active Authentication`() async throws {
+        let com = Self.makeCOM(tags: [0x61, 0x75])
+        let dg1 = Self.makeDG1()
+        let dg2 = ASN1Parser.encodeTLV(tag: 0x75, value: Data(repeating: 0xAB, count: 64))
+        let dg15 = Self.makeDG15()
+        let sod = Self.makeUnsignedSOD(hashedDataGroups: [1, 2, 15])
+        let chip = SimulatedBACChip(files: [
+            DataGroupId.com.fileID: com,
+            DataGroupId.dg1.fileID: dg1,
+            DataGroupId.dg2.fileID: dg2,
+            DataGroupId.dg15.fileID: dg15,
+            DataGroupId.sod.fileID: sod,
+        ])
+        chip.plainNotFoundForMissingFiles = true
+        chip.endSessionAfterPlainError = true
+
+        let model = try await PassportReader(transport: chip).readPassport(mrzKey: Self.mrzKey)
+
+        #expect(model.rawDataGroups[.dg15] == dg15)
+        #expect(chip.protectedINS.contains(0x88))
+        #expect(model.dataGroupReadStatus?[.dg15]?.state == .read)
+    }
+
+    @Test
+    func `Active Authentication runs before EAC data groups and a dead session skips it instead of failing`() async throws {
+        let dg1 = Self.makeDG1()
+        let dg15 = Self.makeDG15()
+        let dg3 = ASN1Parser.encodeTLV(tag: 0x63, value: Data(repeating: 0x02, count: 40))
+        let chip = SimulatedBACChip(files: [
+            DataGroupId.dg1.fileID: dg1,
+            DataGroupId.dg15.fileID: dg15,
+            DataGroupId.dg3.fileID: dg3,
+        ])
+        // DG11 is absent: its plain 6A82 makes this strict chip drop its keys and answer
+        // every later protected command with a plain 6982.
+        chip.plainNotFoundForMissingFiles = true
+        chip.endSessionAfterPlainError = true
+        chip.plain6982WithoutSession = true
+
+        let model = try await PassportReader(transport: chip).readPassport(
+            mrzKey: Self.mrzKey,
+            dataGroups: [.dg1, .dg3, .dg15, .dg11]
+        )
+
+        #expect(model.rawDataGroups[.dg1] == dg1)
+        #expect(model.rawDataGroups[.dg15] == dg15)
+        #expect(model.securityReport.activeAuthentication.status == .skipped)
+        #expect(model.dataGroupReadStatus?[.dg3]?.state == .notRead)
+        // AA is the last command: DG3 is not selected once the session is known to be over.
+        #expect(chip.protectedINS.last == 0x88)
     }
 
     private static func makeCOM(tags: [UInt8]) -> Data {
@@ -246,6 +334,35 @@ struct PassportReaderSessionTests {
                 + ASN1Parser.encodeTLV(tag: 0x5F36, value: Data("040000".utf8))
                 + ASN1Parser.encodeTLV(tag: 0x5C, value: Data(tags))
         )
+    }
+
+    /// DG15 with a P-256 SubjectPublicKeyInfo whose point is the curve generator (SEC 2 §2.4.2).
+    private static func makeDG15() -> Data {
+        let algorithm = vectorTLV(
+            0x30,
+            vectorTLV(0x06, vectorHex("2A8648CE3D0201")) + vectorTLV(0x06, vectorHex("2A8648CE3D030107"))
+        )
+        let point = vectorHex(
+            "046B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296"
+                + "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5"
+        )
+        return vectorTLV(0x6F, vectorTLV(0x30, algorithm + vectorTLV(0x03, Data([0x00]) + point)))
+    }
+
+    /// An unsigned SOD whose LDS security object lists (dummy) hashes for `hashedDataGroups`.
+    private static func makeUnsignedSOD(hashedDataGroups: [UInt8]) -> Data {
+        let sha256 = vectorTLV(0x30, vectorTLV(0x06, vectorHex("608648016503040201")))
+        let hashes = hashedDataGroups.map { number in
+            vectorTLV(0x30, vectorTLV(0x02, Data([number])) + vectorTLV(0x04, Data(repeating: number, count: 32)))
+        }.reduce(Data(), +)
+        let lds = vectorTLV(0x30, vectorTLV(0x02, Data([0x00])) + sha256 + vectorTLV(0x30, hashes))
+        let encapContentInfo = vectorTLV(
+            0x30,
+            vectorTLV(0x06, vectorHex("678108010101")) + vectorTLV(0xA0, vectorTLV(0x04, lds))
+        )
+        let signedData = vectorTLV(0x30, vectorTLV(0x02, Data([0x03])) + vectorTLV(0x31, sha256) + encapContentInfo)
+        let contentInfo = vectorTLV(0x30, vectorTLV(0x06, vectorHex("2A864886F70D010702")) + vectorTLV(0xA0, signedData))
+        return vectorTLV(0x77, contentInfo)
     }
 
     private static func makeDG1() -> Data {
@@ -283,6 +400,11 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
     /// ICAO-strict behaviour: after answering with a plain status word the chip deletes
     /// its session keys, and every later protected command gets a plain 6988.
     var endSessionAfterPlainError = false
+    /// With `endSessionAfterPlainError`: answer keyless protected commands with a plain
+    /// 6982 instead of 6988, as some strict chips do.
+    var plain6982WithoutSession = false
+    /// INS of every protected command received, in order.
+    private(set) var protectedINS: [UInt8] = []
     private(set) var oddReadBinaryCount = 0
     private(set) var selectedFileIDs: [Data] = []
     private(set) var commandsWithoutSession = 0
@@ -343,9 +465,10 @@ final class SimulatedBACChip: NFCTagTransport, @unchecked Sendable {
     }
 
     private func handleProtected(_ apdu: CommandAPDU) throws -> ResponseAPDU {
+        protectedINS.append(apdu.ins)
         guard let keys = sessionKeys else {
             commandsWithoutSession += 1
-            return endSessionAfterPlainError
+            return endSessionAfterPlainError && !plain6982WithoutSession
                 ? ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x88)
                 : ResponseAPDU(data: Data(), sw1: 0x69, sw2: 0x82)
         }

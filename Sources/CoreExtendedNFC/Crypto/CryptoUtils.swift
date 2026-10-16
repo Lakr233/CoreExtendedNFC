@@ -114,6 +114,22 @@ public enum CryptoUtils {
         )
     }
 
+    // MARK: - Comparison
+
+    /// Compare two byte strings in time that depends only on their lengths.
+    ///
+    /// Use it for MACs, authentication tokens, recovered digests and challenge echoes,
+    /// so the position of the first differing byte cannot be learnt from timing.
+    /// Inputs may be sliced `Data`; only their bytes are compared.
+    static func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        var difference: UInt8 = 0
+        for (left, right) in zip(lhs, rhs) {
+            difference |= left ^ right
+        }
+        return difference == 0
+    }
+
     // MARK: - Internal
 
     /// Generate cryptographically random bytes, throwing if the system generator fails.

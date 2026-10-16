@@ -92,7 +92,7 @@ extension UltralightCommands {
             message: Data(finalBytes[1 ..< 9]),
             iv: Data(challengeCiphertext.suffix(8))
         )
-        guard rotatedRndA == rotateLeft(randomAValue) else {
+        guard CryptoUtils.constantTimeEquals(rotatedRndA, rotateLeft(randomAValue)) else {
             throw NFCError.authenticationFailed
         }
 

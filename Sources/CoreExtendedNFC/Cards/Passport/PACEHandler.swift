@@ -217,6 +217,12 @@ public enum PACEHandler {
             }
 
             let chipMappingPublicKey = try parseTag82FromDynamicAuth(step2Response.data)
+            // ICAO 9303-11 §4.4.3.3: the terminal must check that the chip's public key
+            // differs from its own; a reflected key would let a party that does not know
+            // the password complete the protocol.
+            guard try !curve.isSamePoint(chipMappingPublicKey, terminalMappingPublicKey) else {
+                throw NFCError.secureMessagingError("PACE: chip mapping public key reflects the terminal's key")
+            }
             let mappingSharedPoint = try curve.sharedPoint(
                 privateScalar: mappingPrivateKey,
                 peerPublic: chipMappingPublicKey
@@ -244,6 +250,9 @@ public enum PACEHandler {
             }
 
             let chipEphemeralPublicKey = try parseTag84FromDynamicAuth(step3Response.data)
+            guard try !curve.isSamePoint(chipEphemeralPublicKey, terminalEphemeralPublicKey) else {
+                throw NFCError.secureMessagingError("PACE: chip ephemeral public key reflects the terminal's key")
+            }
             let sharedSecret = try curve.sharedSecretXCoordinate(
                 privateScalar: ephemeralPrivateKey,
                 peerPublic: chipEphemeralPublicKey
@@ -275,7 +284,7 @@ public enum PACEHandler {
                 mode: smMode
             )
 
-            guard chipToken == expectedChipToken else {
+            guard CryptoUtils.constantTimeEquals(chipToken, expectedChipToken) else {
                 throw NFCError.secureMessagingError("PACE authentication token verification failed")
             }
 
@@ -599,6 +608,17 @@ private extension SecurityProtocol {
             }
 
             return try exportXCoordinate(result)
+        }
+
+        /// Whether two encoded points are the same curve point, whatever their encoding.
+        ///
+        /// - Throws: `NFCError.cryptoError` when either encoding is not a valid point.
+        func isSamePoint(_ lhs: Data, _ rhs: Data) throws -> Bool {
+            let lhsPoint = try makePoint(lhs)
+            defer { EC_POINT_free(lhsPoint) }
+            let rhsPoint = try makePoint(rhs)
+            defer { EC_POINT_free(rhsPoint) }
+            return EC_POINT_cmp(group, lhsPoint, rhsPoint, ctx) == 0
         }
 
         private func makeScalar(_ data: Data) throws -> OpaquePointer {

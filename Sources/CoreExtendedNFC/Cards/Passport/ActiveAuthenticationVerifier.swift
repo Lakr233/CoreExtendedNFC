@@ -72,7 +72,7 @@ enum ActiveAuthenticationVerifier {
                 fullMessage.append(challenge)
                 let expectedDigest = descriptor.compute(fullMessage)
 
-                guard expectedDigest == digest else {
+                guard CryptoUtils.constantTimeEquals(expectedDigest, digest) else {
                     return ActiveAuthenticationResult(
                         success: false,
                         details: "RSA Active Authentication digest mismatch",

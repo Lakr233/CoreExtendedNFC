@@ -74,13 +74,23 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
     /// (transport error, cancellation mid-exchange, unauthenticated response). Only read
     /// or mutated while `exchangeGate` is held.
     private var sessionEndReason: String?
+    /// Whether the previous exchange was answered with a plain (unprotected) status word.
+    /// Only read or mutated while `exchangeGate` is held.
+    private var previousExchangeWasPlain = false
 
     /// Whether an earlier failed exchange ended this secure messaging session.
     var isSessionEnded: Bool {
         get async {
+            await sessionEndedReason != nil
+        }
+    }
+
+    /// Why this secure messaging session ended, or `nil` while it is still usable.
+    var sessionEndedReason: String? {
+        get async {
             await exchangeGate.acquire()
             defer { exchangeGate.release() }
-            return sessionEndReason != nil
+            return sessionEndReason
         }
     }
 
@@ -144,14 +154,24 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
             }
 
             incrementSSC()
-            return try unprotect(assembledResponse)
+            let response = try unprotect(assembledResponse)
+            previousExchangeWasPlain = false
+            return response
         } catch let NFCError.unexpectedStatusWord(sw1, sw2) {
             // Plain status word: both SSC steps were consumed in step with the chip.
             // 6987/6988 (SM data objects missing/incorrect) mean the chip no longer
             // runs secure messaging at all (ISO/IEC 7816-4 §5.6).
             if sw1 == 0x69, sw2 == 0x87 || sw2 == 0x88 {
                 sessionEndReason = String(format: "chip reported a secure messaging error (SW=%02X%02X)", sw1, sw2)
+            } else if previousExchangeWasPlain, sw1 == 0x69, sw2 == 0x82 {
+                // ICAO 9303-11 §9.8: a chip may delete its session keys after any plain
+                // reply. Some then answer every protected command with a plain 6982
+                // instead of 6988, so a plain 6982 straight after another plain error
+                // is taken as the end of the session, not as a protected file.
+                sessionEndReason = "chip answered with a plain 6982 right after another unprotected error; "
+                    + "it has most likely ended secure messaging"
             }
+            previousExchangeWasPlain = true
             throw NFCError.unexpectedStatusWord(sw1, sw2)
         } catch {
             sessionEndReason = error is CancellationError
@@ -320,7 +340,7 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         var macInput = paddedSSC()
         macInput.append(authenticatedBytes)
         let computedMAC = try computeMAC(ISO9797Padding.pad(macInput, blockSize: mode.blockSize))
-        guard constantTimeEquals(computedMAC, do8eValue) else {
+        guard CryptoUtils.constantTimeEquals(computedMAC, do8eValue) else {
             throw NFCError.secureMessagingError("MAC verification failed")
         }
 
@@ -384,15 +404,6 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
         return try CryptoUtils.aesECBEncrypt(key: ksEnc, message: paddedSSC)
     }
 
-    private func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
-        guard lhs.count == rhs.count else { return false }
-        var difference: UInt8 = 0
-        for (left, right) in zip(lhs, rhs) {
-            difference |= left ^ right
-        }
-        return difference == 0
-    }
-
     // MARK: - SSC
 
     /// Increment the Send Sequence Counter by 1 (big-endian, wrapping).
@@ -404,6 +415,26 @@ public final class SecureMessagingTransport: NFCTagTransport, @unchecked Sendabl
             ssc[index] = sum
             if !overflow { break }
         }
+    }
+}
+
+extension SecureMessagingTransport: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    /// Names the cipher mode only: session keys and the SSC are never printed.
+    public var description: String {
+        "SecureMessagingTransport(mode: \(mode), ksEnc: \(SecretRedaction.redacted(ksEnc)), "
+            + "ksMac: \(SecretRedaction.redacted(ksMac)))"
+    }
+
+    public var debugDescription: String {
+        description
+    }
+
+    public var customMirror: Mirror {
+        Mirror(self, children: [
+            "mode": mode,
+            "ksEnc": SecretRedaction.redacted(ksEnc),
+            "ksMac": SecretRedaction.redacted(ksMac),
+        ], displayStyle: .class)
     }
 }
 

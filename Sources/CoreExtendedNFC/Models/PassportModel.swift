@@ -138,6 +138,39 @@ public struct PassportModel: Sendable, Codable, Equatable {
         self.securityReport = securityReport
         self.dataGroupReadStatus = dataGroupReadStatus
     }
+
+    /// Run passive authentication again from this model's raw bytes.
+    ///
+    /// Use it for a model that did not come straight from ``PassportReader`` (for example
+    /// one decoded from a file): its stored `passiveAuthResult` and `securityReport` are
+    /// whatever the file says. This re-parses the SOD (`sodRaw`, else
+    /// `rawDataGroups[.sod]`), re-hashes every raw data group and verifies the SOD's CMS
+    /// signature; with `trustAnchorsDER` (DER CSCA certificates) it also validates the
+    /// signer certificate's chain. No NFC is involved.
+    ///
+    /// Only passive authentication can be repeated offline. BAC/PACE, Chip Authentication
+    /// and Active Authentication are challenge–response protocols with the chip, so their
+    /// stored results cannot be re-checked. Fields such as `mrz` or `faceImageData` are
+    /// not tied to this result; callers that show them should re-parse them from
+    /// `rawDataGroups`.
+    ///
+    /// - Parameter trustAnchorsDER: DER-encoded CSCA certificates; empty skips chain validation.
+    /// - Returns: `.sodNotAvailable` without SOD bytes, `.sodParseFailed` when they do not
+    ///   parse, otherwise the full passive authentication result. Map it to a stage with
+    ///   ``PassportSecurityStageResult/passiveAuthentication(_:sodPresent:)``.
+    public func reverifyPassiveAuthentication(trustAnchorsDER: [Data] = []) -> PassiveAuthenticationResult {
+        guard let sodData = sodRaw ?? rawDataGroups[.sod] else {
+            return PassiveAuthenticationResult(dataGroupHashResults: [:], hasCertificate: false, status: .sodNotAvailable)
+        }
+        guard let sodContent = try? SODParser.parse(sodData) else {
+            return PassiveAuthenticationResult(dataGroupHashResults: [:], hasCertificate: false, status: .sodParseFailed)
+        }
+        return SODParser.verifyPassiveAuthentication(
+            sodContent: sodContent,
+            rawDataGroups: rawDataGroups,
+            trustAnchorsDER: trustAnchorsDER
+        )
+    }
 }
 
 /// What happened to one data group during `PassportReader.readPassport`.
@@ -185,6 +218,90 @@ public struct PassportSecurityStageResult: Sendable, Equatable, Codable {
     public init(status: PassportSecurityStageStatus = .pending, detail: String = "") {
         self.status = status
         self.detail = detail
+    }
+
+    /// Stage result for a passive authentication outcome.
+    ///
+    /// - `.succeeded` only for ``PassiveAuthStatus/fullyVerified``: hashes match, the SOD
+    ///   signature verifies and its signer chains to a supplied CSCA (ICAO 9303-11 §5.1).
+    /// - `.fallback` when the hashes match but the signature is not chained to a CSCA
+    ///   (``PassiveAuthStatus/signatureVerified`` without anchors, or no signature check).
+    /// - `.failed` for an invalid signature, a broken trust chain, a hash mismatch, an
+    ///   unparseable SOD or an unsupported hash algorithm.
+    /// - `.skipped` when no data group the SOD covers was compared; `.notSupported`
+    ///   when there was no SOD.
+    public static func passiveAuthentication(
+        _ result: PassiveAuthenticationResult?,
+        sodPresent: Bool
+    ) -> PassportSecurityStageResult {
+        guard let result else {
+            return PassportSecurityStageResult(
+                status: sodPresent ? .failed : .notSupported,
+                detail: sodPresent
+                    ? "SOD was read, but passive authentication did not complete."
+                    : "SOD was not available, so passive authentication could not run."
+            )
+        }
+
+        switch result.status {
+        case .sodNotAvailable:
+            return PassportSecurityStageResult(
+                status: .notSupported,
+                detail: "SOD was not available, so passive authentication could not run."
+            )
+        case .sodParseFailed:
+            return PassportSecurityStageResult(status: .failed, detail: "The SOD could not be parsed.")
+        case .unsupportedHashAlgorithm:
+            return PassportSecurityStageResult(
+                status: .failed,
+                detail: "The SOD uses a hash algorithm this library does not support, so no data group was verified."
+            )
+        default:
+            break
+        }
+
+        if result.dataGroupHashResults.isEmpty {
+            return PassportSecurityStageResult(
+                status: .skipped,
+                detail: "SOD was read, but no data group it covers was read, so no hashes were compared."
+            )
+        }
+
+        let compared = result.dataGroupHashResults.count
+        switch result.status {
+        case .fullyVerified:
+            return PassportSecurityStageResult(
+                status: .succeeded,
+                detail: "\(compared) data group hashes match, the SOD signature is valid and its signer chains to a trusted CSCA."
+            )
+        case .signatureVerified:
+            return PassportSecurityStageResult(
+                status: .fallback,
+                detail: "\(compared) data group hashes match and the SOD signature is valid, but the signature is "
+                    + "not chained to a CSCA (no trust anchors were supplied)."
+            )
+        case .signatureNotVerified, .dataGroupHashesVerified:
+            return PassportSecurityStageResult(
+                status: .fallback,
+                detail: "\(compared) data group hashes match the SOD, but the SOD signature was not verified "
+                    + "and is not chained to a CSCA."
+            )
+        case .signatureInvalid:
+            return PassportSecurityStageResult(
+                status: .failed,
+                detail: "The SOD signature is invalid; the data group hashes cannot be trusted."
+            )
+        case .trustChainInvalid:
+            return PassportSecurityStageResult(
+                status: .failed,
+                detail: "The SOD signature is valid, but its signer certificate does not chain to a supplied CSCA."
+            )
+        case .hashMismatch, .sodNotAvailable, .sodParseFailed, .unsupportedHashAlgorithm:
+            return PassportSecurityStageResult(
+                status: .failed,
+                detail: "\(result.failedDataGroups.count) of \(compared) data groups do not match the SOD."
+            )
+        }
     }
 }
 

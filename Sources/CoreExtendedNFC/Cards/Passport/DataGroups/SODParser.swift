@@ -28,6 +28,10 @@ public struct SODContent: Sendable, Equatable, Codable {
     public let unicodeVersion: String?
 
     /// Raw Document Signer Certificate bytes (DER-encoded X.509).
+    ///
+    /// This is the embedded certificate the SignerInfo's SID identifies, i.e. the one
+    /// whose key signed the SOD. When no embedded certificate matches, it falls back
+    /// to the first embedded certificate (for display only; CMS verification then fails).
     public let documentSignerCertificate: Data?
 
     /// Raw signed attributes bytes (for signature verification).
@@ -303,6 +307,12 @@ enum SODParser {
             }
         }
 
+        // The certificates SET may hold several certificates in any order. The document
+        // signer is the one the SignerInfo's SID names, not necessarily the first.
+        if let signer = signerCertificateDER(cmsDER: contentInfoData) {
+            dscData = signer
+        }
+
         return SODContent(
             hashAlgorithmOID: hashAlgOID,
             hashAlgorithm: hashAlgName,
@@ -566,7 +576,7 @@ enum SODParser {
         switch cmsStatus {
         case .unavailable:
             return hashResult
-        case .verified:
+        case let .verified(signerCertificateDER):
             if trustAnchorsDER.isEmpty {
                 return PassiveAuthenticationResult(
                     dataGroupHashResults: hashResult.dataGroupHashResults,
@@ -577,8 +587,10 @@ enum SODParser {
                 )
             }
 
+            // Validate the certificate whose key actually verified the signature: a SOD
+            // carrying a genuine DSC next to a self-signed signer must not pass.
             let trustValid = verifyTrustChain(
-                documentSignerCertificateDER: sodContent.documentSignerCertificate,
+                documentSignerCertificateDER: signerCertificateDER,
                 trustAnchorsDER: trustAnchorsDER
             )
             return PassiveAuthenticationResult(
@@ -601,7 +613,8 @@ enum SODParser {
 
     private enum CMSSignatureStatus {
         case unavailable
-        case verified
+        /// Verified with the key of this certificate (DER), the one the SignerInfo names.
+        case verified(signerCertificateDER: Data)
         case invalid
     }
 
@@ -634,8 +647,26 @@ enum SODParser {
             }
             defer { CMS_ContentInfo_free(cms) }
 
+            // ICAO 9303-10 §4.6.2: the SOD carries exactly one SignerInfo (the DSC's).
+            guard let signerInfos = CMS_get0_SignerInfos(cms), OPENSSL_sk_num(signerInfos) == 1 else {
+                return .invalid
+            }
+
+            // The signer certificate is checked against the CSCA anchors separately, on
+            // the exact certificate CMS_verify used (see verifyPassiveAuthentication).
             let flags = UInt32(CMS_NO_SIGNER_CERT_VERIFY)
             guard CMS_verify(cms, nil, nil, nil, output, flags) == 1 else {
+                return .invalid
+            }
+
+            guard let signers = CMS_get0_signers(cms) else {
+                return .invalid
+            }
+            defer { OPENSSL_sk_free(signers) }
+            guard OPENSSL_sk_num(signers) == 1,
+                  let signerPointer = OPENSSL_sk_value(signers, 0),
+                  let signerCertificateDER = encodeX509Certificate(OpaquePointer(signerPointer))
+            else {
                 return .invalid
             }
 
@@ -651,10 +682,66 @@ enum SODParser {
                 return .invalid
             }
 
-            return .verified
+            return .verified(signerCertificateDER: signerCertificateDER)
         #else
             return .unavailable
         #endif
+    }
+
+    /// DER of the embedded certificate that the (single) SignerInfo's SID identifies.
+    ///
+    /// Returns `nil` when the CMS cannot be decoded, does not have exactly one
+    /// SignerInfo, or embeds no certificate matching it.
+    static func signerCertificateDER(cmsDER: Data) -> Data? {
+        #if canImport(OpenSSL)
+            guard let input = BIO_new(BIO_s_mem()) else { return nil }
+            defer { BIO_free(input) }
+            let writeCount = cmsDER.withUnsafeBytes { ptr in
+                BIO_write(input, ptr.baseAddress?.assumingMemoryBound(to: UInt8.self), Int32(cmsDER.count))
+            }
+            guard writeCount == cmsDER.count, let cms = d2i_CMS_bio(input, nil) else { return nil }
+            defer { CMS_ContentInfo_free(cms) }
+
+            guard let signerInfos = CMS_get0_SignerInfos(cms),
+                  OPENSSL_sk_num(signerInfos) == 1,
+                  let signerInfoPointer = OPENSSL_sk_value(signerInfos, 0),
+                  let certificates = CMS_get1_certs(cms)
+            else {
+                return nil
+            }
+            let signerInfo = OpaquePointer(signerInfoPointer)
+            defer {
+                for index in 0 ..< OPENSSL_sk_num(certificates) {
+                    if let certificate = OPENSSL_sk_value(certificates, index) {
+                        X509_free(OpaquePointer(certificate))
+                    }
+                }
+                OPENSSL_sk_free(certificates)
+            }
+
+            for index in 0 ..< OPENSSL_sk_num(certificates) {
+                guard let certificatePointer = OPENSSL_sk_value(certificates, index) else { continue }
+                let certificate = OpaquePointer(certificatePointer)
+                if CMS_SignerInfo_cert_cmp(signerInfo, certificate) == 0 {
+                    return encodeX509Certificate(certificate)
+                }
+            }
+            return nil
+        #else
+            return nil
+        #endif
+    }
+
+    private static func encodeX509Certificate(_ certificate: OpaquePointer) -> Data? {
+        let length = i2d_X509(certificate, nil)
+        guard length > 0 else { return nil }
+        var bytes = [UInt8](repeating: 0, count: Int(length))
+        let written = bytes.withUnsafeMutableBufferPointer { buffer -> Int32 in
+            var cursor = buffer.baseAddress
+            return i2d_X509(certificate, &cursor)
+        }
+        guard written == length else { return nil }
+        return Data(bytes)
     }
 
     private static func verifyTrustChain(
