@@ -20,7 +20,7 @@ public struct JapanICReader: Sendable {
 
     /// Read balance only (fast — single block read).
     public func readBalance() async throws -> TransitBalance {
-        NFCLog.info("Japan IC balance read start idm=\(transport.identifier.hexString)", source: "JapanIC")
+        NFCLog.info("Japan IC balance read start idm=\(NFCLog.payload(transport.identifier))", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
         NFCLog.info("Japan IC balance read complete balance=\(balance) JPY", source: "JapanIC")
@@ -34,7 +34,7 @@ public struct JapanICReader: Sendable {
 
     /// Read balance + transaction history.
     public func readBalanceAndHistory() async throws -> TransitBalance {
-        NFCLog.info("Japan IC balance/history read start idm=\(transport.identifier.hexString)", source: "JapanIC")
+        NFCLog.info("Japan IC balance/history read start idm=\(NFCLog.payload(transport.identifier))", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
         let transactions = try await readHistory()
@@ -80,14 +80,14 @@ public struct JapanICReader: Sendable {
         guard let block = blocks.first,
             block.count >= JapanICConstants.balanceOffset + 2
         else {
-            NFCLog.error("Japan IC invalid balance block=\((blocks.first ?? Data()).hexString)", source: "JapanIC")
+            NFCLog.error("Japan IC invalid balance block=\(NFCLog.payload(blocks.first ?? Data()))", source: "JapanIC")
             throw NFCError.invalidResponse(blocks.first ?? Data())
         }
 
         let balanceBytes = Data(block.dropFirst(JapanICConstants.balanceOffset).prefix(2))
         let balance = Int(balanceBytes.uint16LE)
         NFCLog.debug(
-            "Japan IC balance block=\(block.hexString) offset=\(JapanICConstants.balanceOffset) bytes=\(balanceBytes.hexString) value=\(balance)",
+            "Japan IC balance block=\(NFCLog.payload(block)) offset=\(JapanICConstants.balanceOffset) bytes=\(NFCLog.payload(balanceBytes)) value=\(balance)",
             source: "JapanIC"
         )
         return balance
@@ -107,10 +107,10 @@ public struct JapanICReader: Sendable {
                     blockList: [FeliCaFrame.blockListElement(blockNumber: UInt16(i))]
                 )
                 guard let block = blocks.first, block.count == 16 else {
-                    NFCLog.debug("Japan IC history block #\(i) invalid=\((blocks.first ?? Data()).hexString)", source: "JapanIC")
+                    NFCLog.debug("Japan IC history block #\(i) invalid=\(NFCLog.payload(blocks.first ?? Data()))", source: "JapanIC")
                     break
                 }
-                NFCLog.debug("Japan IC history block #\(i)=\(block.hexString)", source: "JapanIC")
+                NFCLog.debug("Japan IC history block #\(i)=\(NFCLog.payload(block))", source: "JapanIC")
 
                 // Skip empty blocks (all zeros)
                 if block.allSatisfy({ $0 == 0 }) {

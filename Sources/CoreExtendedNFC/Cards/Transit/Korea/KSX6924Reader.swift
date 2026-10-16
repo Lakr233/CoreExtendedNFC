@@ -86,7 +86,7 @@ public struct KSX6924Reader: Sendable {
             do {
                 let response = try await transport.sendAPDUWithChaining(CommandAPDU.select(aid: aid))
                 if response.isSuccess {
-                    NFCLog.debug("KSX6924 SELECT AID success card=\(name) data=\(response.data.hexString)", source: "KSX6924")
+                    NFCLog.debug("KSX6924 SELECT AID success card=\(name) data=\(NFCLog.payload(response.data))", source: "KSX6924")
                     return (name, aid, response.data)
                 }
                 NFCLog.debug("KSX6924 SELECT AID rejected card=\(name) sw=\(String(format: "%02X%02X", response.sw1, response.sw2))", source: "KSX6924")
@@ -108,7 +108,7 @@ public struct KSX6924Reader: Sendable {
             le: KSX6924Constants.BALANCE_RESP_LEN
         )
         let response = try await transport.sendAPDUWithChaining(apdu)
-        NFCLog.debug("KSX6924 GET BALANCE sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "KSX6924")
+        NFCLog.debug("KSX6924 GET BALANCE sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(NFCLog.payload(response.data))", source: "KSX6924")
         guard response.isSuccess else {
             throw NFCError.unexpectedStatusWord(response.sw1, response.sw2)
         }
@@ -148,7 +148,7 @@ public struct KSX6924Reader: Sendable {
                 NFCLog.debug("KSX6924 READ RECORD #\(recordNumber) end sw=\(String(format: "%04X", response.statusWord))", source: "KSX6924")
                 break
             }
-            NFCLog.debug("KSX6924 record #\(recordNumber)=\(response.data.hexString)", source: "KSX6924")
+            NFCLog.debug("KSX6924 record #\(recordNumber)=\(NFCLog.payload(response.data))", source: "KSX6924")
             records.append(Data(response.data))
         }
         return records

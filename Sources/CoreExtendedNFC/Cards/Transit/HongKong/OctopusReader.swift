@@ -19,7 +19,7 @@ public struct OctopusReader: Sendable {
     }
 
     public func readBalance() async throws -> TransitBalance {
-        NFCLog.info("Octopus balance read start idm=\(transport.identifier.hexString)", source: "Octopus")
+        NFCLog.info("Octopus balance read start idm=\(NFCLog.payload(transport.identifier))", source: "Octopus")
         try validateSystemCode()
 
         NFCLog.debug("Octopus request service balance=\(OctopusConstants.balanceServiceCode.hexString)", source: "Octopus")
@@ -36,14 +36,14 @@ public struct OctopusReader: Sendable {
             blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
         )
         guard let block = blocks.first, block.count >= 4 else {
-            NFCLog.error("Octopus invalid balance block=\((blocks.first ?? Data()).hexString)", source: "Octopus")
+            NFCLog.error("Octopus invalid balance block=\(NFCLog.payload(blocks.first ?? Data()))", source: "Octopus")
             throw NFCError.invalidResponse(blocks.first ?? Data())
         }
 
         let rawValue = Int(Data(block.prefix(4)).uint32BE)
         let balanceCents = Self.balanceCents(rawValue: rawValue, offset: balanceOffset)
         NFCLog.debug(
-            "Octopus balance block=\(block.hexString) raw=\(rawValue) offset=\(balanceOffset) cents=\(balanceCents)",
+            "Octopus balance block=\(NFCLog.payload(block)) raw=\(rawValue) offset=\(balanceOffset) cents=\(balanceCents)",
             source: "Octopus"
         )
         NFCLog.info("Octopus balance read complete balanceCents=\(balanceCents)", source: "Octopus")

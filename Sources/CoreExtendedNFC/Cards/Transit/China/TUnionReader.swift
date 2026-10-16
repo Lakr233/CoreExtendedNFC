@@ -33,7 +33,7 @@ public struct TUnionReader: Sendable {
         guard selectResponse.isSuccess else {
             throw NFCError.unsupportedOperation("T-Union AID not found on this card")
         }
-        NFCLog.debug("T-Union SELECT AID ok data=\(selectResponse.data.hexString)", source: "TUnion")
+        NFCLog.debug("T-Union SELECT AID ok data=\(NFCLog.payload(selectResponse.data))", source: "TUnion")
 
         // 2. GET BALANCE. T-Union exposes two purse registers; the displayed
         // value is the signed delta between the primary and negative purse.
@@ -75,7 +75,7 @@ public struct TUnionReader: Sendable {
     private func readBalanceSlot(p1: UInt8) async throws -> Int {
         let response = try await transport.sendAPDUWithChaining(Self.balanceAPDU(p1: p1))
         NFCLog.debug(
-            "T-Union GET BALANCE p1=\(String(format: "%02X", p1)) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)",
+            "T-Union GET BALANCE p1=\(String(format: "%02X", p1)) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(NFCLog.payload(response.data))",
             source: "TUnion"
         )
         guard response.isSuccess, response.data.count >= 4 else {
@@ -124,7 +124,7 @@ public struct TUnionReader: Sendable {
             let selectFile = try await transport.sendAPDUWithChaining(
                 Self.selectFileAPDU(id: TUnionConstants.balanceFileID)
             )
-            NFCLog.debug("T-Union SELECT file 0015 sw=\(String(format: "%02X%02X", selectFile.sw1, selectFile.sw2)) data=\(selectFile.data.hexString)", source: "TUnion")
+            NFCLog.debug("T-Union SELECT file 0015 sw=\(String(format: "%02X%02X", selectFile.sw1, selectFile.sw2)) data=\(NFCLog.payload(selectFile.data))", source: "TUnion")
             guard selectFile.isSuccess else {
                 return try await readFileInfoFromSFI()
             }
@@ -133,7 +133,7 @@ public struct TUnionReader: Sendable {
             let readResponse = try await transport.sendAPDUWithChaining(
                 CommandAPDU.readBinary(offset: 0, length: 30)
             )
-            NFCLog.debug("T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(readResponse.data.hexString)", source: "TUnion")
+            NFCLog.debug("T-Union READ BINARY 0015 sw=\(String(format: "%02X%02X", readResponse.sw1, readResponse.sw2)) data=\(NFCLog.payload(readResponse.data))", source: "TUnion")
             guard readResponse.isSuccess, readResponse.data.count >= 28 else {
                 return try await readFileInfoFromSFI()
             }
@@ -151,7 +151,7 @@ public struct TUnionReader: Sendable {
     private func readFileInfoFromSFI() async throws -> FileInfo {
         do {
             let response = try await transport.sendAPDUWithChaining(Self.readFile15BySFIAPDU())
-            NFCLog.debug("T-Union READ BINARY SFI 15 sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)", source: "TUnion")
+            NFCLog.debug("T-Union READ BINARY SFI 15 sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(NFCLog.payload(response.data))", source: "TUnion")
             guard response.isSuccess, response.data.count >= 28 else {
                 return FileInfo(serial: "", validFrom: nil, validUntil: nil, source: "unavailable")
             }
@@ -235,7 +235,7 @@ public struct TUnionReader: Sendable {
                 let apdu = Self.readRecordAPDU(sfi: sfi, recordNumber: UInt8(recordNumber), length: length)
                 let response = try await transport.sendAPDUWithChaining(apdu)
                 NFCLog.debug(
-                    "T-Union READ RECORD sfi=\(String(format: "%02X", sfi)) record=\(recordNumber) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(response.data.hexString)",
+                    "T-Union READ RECORD sfi=\(String(format: "%02X", sfi)) record=\(recordNumber) sw=\(String(format: "%02X%02X", response.sw1, response.sw2)) data=\(NFCLog.payload(response.data))",
                     source: "TUnion"
                 )
                 guard response.isSuccess else {
