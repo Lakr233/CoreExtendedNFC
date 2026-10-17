@@ -82,6 +82,9 @@ class WelcomePageViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         animateFeatures()
+        // The features scroll above the footer; show that when they do not all fit
+        // (a short sheet, such as on a half-folded iPhone Duo).
+        scrollView.flashScrollIndicators()
     }
 
     private func setupLayout() {
@@ -244,6 +247,9 @@ class WelcomePageViewController: UIViewController {
 }
 
 extension WelcomePageViewController {
+    /// Widest the sheet gets when it is placed on the leading side.
+    static let leadingSheetMaxWidth: CGFloat = 440
+
     static func makePresentedController(
         config: Configuration = .default,
         onComplete: (() -> Void)? = nil
@@ -260,6 +266,20 @@ extension WelcomePageViewController {
         navigationController.modalTransitionStyle = .coverVertical
         navigationController.modalPresentationStyle = .formSheet
         navigationController.preferredContentSize = controller.preferredContentSize
+        // On a wide window (iPhone Duo fully open) a centred sheet sits across the
+        // fold; place it on the leading side, where its bars stay horizontal.
+        // Only when it is presented as a sheet; its size is unchanged.
+        #if CENFC_HAS_IOS27_SDK
+            if #available(iOS 27.0, *), let sheet = navigationController.sheetPresentationController {
+                sheet.preferredPlacement = .leading
+                // Narrow enough for the leading half of an open iPhone Duo, so the
+                // sheet and its Get Started button stay clear of the fold.
+                navigationController.preferredContentSize.width = min(
+                    navigationController.preferredContentSize.width,
+                    Self.leadingSheetMaxWidth
+                )
+            }
+        #endif
         return navigationController
     }
 }

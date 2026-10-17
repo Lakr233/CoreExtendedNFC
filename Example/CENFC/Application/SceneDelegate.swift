@@ -77,34 +77,34 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         switch destination {
         case .scanner:
-            guard let nav = navigationController(in: tabBar, at: 0),
-                  let scanner = nav.viewControllers.first as? ScannerViewController
-            else { return false }
-            tabBar.selectedIndex = 0
-            nav.popToRootViewController(animated: false)
+            guard let scanner: ScannerViewController = showList(in: tabBar, at: 0) else { return false }
             scanner.importFile(at: url)
         case .ndef:
-            guard let nav = navigationController(in: tabBar, at: 2),
-                  let ndef = nav.viewControllers.first as? NDEFViewController
-            else { return false }
-            tabBar.selectedIndex = 2
-            nav.popToRootViewController(animated: false)
+            guard let ndef: NDEFViewController = showList(in: tabBar, at: 2) else { return false }
             ndef.importFile(at: url)
         case .passport:
-            guard let nav = navigationController(in: tabBar, at: 3),
-                  let passport = nav.viewControllers.first as? PassportViewController
-            else { return false }
-            tabBar.selectedIndex = 3
-            nav.popToRootViewController(animated: false)
+            guard let passport: PassportViewController = showList(in: tabBar, at: 3) else { return false }
             passport.importFile(at: url)
         }
         return true
     }
 
-    private func navigationController(in tabBar: TabBarController, at index: Int) -> UINavigationController? {
+    /// Selects the tab at `index` and brings its list back: pops the list's
+    /// navigation stack to the root and puts the placeholder back in the detail
+    /// column of the tab's split view.
+    /// - Returns: The list screen, or `nil` when the tab is not a `List` list.
+    private func showList<List: UIViewController>(in tabBar: TabBarController, at index: Int) -> List? {
         guard let viewControllers = tabBar.viewControllers, viewControllers.indices.contains(index) else {
             return nil
         }
-        return viewControllers[index] as? UINavigationController
+        let tab = viewControllers[index]
+        let split = tab as? UISplitViewController
+        guard let nav = split?.recordListNavigationController ?? (tab as? UINavigationController),
+              let list = nav.viewControllers.first as? List
+        else { return nil }
+        tabBar.selectedIndex = index
+        nav.popToRootViewController(animated: false)
+        split?.showRecordPlaceholder()
+        return list
     }
 }

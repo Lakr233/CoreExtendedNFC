@@ -6,7 +6,7 @@ import UIKit
 
 // MARK: - Base Editor
 
-class NDEFEditorViewController: StackScrollController {
+class NDEFEditorViewController: StackScrollController, RecordDetailScreen, ClosingAwareScreen {
     /// The stored record being edited, or `nil` for a record that has not been saved yet.
     /// Set to the saved record after the first save.
     var existingRecord: NDEFDataRecord?
@@ -30,23 +30,51 @@ class NDEFEditorViewController: StackScrollController {
         untouchedBuild = buildNDEFRecord().map { NDEFMessage(records: [$0]).data }
     }
 
+    /// Saves whenever the editor goes off screen, not only when it is popped.
+    ///
+    /// In a split view the editor sits in the detail column, and opening another
+    /// record replaces that column's whole navigation controller: the editor then
+    /// leaves without `isMovingFromParent`, so an edit saved only on a pop would
+    /// be lost. ``save()`` writes nothing when nothing changed, so saving on every
+    /// disappearance (pop, tab switch, column replaced) is safe.
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if isMovingFromParent {
-            nfcTask.cancel()
-            save()
+        save()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isLeavingForGood {
+            screenWillClose()
         }
     }
 
+    // MARK: - ClosingAwareScreen
+
+    func screenWillClose() {
+        nfcTask.cancel()
+        save()
+    }
+
+    // MARK: - RecordDetailScreen
+
+    var displayedRecordID: UUID? {
+        existingRecord?.id
+    }
+
+    /// The record was deleted while the editor showed it: drop pending edits so
+    /// closing the editor does not store the record again.
+    func recordWasDeleted() {
+        onSave = nil
+    }
+
     private func setupNavButtons() {
-        let writeButton = UIBarButtonItem(
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "square.and.arrow.down.on.square"),
             style: .plain,
             target: self,
             action: #selector(writeToCard)
-        )
-        writeButton.accessibilityLabel = String(localized: "Write to Card")
-        navigationItem.rightBarButtonItem = writeButton
+        ).accessibilityLabeled(String(localized: "Write to Card"))
     }
 
     func buildNDEFRecord() -> NDEFRecord? {

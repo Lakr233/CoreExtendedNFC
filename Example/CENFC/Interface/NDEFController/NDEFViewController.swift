@@ -1,3 +1,4 @@
+import Combine
 import ConfigurableKit
 import CoreExtendedNFC
 import SPIndicator
@@ -120,11 +121,17 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
                 image: UIImage(systemName: "square.and.arrow.up")
             ) { [weak self] _ in self?.exportSelected() },
         ])
-        return UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: menu).accessibilityLabeled(String(localized: "More"))
+        let button = UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: menu).accessibilityLabeled(String(localized: "More"))
+        actionsBarButton = button
+        return button
     }
+
+    /// The edit-mode "More" button last shown; the export sheet points at it.
+    private weak var actionsBarButton: UIBarButtonItem?
 
     private let emptyState = EmptyStateView.scan()
     private let nfcTask = SingleTaskRunner()
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
 
@@ -139,6 +146,18 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         super.viewDidLoad()
         setupDismissKeyboardOnTap()
         emptyState.install(on: tableView)
+        closeDetailOfDeletedRecords()
+    }
+
+    /// Every delete path (edit mode, context menu, swipe) goes through the store,
+    /// so watching it closes the detail column when its record is deleted.
+    private func closeDetailOfDeletedRecords() {
+        NDEFStore.shared.dataDidChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.closeRecordDetail { NDEFStore.shared.record(for: $0) != nil }
+            }
+            .store(in: &cancellables)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -180,13 +199,12 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     private func updateEditingNavBar() {
         if tableView.isEditing {
             let hasSelection = (tableView.indexPathsForSelectedRows?.count ?? 0) > 0
-            navigationItem.setLeftBarButton(hasSelection ? deleteBarButton : nil, animated: true)
+            // Delete stays with the trailing items: the leading side is for Back / Close.
             navigationItem.setRightBarButtonItems(
-                hasSelection ? [doneBarButton, makeActionsBarButton()] : [doneBarButton],
+                hasSelection ? [doneBarButton, makeActionsBarButton(), deleteBarButton] : [doneBarButton],
                 animated: true
             )
         } else {
-            navigationItem.setLeftBarButton(nil, animated: true)
             navigationItem.setRightBarButtonItems([editingBarButton, addBarButton], animated: true)
         }
     }
@@ -207,6 +225,11 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             return
         }
         tableView.deselectRow(at: indexPath, animated: true)
+        // An editor open in the detail column saves first, so reopening the same
+        // record shows its latest edits.
+        if let split = splitViewController, !split.isCollapsed {
+            split.closeRecordDetailScreens()
+        }
         guard let recordID = diffableItemIdentifier(for: indexPath),
               let record = NDEFStore.shared.record(for: recordID)
         else { return }
@@ -243,7 +266,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
                     title: String(localized: "Export"),
                     image: UIImage(systemName: "square.and.arrow.up")
                 ) { _ in
-                    self?.exportRecord(record)
+                    self?.exportRecord(record, sourceView: self?.tableView.cellForRow(at: indexPath))
                 },
                 UIAction(
                     title: String(localized: "Delete"),
@@ -332,7 +355,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
     private func createRecord(type: NDEFCreateType) {
         let editor = Self.makeCreateEditor(for: type)
         editor.onSave = Self.saveEditedRecord
-        navigationController?.pushViewController(editor, animated: true)
+        showRecordDetail(editor)
     }
 
     /// An empty editor for a record of `type` that is not stored yet.
@@ -445,16 +468,16 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
 
         do {
             let fileURLs = try records.map { try NDEFDocument.exportToFile($0) }
-            presentExportSheet(for: fileURLs)
+            presentExportSheet(for: fileURLs, barButtonItem: actionsBarButton)
         } catch {
             presentErrorAlert(for: error)
         }
     }
 
-    private func exportRecord(_ record: NDEFDataRecord) {
+    private func exportRecord(_ record: NDEFDataRecord, sourceView: UIView?) {
         do {
             let fileURL = try NDEFDocument.exportToFile(record)
-            presentExportSheet(for: [fileURL])
+            presentExportSheet(for: [fileURL], sourceView: sourceView)
         } catch {
             presentErrorAlert(for: error)
         }
@@ -476,7 +499,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
             self?.setEditing(false, animated: true)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
-        alert.popoverPresentationController?.sourceView = view
+        alert.popoverPresentationController?.barButtonItem = deleteBarButton
         present(alert, animated: true)
     }
 
@@ -564,7 +587,7 @@ class NDEFViewController: ObjectListViewController<NDEFStore>,
         }
         editor.existingRecord = record
         editor.onSave = Self.saveEditedRecord
-        navigationController?.pushViewController(editor, animated: true)
+        showRecordDetail(editor)
     }
 
     // MARK: - UIDocumentPickerDelegate

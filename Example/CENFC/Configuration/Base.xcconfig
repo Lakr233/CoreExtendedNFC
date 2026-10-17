@@ -13,3 +13,14 @@ SUPPORTED_PLATFORMS = iphoneos iphonesimulator
 SUPPORTS_MACCATALYST = NO
 SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO
 SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO
+
+// UIKit API new in the iOS 27 SDK (e.g. UISheetPresentationController.preferredPlacement)
+// must still compile with older Xcode, such as the iOS 26 SDK GitHub CI uses.
+// `#available` is only a runtime check, so such code also sits behind
+// `#if CENFC_HAS_IOS27_SDK`. Every iOS SDK from 27 on gets the condition.
+CENFC_IOS27_SDK_CONDITION = CENFC_HAS_IOS27_SDK
+CENFC_IOS27_SDK_CONDITION[sdk=iphoneos26*] =
+CENFC_IOS27_SDK_CONDITION[sdk=iphonesimulator26*] =
+CENFC_IOS27_SDK_CONDITION[sdk=iphoneos1*] =
+CENFC_IOS27_SDK_CONDITION[sdk=iphonesimulator1*] =
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) $(CENFC_IOS27_SDK_CONDITION)

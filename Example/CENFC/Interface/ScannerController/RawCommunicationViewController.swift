@@ -5,7 +5,7 @@ import SPIndicator
 import Then
 import UIKit
 
-class RawCommunicationViewController: StackScrollController {
+class RawCommunicationViewController: StackScrollController, ClosingAwareScreen {
     private let cardInfo: CardInfo
 
     init(cardInfo: CardInfo) {
@@ -78,11 +78,20 @@ class RawCommunicationViewController: StackScrollController {
         setupCopyButton()
     }
 
+    /// Cancels a pending exchange when the screen goes away for good: popped, or
+    /// removed with its navigation controller from a split view's detail column.
+    /// Switching tabs keeps it running.
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        if isMovingFromParent {
-            sendTask.cancel()
+        if isLeavingForGood {
+            screenWillClose()
         }
+    }
+
+    // MARK: - ClosingAwareScreen
+
+    func screenWillClose() {
+        sendTask.cancel()
     }
 
     override func setupContentViews() {

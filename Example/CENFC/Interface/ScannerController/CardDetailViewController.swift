@@ -5,8 +5,12 @@ import SPIndicator
 import Then
 import UIKit
 
-class CardDetailViewController: StackScrollController {
+class CardDetailViewController: StackScrollController, RecordDetailScreen {
     private let record: ScanRecord
+
+    var displayedRecordID: UUID? {
+        record.id
+    }
 
     private let dateFormatter = DateFormatter().then {
         $0.dateStyle = .medium
