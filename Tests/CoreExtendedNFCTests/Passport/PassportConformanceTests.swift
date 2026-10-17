@@ -746,6 +746,105 @@ struct PassportConformanceTests {
         #expect(sent.expectedResponseLength == 65536)
     }
 
+    // MARK: - Active Authentication expected length
+
+    /// The protected INTERNAL AUTHENTICATE that Active Authentication sends for
+    /// `publicKey` over a secure messaging session in `mode`.
+    private func sentInternalAuthenticate(
+        publicKey: ActiveAuthenticationPublicKey,
+        mode: SMEncryptionMode
+    ) async throws -> CommandAPDU {
+        let mock = MockTransport()
+        mock.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x80)]
+        let sm = mode == .tripleDES
+            ? makeAppendixDTransport(mock, ssc: Self.appendixDSSC)
+            : SecureMessagingTransport(
+                transport: mock,
+                ksEnc: Data(repeating: 0x11, count: 16),
+                ksMac: Data(repeating: 0x22, count: 16),
+                ssc: Data(count: 16),
+                mode: mode
+            )
+        _ = try? await PassportReader(transport: mock).performActiveAuthentication(
+            publicKey: publicKey,
+            subjectPublicKeyInfo: nil,
+            securityInfos: nil,
+            transport: sm
+        )
+        return try #require(mock.sentAPDUs.first)
+    }
+
+    private static func rsaKey(bits: Int) -> ActiveAuthenticationPublicKey {
+        .rsa(modulus: Data([0xC1]) + Data(repeating: 0x5A, count: bits / 8 - 1), exponent: vectorHex("010001"))
+    }
+
+    /// ISO/IEC 7816-4 §5.1: a short Le field encodes Ne of at most 256 bytes. ICAO
+    /// 9303-11 §6.1.4 Note: "when using key lengths exceeding 1 848 bits (if Secure
+    /// Messaging with 3DES is used) / 1 792 bits (if Secure Messaging with AES is used)
+    /// in Active Authentication with Secure Messaging, Extended Length APDUs MUST be
+    /// supported by the eMRTD chip and the Inspection System." The protected reply of a
+    /// k-byte signature is DO'87 (01 || padded cryptogram) + DO'99 (4) + DO'8E (10) bytes,
+    /// which exceeds 256 above those key lengths. Extended length under SM is DO'97 '00 00'
+    /// and outer Le '00 00' (ICAO 9303-11 §9.8, Figure 5).
+    ///
+    /// RSA-1792 with AES is listed on purpose: its 224-byte signature pads to 240 bytes,
+    /// a 258-byte protected reply, so it cannot use a short Le even though the Note only
+    /// names keys exceeding 1 792 bits.
+    @Test(arguments: [
+        (3072, SMEncryptionMode.tripleDES), (3072, .aes128),
+        (2048, .tripleDES), (2048, .aes128), (2048, .aes256),
+        (1856, .tripleDES), (1856, .aes128), (1792, .aes128),
+    ])
+    func `AA asks for an extended response when the DG15 RSA signature does not fit a short protected reply`(
+        bits: Int,
+        mode: SMEncryptionMode
+    ) async throws {
+        let sent = try await sentInternalAuthenticate(publicKey: Self.rsaKey(bits: bits), mode: mode)
+        #expect(sent.ins == 0x88)
+        let objects = try ASN1Parser.parseTLV(try #require(sent.data))
+        #expect(objects.first { $0.tag == 0x97 }?.value == vectorHex("0000"), "RSA-\(bits) \(mode): DO'97 must be extended")
+        #expect(sent.expectedResponseLength == 65536, "RSA-\(bits) \(mode): outer Le must be extended '00 00'")
+        #expect(sent.isExtendedLength)
+    }
+
+    /// Keys whose protected reply fits 256 bytes keep the short Le '00' (ICAO 9303-11
+    /// §6.1.4 Note: up to 1 848 bits with 3DES; ECDSA signatures are 2 x field size).
+    @Test(arguments: [
+        (1024, SMEncryptionMode.tripleDES), (1024, .aes128), (1536, .aes128),
+        (1848, .tripleDES), (1784, .aes128),
+    ])
+    func `AA keeps the short Le when the DG15 RSA signature fits a short protected reply`(
+        bits: Int,
+        mode: SMEncryptionMode
+    ) async throws {
+        let sent = try await sentInternalAuthenticate(publicKey: Self.rsaKey(bits: bits), mode: mode)
+        let objects = try ASN1Parser.parseTLV(try #require(sent.data))
+        #expect(objects.first { $0.tag == 0x97 }?.value == vectorHex("00"), "RSA-\(bits) \(mode)")
+        #expect(sent.expectedResponseLength == 256, "RSA-\(bits) \(mode)")
+    }
+
+    @Test
+    func `AA keeps the short Le for ECDSA DG15 keys`() async throws {
+        // P-521: uncompressed point 04 || X || Y of 133 bytes, plain signature r || s of 132 bytes.
+        let p521 = ActiveAuthenticationPublicKey.ecdsa(
+            curveOID: "1.3.132.0.35",
+            publicPoint: Data([0x04]) + Data(repeating: 0x01, count: 132)
+        )
+        let sent = try await sentInternalAuthenticate(publicKey: p521, mode: .aes256)
+        let objects = try ASN1Parser.parseTLV(try #require(sent.data))
+        #expect(objects.first { $0.tag == 0x97 }?.value == vectorHex("00"))
+        #expect(sent.expectedResponseLength == 256)
+    }
+
+    @Test
+    func `INTERNAL AUTHENTICATE encodes an extended Le as 00 Lc1 Lc2 data Le1 Le2`() {
+        // ISO/IEC 7816-4 §5.1: extended Lc '00 00 08', extended Le '00 00' = 65 536.
+        let challenge = vectorHex("0123456789ABCDEF")
+        #expect(CommandAPDU.internalAuthenticate(data: challenge, expectedResponseLength: 65536).bytes
+            == vectorHex("00880000000008") + challenge + vectorHex("0000"))
+        #expect(CommandAPDU.internalAuthenticate(data: challenge).bytes == vectorHex("0088000008") + challenge + vectorHex("00"))
+    }
+
     // MARK: - Active Authentication with explicit EC parameters
 
     #if canImport(OpenSSL)

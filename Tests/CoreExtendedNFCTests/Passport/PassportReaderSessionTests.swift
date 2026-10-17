@@ -326,9 +326,10 @@ struct PassportReaderSessionTests {
             ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT EF.CardAccess
             ResponseAPDU(data: Data(cardAccess.prefix(4)), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: cardAccess, sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // SELECT eMRTD application
         ]
-        transport.apduFailures = [5: .tagConnectionLost] // MSE:Set AT
+        // ICAO 9303-11 §4.2: PACE follows EF.CardAccess directly; the eMRTD application
+        // is selected only afterwards.
+        transport.apduFailures = [4: .tagConnectionLost] // MSE:Set AT
 
         let error = await #expect(throws: NFCError.self) {
             _ = try await PassportReader(transport: transport).readPassport(mrzKey: Self.mrzKey, dataGroups: [.dg1])
@@ -337,7 +338,7 @@ struct PassportReaderSessionTests {
             Issue.record("Expected tagConnectionLost, got \(String(describing: error))")
             return
         }
-        #expect(transport.sentAPDUs.count == 6)
+        #expect(transport.sentAPDUs.count == 5)
         #expect(transport.sentAPDUs.last?.ins == 0x22)
         #expect(!transport.sentAPDUs.contains { $0.ins == 0x84 })
     }

@@ -1,7 +1,9 @@
 import Foundation
 
-/// Orchestrates the full eMRTD reading workflow:
-/// SELECT application → BAC authentication → read DataGroups → parse → verify.
+/// Orchestrates the full eMRTD reading workflow, following the Chip Access Procedure
+/// of ICAO 9303-11 §4.2: EF.CardAccess → PACE, then SELECT eMRTD application under
+/// secure messaging; or, without PACE, SELECT eMRTD application → BAC. Then read
+/// DataGroups → parse → verify.
 ///
 /// Subclasses must preserve thread safety: any added mutable state must be lock-protected or immutable.
 open class PassportReader: @unchecked Sendable {
@@ -89,20 +91,16 @@ open class PassportReader: @unchecked Sendable {
             )
         }
 
-        // Step 1: SELECT eMRTD application
+        // Step 1: Chip Access Procedure (ICAO 9303-11 §4.2). PACE runs with the Master
+        // File as current DF, where EF.CardAccess was read; the eMRTD application is then
+        // selected under the PACE secure messaging. Only BAC needs the application
+        // selected first ("The eMRTD Application MUST be selected before Basic Access
+        // Control is performed"), so a plain SELECT happens only when BAC is used.
+        //
+        // PACE is preferred when EF.CardAccess advertises parameters this library
+        // supports. §4.2 lets the inspection system pick any advertised parameter set,
+        // so an unsupported first entry does not rule PACE out.
         onProgress?(String(localized: "Connecting to passport…", bundle: .module))
-        NFCLog.debug("SELECT eMRTD application", source: "Passport")
-        let selectAPDU = CommandAPDU.selectPassportApplication()
-        let selectResponse = try await transport.sendAPDU(selectAPDU)
-
-        guard selectResponse.isSuccess else {
-            throw NFCError.bacFailed("SELECT eMRTD failed: SW=\(String(format: "%04X", selectResponse.statusWord))")
-        }
-
-        // Step 2: Prefer PACE when EF.CardAccess advertises parameters this library
-        // supports, otherwise fall back to BAC. ICAO 9303-11 §4.2 lets the inspection
-        // system pick any advertised parameter set, so an unsupported first entry does
-        // not rule PACE out.
         var smTransport: SecureMessagingTransport?
         if let cardAccess, cardAccess.supportsPACE, PACEHandler.selectPACEInfo(from: cardAccess) == nil {
             let reasons = cardAccess.paceInfos.compactMap(PACEHandler.unsupportedReason(for:))
@@ -137,7 +135,12 @@ open class PassportReader: @unchecked Sendable {
             }
         }
 
-        if smTransport == nil {
+        if let paceTransport = smTransport {
+            NFCLog.debug("SELECT eMRTD application (secure messaging)", source: "Passport")
+            try await selectPassportApplication(transport: paceTransport)
+        } else {
+            NFCLog.debug("SELECT eMRTD application", source: "Passport")
+            try await selectPassportApplication(transport: transport)
             onProgress?(String(localized: "Authenticating…", bundle: .module))
             smTransport = try await BACHandler.performBAC(
                 mrzKey: mrzKey,
@@ -323,6 +326,25 @@ open class PassportReader: @unchecked Sendable {
     }
 
     // MARK: - Steps
+
+    /// SELECT the eMRTD application (AID A0 00 00 02 47 10 01) over `transport`: the
+    /// plain tag transport before BAC, or the PACE ``SecureMessagingTransport`` after
+    /// PACE (ICAO 9303-11 §4.2). `P2 = 0C` asks for no response data, so a protected
+    /// reply carries only DO'99 and DO'8E.
+    ///
+    /// - Throws: ``NFCError/bacFailed(_:)`` when the chip refuses the plain SELECT (BAC
+    ///   cannot run), ``NFCError/secureMessagingError(_:)`` when it refuses the protected
+    ///   SELECT after PACE, or the transport's error.
+    open func selectPassportApplication(transport: any NFCTagTransport) async throws {
+        let response = try await transport.sendAPDU(.selectPassportApplication())
+        guard response.isSuccess else {
+            let statusWord = String(format: "%04X", response.statusWord)
+            if transport is SecureMessagingTransport {
+                throw NFCError.secureMessagingError("SELECT eMRTD after PACE failed: SW=\(statusWord)")
+            }
+            throw NFCError.bacFailed("SELECT eMRTD failed: SW=\(statusWord)")
+        }
+    }
 
     /// Select and read a complete DataGroup file.
     open func readDataGroup(_ dgId: DataGroupId, transport: SecureMessagingTransport) async throws -> Data {
@@ -644,6 +666,40 @@ open class PassportReader: @unchecked Sendable {
 
     // MARK: - Active Authentication
 
+    /// Ne for INTERNAL AUTHENTICATE with `publicKey` over secure messaging in `mode`.
+    ///
+    /// 256 (short Le `00`) when the signature and its protected reply fit 256 bytes;
+    /// otherwise 65 536 (extended Le `0000`, so DO'97 is `00 00` and the outer Le is
+    /// `00 00`). ISO/IEC 7816-4 §5.1: a short Le asks for at most 256 bytes. ICAO
+    /// 9303-11 §6.1.4 Note: AA keys longer than 1 848 bits (3DES secure messaging) or
+    /// 1 792 bits (AES) need extended length. This computes the exact protected reply
+    /// size (``SMEncryptionMode/protectedResponseLength(plaintextLength:)``), which gives
+    /// 1 848 bits for 3DES and 1 784 bits for AES (a 224-byte signature pads to 240
+    /// bytes, a 258-byte reply).
+    ///
+    /// An RSA signature (ISO/IEC 9796-2) is as long as the modulus; an ECDSA signature
+    /// (`r || s`, BSI TR-03111) is twice the field size, so ECDSA keys stay short. Keys
+    /// of unknown type keep the short Le.
+    open class func activeAuthenticationExpectedResponseLength(
+        for publicKey: ActiveAuthenticationPublicKey,
+        mode: SMEncryptionMode
+    ) -> Int {
+        let signatureLength: Int
+        switch publicKey {
+        case let .rsa(modulus, _):
+            signatureLength = modulus.drop { $0 == 0x00 }.count
+        case let .ecdsa(_, publicPoint):
+            // Uncompressed 04 || X || Y, or compressed 02/03 || X.
+            let fieldLength = publicPoint.first == 0x04 ? (publicPoint.count - 1) / 2 : publicPoint.count - 1
+            signatureLength = 2 * fieldLength
+        case .unknown:
+            return 256
+        }
+        let fitsShort = signatureLength <= 256
+            && mode.protectedResponseLength(plaintextLength: signatureLength) <= 256
+        return fitsShort ? 256 : CommandAPDU.maxExpectedResponseLength
+    }
+
     /// Perform Active Authentication using INTERNAL AUTHENTICATE.
     ///
     /// Protocol:
@@ -671,8 +727,15 @@ open class PassportReader: @unchecked Sendable {
         // would make the chip's signature replayable, so a generator failure aborts AA.
         let challenge = try CryptoUtils.secureRandomBytes(count: 8)
 
-        // Send INTERNAL AUTHENTICATE
-        let authAPDU = CommandAPDU.internalAuthenticate(data: challenge)
+        // Send INTERNAL AUTHENTICATE, with an extended Le when the signature's protected
+        // reply cannot fit a short one (ICAO 9303-11 §6.1.4 Note).
+        let authAPDU = CommandAPDU.internalAuthenticate(
+            data: challenge,
+            expectedResponseLength: Self.activeAuthenticationExpectedResponseLength(
+                for: publicKey,
+                mode: transport.mode
+            )
+        )
         let response = try await transport.sendAPDU(authAPDU)
 
         guard response.isSuccess else {

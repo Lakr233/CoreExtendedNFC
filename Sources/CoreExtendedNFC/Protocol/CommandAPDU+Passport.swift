@@ -66,16 +66,22 @@ public extension CommandAPDU {
         )
     }
 
-    /// INTERNAL AUTHENTICATE for Active Authentication.
+    /// INTERNAL AUTHENTICATE for Active Authentication (ICAO 9303-11 §6.1.3).
     /// Data is the 8-byte challenge; the response is the signature.
-    static func internalAuthenticate(data: Data) -> CommandAPDU {
+    ///
+    /// `expectedResponseLength` is Ne: 256 (short Le `00`, the default) or up to 65 536
+    /// (extended Le `0000`). A short Le returns at most 256 bytes (ISO/IEC 7816-4 §5.1),
+    /// so signatures that are longer, or whose secure messaging reply is, need the
+    /// extended form (ICAO 9303-11 §6.1.4 Note); see
+    /// ``PassportReader/activeAuthenticationExpectedResponseLength(for:mode:)``.
+    static func internalAuthenticate(data: Data, expectedResponseLength: Int = 256) -> CommandAPDU {
         CommandAPDU(
             cla: 0x00,
             ins: 0x88,
             p1: 0x00,
             p2: 0x00,
             data: data,
-            le: 0x00
+            expectedResponseLength: expectedResponseLength
         )
     }
 
