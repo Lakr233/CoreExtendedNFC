@@ -131,8 +131,10 @@ struct NDEFRobustnessTests {
             }
             _ = NDEFTagMapping.extractType2TLVNDEF(from: input, dataAreaOffset: rng.int(0 ... 64))
             _ = NDEFTagMapping.extractTLVNDEF(from: input)
-            let pages = stride(from: 0, to: input.count, by: 4).map {
-                MemoryDump.Page(number: UInt8(3 + $0 / 4), data: Data(input[$0 ..< min($0 + 4, input.count)]))
+            // Explicit types: the CI toolchain cannot type-check the inferred closure in time.
+            let pages: [MemoryDump.Page] = stride(from: 0, to: input.count, by: 4).map { (offset: Int) -> MemoryDump.Page in
+                let end = Swift.min(offset + 4, input.count)
+                return MemoryDump.Page(number: UInt8(3 + offset / 4), data: Data(input[offset ..< end]))
             }
             _ = NDEFTagMapping.extractType2Message(from: pages)
             _ = try? NDEFTagMapping.type2WriteLayout(leadingBytes: input, dataAreaOffset: 16, capacity: rng.int(0 ... 200))

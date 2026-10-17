@@ -3,7 +3,9 @@
 All notable changes to CoreExtendedNFC are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.1] - 2026-10-17
+
+2.0.1 adds an experimental NTAG 424 DNA module and fixes conformance issues found by checking every supported card family against its standard, cross-checked with closed-source readers. Changes that need real-hardware confirmation are marked in the entries: the passport Chip Access Procedure order and extended-length Active Authentication, ISO 15693 Extended Get System Information, and the NTAG 424 DNA module.
 
 ### Added
 
@@ -269,7 +271,7 @@ Types and members:
 - **Transit / MemoryDump (adversarial review round 3):** `MemoryDump.importProxmark3MFU`, `CEPASReader.transaction(_:recordNumber:)`, `CEPASReader.readBalanceAndHistory(purse:)` and `TUnionReader.parseFileInfo(_:source:)` accept `Data` slices; a CEPAS record shorter than 16 bytes is an `.unknown` transaction and a T-Union file 15 shorter than 28 bytes gives `source == "unavailable"` instead of trapping. Proxmark3 MFU exports of 2, 6, 27, 31, 34, 121 or 217 pages, whose size equals a plain dump, import back as written (were read as plain pages or rejected). `TUnionReader.parseBCDDateTime` rejects non-BCD nibbles. Japan IC history keeps records whose date field is non-zero but out of range (Metrodroid `SuicaUtil.extractDate`); they were dropped.
 - **Example app:** the MIFARE Classic access-bits decoder follows NXP MF1S50 Tables 7 and 8 (5 of 8 data-block and 6 of 8 sector-trailer conditions were wrong).
 
-[Unreleased]: https://github.com/Lakr233/CoreExtendedNFC/compare/2.0.0...HEAD
+[2.0.1]: https://github.com/Lakr233/CoreExtendedNFC/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/Lakr233/CoreExtendedNFC/compare/1.1.2...2.0.0
 
 Earlier versions: see [GitHub releases](https://github.com/Lakr233/CoreExtendedNFC/releases).
