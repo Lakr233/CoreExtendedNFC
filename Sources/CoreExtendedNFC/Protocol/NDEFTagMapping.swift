@@ -32,6 +32,23 @@ public enum NDEFTagMapping {
     /// Bytes per Type 2 page (NFC Forum T2T 1.0 §2.1).
     static let type2PageSize = 4
 
+    /// Number of pages, counted from page 0, that hold the Type 2 data area the CC
+    /// on page 3 declares, or `nil` when `pages` has no NDEF CC.
+    ///
+    /// NFC Forum T2T 1.0 §6.1: the data area starts at page 4 and holds CC byte 2 × 8
+    /// bytes, so it ends at page 4 + ⌈CC2 × 8 / 4⌉. The count is capped at 256, the
+    /// pages READ (30h) can address with its one-byte page number. Used to read an
+    /// NDEF message on a tag whose product (and so memory map) is unknown.
+    public static func type2DeclaredPageCount(from pages: [MemoryDump.Page]) -> Int? {
+        guard let ccPage = pages.first(where: { $0.number == 3 }), ccPage.data.count >= 4 else {
+            return nil
+        }
+        let cc = [UInt8](ccPage.data)
+        guard cc[0] == 0xE1, cc[1] >> 4 <= 1 else { return nil }
+        let dataAreaPages = (Int(cc[2]) * 8 + type2PageSize - 1) / type2PageSize
+        return min(4 + dataAreaPages, 256)
+    }
+
     /// Lock Control TLV tag (NFC Forum T2T 1.0 §2.3.4).
     static let lockControlTLV: UInt8 = 0x01
 

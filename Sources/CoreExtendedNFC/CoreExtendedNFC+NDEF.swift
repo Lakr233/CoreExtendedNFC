@@ -9,6 +9,10 @@ public extension CoreExtendedNFC {
     /// `03 00`, Type 4 NLEN = 0, Type 3 Ln = 0), as left by erasing it with
     /// ``writeNDEF(_:info:transport:)``, throws ``NFCError/ndefMessageNotFound`` on
     /// every family.
+    ///
+    /// On Type 2 tags the message is read up to the data area size the CC declares
+    /// (CC byte 2 × 8 bytes, NFC Forum T2T 1.0 §6.1), also past the product's memory
+    /// map when the product is not identified, stopping at the first page the tag rejects.
     static func readNDEF(
         info: CardInfo,
         transport: any NFCTagTransport
@@ -33,13 +37,16 @@ public extension CoreExtendedNFC {
             return try parseReadNDEF(payload)
         case .ntag, .mifareUltralight:
             let dump = try await dumpCard(info: info, transport: transport)
-            guard let parsed = dump.parsedNDEFMessage else {
-                // NFC Forum T2T 1.0 §6.4.1: without the E1h CC magic the tag is not NDEF formatted.
-                let ccPage = dump.pages.first(where: { $0.number == 3 })
-                guard ccPage?.data.first == 0xE1 else { throw NFCError.tagNotNDEFFormatted }
-                throw NFCError.ndefMessageNotFound
+            if let parsed = dump.parsedNDEFMessage {
+                return parsed
             }
-            return parsed
+            // NFC Forum T2T 1.0 §6.4.1: without the E1h CC magic the tag is not NDEF formatted.
+            let ccPage = dump.pages.first(where: { $0.number == 3 })
+            guard ccPage?.data.first == 0xE1 else { throw NFCError.tagNotNDEFFormatted }
+            if let parsed = try await readType2NDEFPastMemoryMap(dump: dump, transport: transport) {
+                return parsed
+            }
+            throw NFCError.ndefMessageNotFound
         default:
             throw NFCError.tagNotSupported
         }
@@ -137,6 +144,34 @@ public extension CoreExtendedNFC {
 
     /// Parse the bytes a family reader returned; an empty NDEF message (length 0)
     /// is reported as ``NFCError/ndefMessageNotFound`` like on Type 2 tags.
+    /// Read the rest of a Type 2 data area that the dump's memory map did not cover,
+    /// and extract the NDEF message from it.
+    ///
+    /// The dump stops at the product's memory map, a conservative 16 pages for
+    /// products GET_VERSION does not identify (NTAG I2C, and NTAG203 and other tags
+    /// that do not answer it). The data area is CC byte 2 × 8 bytes from page 4
+    /// (NFC Forum T2T 1.0 §6.1), so the pages up to its end are read, stopping at
+    /// the first page the tag rejects. Only reads are sent; writes keep the memory
+    /// map. Returns `nil` when the dump stopped early (a protected area), the CC
+    /// declares nothing past it, or no message is found there.
+    static func readType2NDEFPastMemoryMap(
+        dump: MemoryDump,
+        transport: any NFCTagTransport
+    ) async throws -> NDEFMessage? {
+        guard dump.capabilities == [.readable],
+              let declaredPages = NDEFTagMapping.type2DeclaredPageCount(from: dump.pages),
+              let lastPage = dump.pages.last?.number,
+              Int(lastPage) + 1 == dump.pages.count,
+              declaredPages > dump.pages.count
+        else { return nil }
+        let reader = UltralightDump(commands: UltralightCommands(transport: transport))
+        let extraPages = try await reader.readPagesUntilRejected(from: dump.pages.count, to: declaredPages)
+        guard !extraPages.isEmpty,
+              let payload = NDEFTagMapping.extractType2Message(from: dump.pages + extraPages)
+        else { return nil }
+        return try? NDEFMessage(data: payload)
+    }
+
     static func parseReadNDEF(_ payload: Data) throws -> NDEFMessage {
         guard !payload.isEmpty else { throw NFCError.ndefMessageNotFound }
         return try NDEFMessage(data: payload)
