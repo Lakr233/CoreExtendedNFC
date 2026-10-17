@@ -16,6 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **ISO 15693:** block lock flags read only Lock_flag (bit b1) of each block security status byte, as ISO/IEC 15693-3 defines; the other bits are RFU, and ST tags that use them for password protection were reported as locked. The mapping lives in the new `ISO15693BlockSecurityStatus`.
 - **ISO 15693:** tags with more than 256 blocks are sized with EXTENDED GET SYSTEM INFORMATION (3Bh, ISO/IEC 15693-3:2019) when GET SYSTEM INFORMATION reports 256 blocks or no memory size. 2Bh holds the block count in one byte, so a 2048-block ST25DV64K was dumped, read and formatted as 256 blocks. `ISO15693Reader.getSystemInfo()` does the query and is used by `getISO15693SystemInfo`, the dump and the Type 5 NDEF paths; the parser is `ISO15693ExtendedSystemInfo`, and transports gain `extendedGetSystemInfo(infoFlags:)` (default: unsupported). A tag that rejects 3Bh keeps the 2Bh result.
 - **NDEF:** Type 2 `readNDEF` reads up to the data area the CC declares (CC byte 2 × 8 bytes, NFC Forum T2T 1.0 §6.1) instead of stopping at the product memory map, which is 16 pages for unidentified products such as NTAG I2C and NTAG203; a message past page 15 was reported as `ndefMessageNotFound`. Reading stops at the first page the tag refuses; writes are unchanged.
+- **NDEF:** the parser rejects a message whose first record lacks MB or whose later record sets MB (NDEF 1.0 §3.2.1). Only the presence of MB somewhere was checked before.
 
 ## [2.0.0] - 2026-10-16
 
