@@ -176,7 +176,8 @@ struct DESFireAuthenticationTests {
     func `AuthenticateEV2First Part 1 sends LenCap and PCDcap2`() async throws {
         let mock = MockTransport()
         mock.apduResponses = Self.an12196EV2FirstResponses
-        let pcdCap2 = Data([0x02, 0x00, 0x00, 0x00, 0x00, 0x00])
+        // PCDCap2.1 bit 1 (LRP) clear: this is the AES EV2 transcript.
+        let pcdCap2 = Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x01])
 
         let session = try await DESFireCommands(transport: mock).authenticateEV2First(
             keyNo: 0x03,
@@ -217,6 +218,42 @@ struct DESFireAuthenticationTests {
             )
         }
         #expect(mock.sentAPDUs.isEmpty)
+    }
+
+    @Test
+    func `AuthenticateEV2First rejects the LRP capability bit before sending`() async {
+        // NT4H2421Gx §9.1: "If present, PCDcap2:1:Bit1 must not be set, otherwise LRP
+        // authentication is targeted"; the LRP answer adds an AuthMode byte (§9.2).
+        let mock = MockTransport()
+        do {
+            _ = try await DESFireCommands(transport: mock).authenticateEV2First(
+                keyNo: 0x00,
+                key: Data(count: 16),
+                pcdCapabilities: Data([0x02]),
+                rndA: Self.an12196RndA
+            )
+            Issue.record("Expected invalidParameter")
+        } catch let NFCError.invalidParameter(message) {
+            #expect(message.contains("LRP"))
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(mock.sentAPDUs.isEmpty)
+    }
+
+    @Test
+    func `Authentication delay status is decoded`() async {
+        // NT4H2421Gx Table 23: 91 AD AUTHENTICATION_DELAY.
+        let mock = MockTransport()
+        mock.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x91, sw2: 0xAD)]
+        await #expect(throws: NFCError.desfireError(.authenticationDelay)) {
+            _ = try await DESFireCommands(transport: mock).authenticateEV2First(
+                keyNo: 0x00,
+                key: Data(count: 16),
+                pcdCapabilities: Data(),
+                rndA: Self.an12196RndA
+            )
+        }
     }
 
     @Test(arguments: [31, 48])

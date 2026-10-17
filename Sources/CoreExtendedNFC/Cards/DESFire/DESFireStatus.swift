@@ -8,6 +8,7 @@ public enum DESFireStatus: UInt8, Sendable {
     case illegalCommand = 0x1C
     case integrityError = 0x1E
     case noSuchKey = 0x40
+    case authenticationDelay = 0xAD
     case lengthError = 0x7E
     case permissionDenied = 0x9D
     case parameterError = 0x9E
@@ -34,6 +35,7 @@ public enum DESFireStatus: UInt8, Sendable {
         case .illegalCommand: "Illegal command code"
         case .integrityError: "CRC or MAC error"
         case .noSuchKey: "No such key"
+        case .authenticationDelay: "Authentication delay"
         case .lengthError: "Length error"
         case .permissionDenied: "Permission denied"
         case .parameterError: "Parameter error"

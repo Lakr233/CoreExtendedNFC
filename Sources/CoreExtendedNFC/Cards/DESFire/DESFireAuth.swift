@@ -378,6 +378,11 @@ public extension DESFireCommands {
         guard pcdCapabilities.count <= 6 else {
             throw NFCError.invalidParameter("PCD capabilities must be at most 6 bytes")
         }
+        // NT4H2421Gx §9.1: PCDCap2.1 bit 1 targets LRP, whose answer adds an AuthMode
+        // byte; only EV2 (AES) secure messaging is implemented.
+        guard (pcdCapabilities.first ?? 0) & 0x02 == 0 else {
+            throw NFCError.invalidParameter("PCDCap2.1 bit 1 requests LRP, which is not supported")
+        }
 
         // AN12343 §10.1: Part 1 = KeyNo ‖ LenCap ‖ PCDcap2 (LenCap bytes).
         let startResponse = try await sendAuthenticationStart(
