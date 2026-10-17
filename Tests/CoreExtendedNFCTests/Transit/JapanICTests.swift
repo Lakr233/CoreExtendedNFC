@@ -326,6 +326,27 @@ struct JapanICTests {
     }
 
     @Test
+    func `Gate records carry entry and exit region codes`() throws {
+        // Byte 15 bits 7-6 entry region, bits 5-4 exit region: MJS ICカードリーダー,
+        // Jobcan, yanzm Suica Reader and Metrodroid SuicaTrip agree; station codes
+        // are only unique together with their region.
+        var block = hexToData("1601000230B563237024A80000006E00")
+        block[15] = 0x60
+        let tx = try #require(JapanICReader.parseHistoryBlock(block))
+        #expect(tx.metadata["entryRegion"] == "1")
+        #expect(tx.metadata["exitRegion"] == "2")
+    }
+
+    @Test
+    func `Bus auto-charge process 17h is a top-up`() throws {
+        // yanzm Suica Reader (AUTO_CHARGE_BUS) and Jobcan (charge) both classify 17h as a charge.
+        var block = hexToData("1601000230B563237024A80000006E00")
+        block[1] = 0x17
+        let tx = try #require(JapanICReader.parseHistoryBlock(block))
+        #expect(tx.type == .topup)
+    }
+
+    @Test
     func `Process type classification follows Metrodroid tables`() throws {
         func type(console: UInt8, process: UInt8) throws -> TransactionType {
             var block = Data(repeating: 0x00, count: 16)

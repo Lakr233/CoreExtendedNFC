@@ -3,6 +3,15 @@
 All notable changes to CoreExtendedNFC are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- `FeliCaFrame.POLLING` is `0x00`, the JIS X 6319-4 Polling command; it was `0x04`, which is Request Response (now `FeliCaFrame.REQUEST_RESPONSE`).
+- `DESFireStatus.authenticationDelay` (`91 AD`) is decoded instead of surfacing as `unexpectedStatusWord`.
+- `authenticateEV2First` rejects PCD capabilities with PCDCap2.1 bit 1 set before sending anything: that bit requests LRP secure messaging (NT4H2421Gx §9.1), whose answer the EV2 path would misread.
+- Japan IC history records with stations carry `metadata["entryRegion"]` / `metadata["exitRegion"]` from byte 15, and process type `17h` (bus auto-charge) is a top-up.
+
 ## [2.0.0] - 2026-10-16
 
 2.0 is a major release because it breaks source and behaviour compatibility with 1.1.2. The Swift tools version (6.2), the iOS 15 deployment target and the async/await API style are unchanged. See the [migration guide](docs/guide/migrating-to-2.html) for before/after code.
@@ -246,6 +255,7 @@ Types and members:
 - **Transit / MemoryDump (adversarial review round 3):** `MemoryDump.importProxmark3MFU`, `CEPASReader.transaction(_:recordNumber:)`, `CEPASReader.readBalanceAndHistory(purse:)` and `TUnionReader.parseFileInfo(_:source:)` accept `Data` slices; a CEPAS record shorter than 16 bytes is an `.unknown` transaction and a T-Union file 15 shorter than 28 bytes gives `source == "unavailable"` instead of trapping. Proxmark3 MFU exports of 2, 6, 27, 31, 34, 121 or 217 pages, whose size equals a plain dump, import back as written (were read as plain pages or rejected). `TUnionReader.parseBCDDateTime` rejects non-BCD nibbles. Japan IC history keeps records whose date field is non-zero but out of range (Metrodroid `SuicaUtil.extractDate`); they were dropped.
 - **Example app:** the MIFARE Classic access-bits decoder follows NXP MF1S50 Tables 7 and 8 (5 of 8 data-block and 6 of 8 sector-trailer conditions were wrong).
 
+[Unreleased]: https://github.com/Lakr233/CoreExtendedNFC/compare/2.0.0...HEAD
 [2.0.0]: https://github.com/Lakr233/CoreExtendedNFC/compare/1.1.2...2.0.0
 
 Earlier versions: see [GitHub releases](https://github.com/Lakr233/CoreExtendedNFC/releases).

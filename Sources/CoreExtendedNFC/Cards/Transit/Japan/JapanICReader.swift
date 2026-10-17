@@ -175,15 +175,19 @@ open class JapanICReader: @unchecked Sendable {
         let exitCode = Data(bytes[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
         var entryStation: String?
         var exitStation: String?
+        let regionByte = bytes[JapanICConstants.historyRegionCode]
         if hasDateField(block), !isProductSale, processType != JapanICConstants.chargeProcessType {
             if consoleType == JapanICConstants.busConsoleType {
                 metadata["busLineCode"] = entryCode
                 metadata["busStopCode"] = exitCode
             } else if JapanICConstants.ticketMachineConsoleTypes.contains(consoleType) {
                 entryStation = entryCode
+                metadata["entryRegion"] = String(regionByte >> 6 & 0x03)
             } else {
                 entryStation = entryCode
                 exitStation = exitCode
+                metadata["entryRegion"] = String(regionByte >> 6 & 0x03)
+                metadata["exitRegion"] = String(regionByte >> 4 & 0x03)
             }
         }
 

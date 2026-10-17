@@ -45,7 +45,9 @@ public enum JapanICConstants {
     public static let historyStationExit = 8
     /// Bytes 0x0A-0x0B: balance after transaction (2 bytes LE).
     public static let historyBalanceOffset = 0x0A
-    /// Byte 0x0F: region code.
+    /// Byte 0x0F: region codes, entry in bits 7-6 and exit in bits 5-4. Station codes
+    /// are unique only together with their region (Metrodroid SuicaTrip; MJS, Jobcan and
+    /// yanzm readers agree).
     public static let historyRegionCode = 0x0F
 
     // MARK: - Console / Process Type Classification (Metrodroid SuicaUtil / SuicaTrip)
@@ -56,9 +58,10 @@ public enum JapanICConstants {
     public static let processTypeMask: UInt8 = 0x7F
 
     /// Process types (byte 1 & 0x7F) that add value: charge, new issue (initial deposit),
-    /// auto-charge at entry/exit, bus deposit, bonus charge, register deposit
-    /// (Metrodroid SuicaUtil.getProcessTypeName: 07h = "new issue").
-    public static let topupProcessTypes: Set<UInt8> = [0x02, 0x07, 0x14, 0x15, 0x1F, 0x48, 0x49]
+    /// auto-charge at entry/exit, bus auto-charge (17h; yanzm and Jobcan readers), bus
+    /// deposit, bonus charge, register deposit (Metrodroid SuicaUtil.getProcessTypeName:
+    /// 07h = "new issue").
+    public static let topupProcessTypes: Set<UInt8> = [0x02, 0x07, 0x14, 0x15, 0x17, 0x1F, 0x48, 0x49]
 
     /// Process type 0x02 (charge): the record carries no station codes.
     public static let chargeProcessType: UInt8 = 0x02
