@@ -133,6 +133,35 @@ open class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
         return info
     }
 
+    /// EXTENDED GET SYSTEM INFORMATION (3Bh), sent with `sendRequest` because CoreNFC
+    /// has no dedicated call. The request is not addressed (no UID), like ``send(_:)``;
+    /// CoreNFC talks to the one connected tag. A response with the error flag set
+    /// throws ``NFCError/iso15693Error(code:)``.
+    open func extendedGetSystemInfo(infoFlags: UInt8) async throws -> Data {
+        NFCLog.debug("→ EXT_GET_SYSTEM_INFO flags=\(String(format: "%02X", infoFlags))", source: "ISO15693")
+        let (responseFlags, response): (NFCISO15693ResponseFlag, Data) = try await withNFCErrorMapping(terminationMonitor) {
+            try await withCheckedThrowingContinuation { continuation in
+                tag.sendRequest(
+                    requestFlags: Int(NFCISO15693RequestFlag.highDataRate.rawValue),
+                    commandCode: Int(ISO15693ExtendedSystemInfo.commandCode),
+                    data: Data([infoFlags])
+                ) { result in
+                    switch result {
+                    case let .success((flags, responseData)):
+                        continuation.resume(returning: (flags, responseData ?? Data()))
+                    case let .failure(error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+        if responseFlags.contains(.error) {
+            throw NFCError.iso15693Error(code: response.first ?? 0)
+        }
+        NFCLog.debug("← EXT_SYSTEM_INFO \(NFCLog.payload(response))", source: "ISO15693")
+        return response
+    }
+
     /// Get locked flags for a range of blocks.
     open func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {
         let statuses = try await withNFCErrorMapping(terminationMonitor) {

@@ -39,11 +39,15 @@ public extension CoreExtendedNFC {
     }
 
     /// Get system information (block count, block size, DSFID, AFI, IC reference).
+    ///
+    /// When GET SYSTEM INFORMATION reports 256 blocks or no memory size, EXTENDED GET
+    /// SYSTEM INFORMATION (3Bh) is asked for the full memory size; see
+    /// ``ISO15693Reader/getSystemInfo()``.
     static func getISO15693SystemInfo(
         transport: any NFCTagTransport
     ) async throws -> ISO15693SystemInfo {
         let iso = try iso15693Transport(from: transport)
-        return try await iso.getSystemInfo()
+        return try await ISO15693Reader(transport: iso).getSystemInfo()
     }
 
     /// Get lock status for a range of blocks.

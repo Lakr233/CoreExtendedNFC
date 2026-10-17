@@ -346,6 +346,133 @@ struct ISO15693Tests {
         ])
     }
 
+    // MARK: Extended Get System Information (3Bh)
+
+    /// 3Bh response payload (after the response flags) of an ST25DV64K-like tag:
+    /// Info flags 0Fh, UID, DSFID 00h, AFI 00h, memory size FF 07 03 (2048 blocks of
+    /// 4 bytes, both value - 1), IC reference 26h.
+    static let extended2048Payload = Data([0x0F]) + Data([0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x02, 0xE0])
+        + Data([0x00, 0x00, 0xFF, 0x07, 0x03, 0x26])
+
+    // ISO/IEC 15693-3:2019 Extended Get System Information response: Info flags, UID
+    // (8 bytes), then DSFID (b1), AFI (b2), VICC memory size (b3: number of blocks in
+    // 2 bytes LSB first, value - 1; block size in b5-b1, value - 1), IC reference (b4).
+    @Test
+    func `Extended system info parser reads a 2-byte block count`() throws {
+        let info = try ISO15693ExtendedSystemInfo.parse(Self.extended2048Payload)
+        #expect(info.blockCount == 2048)
+        #expect(info.blockSize == 4)
+        #expect(info.uid == Data([0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x02, 0xE0]))
+        #expect(info.dsfid == 0x00)
+        #expect(info.afi == 0x00)
+        #expect(info.icReference == 0x26)
+    }
+
+    // ISO/IEC 15693-3:2019: only the fields whose Info flag is set are present; the
+    // VICC command list (b6, 4 bytes) follows the IC reference; b5 (MOI) has no field.
+    @Test
+    func `Extended system info parser follows the Info flags`() throws {
+        let uid = Data(repeating: 0xAA, count: 8)
+        let memoryOnly = try ISO15693ExtendedSystemInfo.parse(Data([0x04]) + uid + Data([0x2F, 0x01, 0x1F]))
+        #expect(memoryOnly.blockCount == 0x0130)
+        #expect(memoryOnly.blockSize == 32)
+        #expect(memoryOnly.dsfid == nil)
+        #expect(memoryOnly.afi == nil)
+        #expect(memoryOnly.icReference == nil)
+
+        let withCommandList = try ISO15693ExtendedSystemInfo.parse(
+            Data([0x3C]) + uid + Data([0xFF, 0x07, 0x03, 0x26, 0x3F, 0xF1, 0x0F, 0x00])
+        )
+        #expect(withCommandList.blockCount == 2048)
+        #expect(withCommandList.icReference == 0x26)
+
+        let noMemory = try ISO15693ExtendedSystemInfo.parse(Data([0x00]) + uid)
+        #expect(noMemory.blockCount == -1)
+        #expect(noMemory.blockSize == -1)
+    }
+
+    @Test
+    func `Extended system info parser rejects short or extended-flag payloads`() {
+        let uid = Data(repeating: 0xAA, count: 8)
+        #expect(throws: NFCError.self) { _ = try ISO15693ExtendedSystemInfo.parse(Data()) }
+        #expect(throws: NFCError.self) { _ = try ISO15693ExtendedSystemInfo.parse(Data([0x04]) + uid.prefix(7)) }
+        #expect(throws: NFCError.self) { _ = try ISO15693ExtendedSystemInfo.parse(Data([0x04]) + uid + Data([0xFF, 0x07])) }
+        // b8: the Info flag field continues in further bytes of unknown layout.
+        #expect(throws: NFCError.self) {
+            _ = try ISO15693ExtendedSystemInfo.parse(Data([0x84]) + uid + Data([0xFF, 0x07, 0x03]))
+        }
+    }
+
+    // ISO/IEC 15693-3 Get System Information (2Bh) reports the number of blocks in one
+    // byte (value - 1), so a 2048-block tag can report at most 256. The dump must then
+    // ask Extended Get System Information (3Bh) for the real size.
+    @Test
+    func `Dump uses Extended Get System Information when 2Bh reports 256 blocks`() async throws {
+        let transport = MemoryISO15693Transport(blockCount: 2048, supportsExtended: true)
+        transport.reportedBlockCount = 256
+        transport.extendedSystemInfo = Self.extended2048Payload
+        transport.memory[2047] = Data([0xDE, 0xAD, 0xBE, 0xEF])
+
+        let dump = try await ISO15693Reader(transport: transport).readAllBlocks()
+
+        #expect(transport.extendedSystemInfoRequests == [ISO15693ExtendedSystemInfo.memorySizeRequest])
+        #expect(dump.blocks.count == 2048)
+        #expect(dump.blocks.last?.data == Data([0xDE, 0xAD, 0xBE, 0xEF]))
+        #expect(dump.facts.contains { $0.key == "Blocks" && $0.value == "2048" })
+        let systemInfo = try await CoreExtendedNFC.getISO15693SystemInfo(transport: transport)
+        #expect(systemInfo.blockCount == 2048)
+        #expect(systemInfo.uid == transport.identifier)
+    }
+
+    // 3Bh is optional (ISO/IEC 15693-3:2019); a tag that rejects it keeps the 2Bh size.
+    @Test
+    func `Dump keeps the 2Bh size when Extended Get System Information is rejected`() async throws {
+        let transport = MemoryISO15693Transport(blockCount: 256, supportsExtended: false)
+        transport.extendedSystemInfo = nil
+
+        let dump = try await ISO15693Reader(transport: transport).readAllBlocks()
+
+        #expect(transport.extendedSystemInfoRequests == [ISO15693ExtendedSystemInfo.memorySizeRequest])
+        #expect(dump.blocks.count == 256)
+        #expect(dump.capabilities == [.readable])
+    }
+
+    @Test
+    func `Extended Get System Information is only asked when 2Bh may under-report`() async throws {
+        let transport = MemoryISO15693Transport(blockCount: 32, supportsExtended: false)
+        transport.extendedSystemInfo = Self.extended2048Payload
+
+        let dump = try await ISO15693Reader(transport: transport).readAllBlocks()
+
+        #expect(transport.extendedSystemInfoRequests.isEmpty)
+        #expect(dump.blocks.count == 32)
+    }
+
+    // A 3Bh answer that contradicts a reported 2Bh size (other block size, or fewer
+    // blocks) is not trusted.
+    @Test
+    func `Extended memory size is only taken when consistent with 2Bh`() {
+        let standard = ISO15693SystemInfo(uid: Data([0x01]), dsfid: 0x10, afi: nil, blockSize: 4, blockCount: 256, icReference: nil)
+        let larger = ISO15693SystemInfo(uid: Data([0x02]), dsfid: 0x20, afi: 0x30, blockSize: 4, blockCount: 2048, icReference: 0x26)
+        let merged = ISO15693ExtendedSystemInfo.merge(standard: standard, extended: larger)
+        #expect(merged.blockCount == 2048)
+        #expect(merged.uid == Data([0x01]))
+        #expect(merged.dsfid == 0x10)
+        #expect(merged.afi == 0x30)
+        #expect(merged.icReference == 0x26)
+
+        let otherSize = ISO15693SystemInfo(uid: Data(), dsfid: nil, afi: nil, blockSize: 8, blockCount: 2048, icReference: nil)
+        #expect(ISO15693ExtendedSystemInfo.merge(standard: standard, extended: otherSize).blockCount == 256)
+        let smaller = ISO15693SystemInfo(uid: Data(), dsfid: nil, afi: nil, blockSize: 4, blockCount: 128, icReference: nil)
+        #expect(ISO15693ExtendedSystemInfo.merge(standard: standard, extended: smaller).blockCount == 256)
+
+        let unknown = ISO15693SystemInfo(uid: Data([0x01]), dsfid: nil, afi: nil, blockSize: -1, blockCount: -1, icReference: nil)
+        #expect(ISO15693ExtendedSystemInfo.merge(standard: unknown, extended: larger).blockCount == 2048)
+        #expect(ISO15693ExtendedSystemInfo.needsExtendedQuery(unknown))
+        #expect(ISO15693ExtendedSystemInfo.needsExtendedQuery(standard))
+        #expect(!ISO15693ExtendedSystemInfo.needsExtendedQuery(smaller))
+    }
+
     // ISO/IEC 15693-3, GET MULTIPLE BLOCK SECURITY STATUS (2Ch) response: each block
     // security status byte carries Lock_flag in b1; b2-b8 are RFU. Some ST tags set
     // RFU bits for password protection, and ST25 SDK / NFC TagInfo mask with `& 1`.
@@ -459,10 +586,22 @@ private final class MemoryISO15693Transport: ISO15693TagTransporting, @unchecked
     var writes: [Int] = []
     var extendedReads: [Int] = []
     var extendedWrites: [Int] = []
+    /// Block count GET SYSTEM INFORMATION (2Bh) reports; `blockCount` when `nil`.
+    var reportedBlockCount: Int?
+    /// EXTENDED GET SYSTEM INFORMATION (3Bh) payload after the response flags;
+    /// `nil` answers with ISO 15693 error 01h (command not supported).
+    var extendedSystemInfo: Data?
+    var extendedSystemInfoRequests: [UInt8] = []
 
     init(blockCount: Int, supportsExtended: Bool) {
         self.blockCount = blockCount
         self.supportsExtended = supportsExtended
+    }
+
+    func extendedGetSystemInfo(infoFlags: UInt8) async throws -> Data {
+        extendedSystemInfoRequests.append(infoFlags)
+        guard let extendedSystemInfo else { throw NFCError.iso15693Error(code: 0x01) }
+        return extendedSystemInfo
     }
 
     func send(_: Data) async throws -> Data {
@@ -505,7 +644,14 @@ private final class MemoryISO15693Transport: ISO15693TagTransporting, @unchecked
     }
 
     func getSystemInfo() async throws -> ISO15693SystemInfo {
-        ISO15693SystemInfo(uid: identifier, dsfid: 0, afi: 0, blockSize: 4, blockCount: blockCount, icReference: 1)
+        ISO15693SystemInfo(
+            uid: identifier,
+            dsfid: 0,
+            afi: 0,
+            blockSize: 4,
+            blockCount: reportedBlockCount ?? blockCount,
+            icReference: 1
+        )
     }
 
     func getBlockSecurityStatus(range: NSRange) async throws -> [Bool] {

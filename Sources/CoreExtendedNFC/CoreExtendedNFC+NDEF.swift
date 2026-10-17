@@ -153,7 +153,7 @@ public extension CoreExtendedNFC {
     static func readType5NDEF(
         transport: any ISO15693TagTransporting
     ) async throws -> Data {
-        let systemInfo = try await transport.getSystemInfo()
+        let systemInfo = try await ISO15693Reader(transport: transport).getSystemInfo()
         try requireKnownMemorySize(systemInfo)
         let blockSize = systemInfo.blockSize
         let reader = ISO15693Reader(transport: transport)
@@ -328,7 +328,7 @@ public extension CoreExtendedNFC {
         _ message: Data,
         transport: any ISO15693TagTransporting
     ) async throws {
-        let systemInfo = try await transport.getSystemInfo()
+        let systemInfo = try await ISO15693Reader(transport: transport).getSystemInfo()
         try requireKnownMemorySize(systemInfo)
         guard systemInfo.blockSize >= 4 else {
             throw NFCError.unsupportedOperation("Type 5 block size must be at least 4 bytes")
@@ -395,7 +395,7 @@ public extension CoreExtendedNFC {
     static func formatType5NDEF(
         transport: any ISO15693TagTransporting
     ) async throws {
-        let systemInfo = try await transport.getSystemInfo()
+        let systemInfo = try await ISO15693Reader(transport: transport).getSystemInfo()
         try requireKnownMemorySize(systemInfo)
         let reader = ISO15693Reader(transport: transport)
 
