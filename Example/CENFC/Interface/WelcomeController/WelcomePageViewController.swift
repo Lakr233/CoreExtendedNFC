@@ -269,15 +269,17 @@ extension WelcomePageViewController {
         // On a wide window (iPhone Duo fully open) a centred sheet sits across the
         // fold; place it on the leading side, where its bars stay horizontal.
         // Only when it is presented as a sheet; its size is unchanged.
-        if #available(iOS 27.0, *), let sheet = navigationController.sheetPresentationController {
-            sheet.preferredPlacement = .leading
-            // Narrow enough for the leading half of an open iPhone Duo, so the
-            // sheet and its Get Started button stay clear of the fold.
-            navigationController.preferredContentSize.width = min(
-                navigationController.preferredContentSize.width,
-                Self.leadingSheetMaxWidth
-            )
-        }
+        #if CENFC_HAS_IOS27_SDK
+            if #available(iOS 27.0, *), let sheet = navigationController.sheetPresentationController {
+                sheet.preferredPlacement = .leading
+                // Narrow enough for the leading half of an open iPhone Duo, so the
+                // sheet and its Get Started button stay clear of the fold.
+                navigationController.preferredContentSize.width = min(
+                    navigationController.preferredContentSize.width,
+                    Self.leadingSheetMaxWidth
+                )
+            }
+        #endif
         return navigationController
     }
 }
