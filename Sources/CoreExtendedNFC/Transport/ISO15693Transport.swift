@@ -141,7 +141,7 @@ open class ISO15693Transport: ISO15693TagTransporting, @unchecked Sendable {
                 blockRange: range
             )
         }
-        return statuses.map { $0 != 0 }
+        return ISO15693BlockSecurityStatus.lockFlags(from: statuses.map(\.uint8Value))
     }
 
     open func writeAFI(_ afi: UInt8) async throws {

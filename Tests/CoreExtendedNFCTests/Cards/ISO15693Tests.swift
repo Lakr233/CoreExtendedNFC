@@ -345,6 +345,18 @@ struct ISO15693Tests {
             "keyUpdate:12:03",
         ])
     }
+
+    // ISO/IEC 15693-3, GET MULTIPLE BLOCK SECURITY STATUS (2Ch) response: each block
+    // security status byte carries Lock_flag in b1; b2-b8 are RFU. Some ST tags set
+    // RFU bits for password protection, and ST25 SDK / NFC TagInfo mask with `& 1`.
+    @Test
+    func `Block security status uses only the Lock_flag bit`() {
+        #expect(ISO15693BlockSecurityStatus.lockFlags(from: [0x00, 0x01, 0x02, 0x03, 0xFE, 0xFF]) == [
+            false, true, false, true, false, true,
+        ])
+        #expect(ISO15693BlockSecurityStatus.isLocked(0x06) == false)
+        #expect(ISO15693BlockSecurityStatus.isLocked(0x81) == true)
+    }
 }
 
 private final class MockISO15693SecurityTransport: ISO15693TagTransporting, @unchecked Sendable {
