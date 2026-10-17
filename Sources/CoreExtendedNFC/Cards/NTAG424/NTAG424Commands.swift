@@ -40,8 +40,14 @@ open class NTAG424Commands: @unchecked Sendable {
     /// Largest data chunk per WriteData that keeps the command a short APDU
     /// (Lc ≤ 255 including the 7-byte header).
     public static let maxWriteChunkSize = 255 - writeDataHeaderLength
-    /// Default data bytes per WriteData command.
-    public static let defaultWriteChunkSize = 128
+    /// Default data bytes per WriteData command: the largest chunk whose command
+    /// fits one ISO/IEC 14443-4 frame. The PICC's FSC is 128 bytes (ATS T0 `77h`) and
+    /// it supports CID, so a frame carries PCB (1) ‖ CID (1) ‖ APDU ‖ CRC (2), and the
+    /// APDU adds CLA, INS, P1, P2, Lc, Le and the 7-byte header: 128 - 4 - 6 - 7 = 111.
+    /// The datasheet only guarantees tearing protection for data sent within one frame;
+    /// larger chunks are chained by the reader and an interrupted chain can leave the
+    /// chunk partially written.
+    public static let defaultWriteChunkSize = 111
 
     // MARK: - Commands
 
@@ -56,7 +62,9 @@ open class NTAG424Commands: @unchecked Sendable {
     /// WriteData (`8Dh`) in CommMode.Plain.
     ///
     /// `data` is split into WriteData commands of at most `chunkSize` bytes, each
-    /// with its own 3-byte little-endian offset and length, sent in order. Every
+    /// with its own 3-byte little-endian offset and length, sent in order. The
+    /// default keeps every command in one tearing-protected frame (see
+    /// ``defaultWriteChunkSize``). Every
     /// command must be answered `91 00`; a failure stops the write and earlier
     /// chunks stay written. Arguments are checked before anything is sent:
     /// `fileID` must be `0x00...0x1F`, `data` must not be empty, `offset + data.count`

@@ -1,7 +1,8 @@
 import Foundation
 
 /// File settings of an NTAG 424 DNA file, parsed from a plain GetFileSettings (`F5h`)
-/// response (NXP NT4H2421Gx datasheet, GetFileSettings).
+/// response (NXP NT4H2421Gx datasheet, GetFileSettings; NT4H2421Tx for the
+/// TagTamper variant).
 ///
 /// Layout:
 ///
@@ -11,6 +12,7 @@ import Foundation
 ///   ‖ UIDOffset (3)         if SDMOptions.uid and SDMMetaRead == Eh
 ///   ‖ SDMReadCtrOffset (3)  if SDMOptions.readCounter and SDMMetaRead == Eh
 ///   ‖ PICCDataOffset (3)    if SDMMetaRead is a key (0h...4h)
+///   ‖ TTStatusOffset (3)    if SDMOptions.tagTamperStatus (NTAG 424 DNA TT)
 ///   ‖ SDMMACInputOffset (3) if SDMFileRead != Fh
 ///   ‖ SDMENCOffset (3)      if SDMOptions.encryptedFileData and SDMFileRead != Fh
 ///   ‖ SDMENCLength (3)      if SDMOptions.encryptedFileData and SDMFileRead != Fh
@@ -110,6 +112,9 @@ public struct NTAG424FileSettings: Sendable, Equatable {
         public static let readCounterLimit = SDMOptions(rawValue: 0x20)
         /// Bit 4: SDMENCFileData (encrypted file data mirroring).
         public static let encryptedFileData = SDMOptions(rawValue: 0x10)
+        /// Bit 3: TagTamper status mirroring. NTAG 424 DNA TT (NT4H2421Tx) only; RFU
+        /// on NTAG 424 DNA.
+        public static let tagTamperStatus = SDMOptions(rawValue: 0x08)
         /// Bit 0: ASCII encoding of mirrored data.
         public static let asciiEncoding = SDMOptions(rawValue: 0x01)
     }
@@ -129,11 +134,15 @@ public struct NTAG424FileSettings: Sendable, Equatable {
         /// encrypted PICC data with that key, `Fh` no PICC data mirroring.
         public var metaRead: UInt8 { UInt8(truncatingIfNeeded: rawValue >> 12) & 0x0F }
         /// SDMFileRead (bits 11-8): `0h...4h` SDM MAC (and encryption) key, `Fh` no SUN MAC.
+        /// `Eh` is RFU; any value other than `Fh` makes the MAC offsets present.
         public var fileRead: UInt8 { UInt8(truncatingIfNeeded: rawValue >> 8) & 0x0F }
         /// Reserved nibble (bits 7-4).
         public var reserved: UInt8 { UInt8(truncatingIfNeeded: rawValue >> 4) & 0x0F }
         /// SDMCtrRet (bits 3-0): access condition for GetFileCounters.
         public var counterRetrieval: UInt8 { UInt8(truncatingIfNeeded: rawValue) & 0x0F }
+
+        /// SDMCtrRet as an access condition (same coding as the file access rights).
+        public var counterRetrievalCondition: AccessCondition { AccessCondition(nibble: counterRetrieval) }
     }
 
     /// The SDM extension present when FileOption bit 6 is set.
@@ -142,8 +151,11 @@ public struct NTAG424FileSettings: Sendable, Equatable {
         public let options: SDMOptions
         public let accessRights: SDMAccessRights
         public let uidOffset: UInt32?
+        /// SDMReadCtrOffset; `FFFFFFh` means the counter is not mirrored.
         public let readCounterOffset: UInt32?
         public let piccDataOffset: UInt32?
+        /// TTStatusOffset, NTAG 424 DNA TT only.
+        public let tagTamperStatusOffset: UInt32?
         public let macInputOffset: UInt32?
         public let encryptedDataOffset: UInt32?
         public let encryptedDataLength: UInt32?
@@ -209,6 +221,7 @@ public struct NTAG424FileSettings: Sendable, Equatable {
             let uidOffset = try (options.contains(.uid) && plainMirroring) ? reader.uint24LE() : nil
             let readCounterOffset = try (options.contains(.readCounter) && plainMirroring) ? reader.uint24LE() : nil
             let piccDataOffset = try encryptedPICCData ? reader.uint24LE() : nil
+            let tagTamperStatusOffset = try options.contains(.tagTamperStatus) ? reader.uint24LE() : nil
             let macInputOffset = try fileReadEnabled ? reader.uint24LE() : nil
             let encOffset = try encryptedFileData ? reader.uint24LE() : nil
             let encLength = try encryptedFileData ? reader.uint24LE() : nil
@@ -221,6 +234,7 @@ public struct NTAG424FileSettings: Sendable, Equatable {
                 uidOffset: uidOffset,
                 readCounterOffset: readCounterOffset,
                 piccDataOffset: piccDataOffset,
+                tagTamperStatusOffset: tagTamperStatusOffset,
                 macInputOffset: macInputOffset,
                 encryptedDataOffset: encOffset,
                 encryptedDataLength: encLength,

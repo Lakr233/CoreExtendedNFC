@@ -18,8 +18,9 @@ public extension CoreExtendedNFC {
     /// WriteData (`8Dh`) in CommMode.Plain to an NTAG 424 DNA file, split into
     /// commands of at most `chunkSize` data bytes.
     ///
-    /// Only works for files whose communication mode is plain and whose write
-    /// access is free (or granted without secure messaging).
+    /// Sent without authentication, so the file's Write or ReadWrite access condition
+    /// must be free (`Eh`); the file's communication mode only applies inside an
+    /// authenticated session, which this library does not keep for NTAG 424.
     static func writeNTAG424DataPlain(
         fileID: UInt8,
         offset: UInt32 = 0,

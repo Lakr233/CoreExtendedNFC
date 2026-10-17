@@ -106,6 +106,7 @@ struct NTAG424FileSettingsTests {
         #expect(sdm.accessRights.metaRead == 0x0E)
         #expect(sdm.accessRights.fileRead == 0x01)
         #expect(sdm.accessRights.counterRetrieval == 0x0E)
+        #expect(sdm.accessRights.counterRetrievalCondition == .free)
         #expect(sdm.uidOffset == 0x20)
         #expect(sdm.readCounterOffset == 0x33)
         #expect(sdm.piccDataOffset == nil)
@@ -304,10 +305,10 @@ struct NTAG424CommandsTests {
 
         #expect(mock.sentAPDUs.count == 3)
         let payloads = mock.sentAPDUs.map { $0.data ?? Data() }
-        #expect(payloads[0].prefix(7) == Data([0x02, 0x0A, 0x00, 0x00, 0x80, 0x00, 0x00]))
-        #expect(payloads[1].prefix(7) == Data([0x02, 0x8A, 0x00, 0x00, 0x80, 0x00, 0x00]))
-        #expect(payloads[2].prefix(7) == Data([0x02, 0x0A, 0x01, 0x00, 0x2C, 0x00, 0x00]))
-        #expect(payloads.map(\.count) == [135, 135, 51])
+        #expect(payloads[0].prefix(7) == Data([0x02, 0x0A, 0x00, 0x00, 0x6F, 0x00, 0x00]))
+        #expect(payloads[1].prefix(7) == Data([0x02, 0x79, 0x00, 0x00, 0x6F, 0x00, 0x00]))
+        #expect(payloads[2].prefix(7) == Data([0x02, 0xE8, 0x00, 0x00, 0x4E, 0x00, 0x00]))
+        #expect(payloads.map(\.count) == [118, 118, 85])
         #expect(Data(payloads.flatMap { $0.dropFirst(7) }) == data)
         #expect(mock.sentAPDUs.allSatisfy { $0.cla == 0x90 && $0.ins == 0x8D && !$0.isExtendedLength })
     }
@@ -325,6 +326,24 @@ struct NTAG424CommandsTests {
         #expect(NTAG424Commands.maxWriteChunkSize == 248)
         #expect(payloads.map(\.count) == [255, 255, 11])
         #expect(payloads[2].prefix(7) == Data([0x03, 0xF0, 0x01, 0x00, 0x04, 0x00, 0x00]))
+    }
+
+    @Test
+    func `Default WriteData chunks each fit one ISO 14443-4 frame`() throws {
+        // NT4H2421Gx Table 4: FSC is 128 bytes; TC(1) 02h: CID supported. Section 10.8.2:
+        // only data sent within one frame is tearing protected. A frame carries
+        // PCB (1) ‖ CID (1) ‖ INF ‖ CRC (2).
+        let payloads = try NTAG424Commands.writeDataPlainPayloads(
+            fileID: 0x02,
+            offset: 0,
+            data: Data(repeating: 0x5A, count: 256)
+        )
+
+        for payload in payloads {
+            let apdu = CommandAPDU.desfireWrap(command: NTAG424Commands.WRITE_DATA, data: payload)
+            #expect(1 + 1 + apdu.bytes.count + 2 <= 128)
+        }
+        #expect(payloads.count == 3)
     }
 
     @Test

@@ -92,6 +92,36 @@ struct NTAG424VectorTests {
     }
 
     @Test
+    func `NTAG 424 DNA TT TagTamper status offset sits before the MAC offsets`() throws {
+        // NT4H2421Tx Rev. 3.0 Table 73: TTStatusOffset is present if SDMOptions bit 3
+        // is set, between PICCDataOffset and SDMMACInputOffset. SDMOptions 89h (UID,
+        // TT status, ASCII); SDMAccessRights E1FFh: MetaRead Eh, FileRead 1h.
+        let settings = try NTAG424FileSettings(
+            data: Self.hex("004000E0000100" + "89FFE1" + "200000" + "2E0000" + "340000" + "450000")
+        )
+        let sdm = try #require(settings.sdm)
+
+        #expect(sdm.options == [.uid, .tagTamperStatus, .asciiEncoding])
+        #expect(sdm.uidOffset == 0x20)
+        #expect(sdm.piccDataOffset == nil)
+        #expect(sdm.tagTamperStatusOffset == 0x2E)
+        #expect(sdm.macInputOffset == 0x34)
+        #expect(sdm.macOffset == 0x45)
+    }
+
+    @Test
+    func `NTAG 424 DNA TT status offset after encrypted PICC data`() throws {
+        // SDMOptions 08h (TT status); SDMAccessRights 2FFFh: MetaRead 2h, FileRead Fh.
+        let sdm = try #require(
+            try NTAG424FileSettings(data: Self.hex("004000E0000100" + "08FF2F" + "200000" + "400000")).sdm
+        )
+
+        #expect(sdm.piccDataOffset == 0x20)
+        #expect(sdm.tagTamperStatusOffset == 0x40)
+        #expect(sdm.macInputOffset == nil)
+    }
+
+    @Test
     func `AN12196 Table 24 plain WriteData of the CC file`() async throws {
         let mock = MockTransport()
         mock.apduResponses = [ResponseAPDU(data: Data(), sw1: 0x91, sw2: 0x00)]
