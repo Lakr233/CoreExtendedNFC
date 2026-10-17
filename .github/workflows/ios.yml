@@ -42,5 +42,8 @@ jobs:
         id: simulator
         run: echo "destination=$(./Scripts/select-ios-simulator.sh)" >> "$GITHUB_OUTPUT"
 
+      - name: Generate BuildInfo
+        run: ./Scripts/generate-build-info.sh "$PWD/Example"
+
       - name: Run Example App Unit and UI Tests
         run: xcodebuild -project Example/CENFC.xcodeproj -scheme CENFC -destination '${{ steps.simulator.outputs.destination }}' test CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=

@@ -11,7 +11,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Generate BuildInfo.swift"
-               scriptText = "COMMIT=$(git -C &quot;${PROJECT_DIR}&quot; rev-parse HEAD 2&gt;/dev/null || echo &quot;unknown&quot;)&#10;BUILD_TIME=$(date &quot;+%Y-%m-%d %H:%M:%S %z&quot;)&#10;OUTPUT_DIR=&quot;${PROJECT_DIR}/CENFC/DerivedSources&quot;&#10;OUTPUT_FILE=&quot;${OUTPUT_DIR}/BuildInfo.swift&quot;&#10;&#10;mkdir -p &quot;${OUTPUT_DIR}&quot;&#10;&#10;NEW_CONTENT=&quot;// Auto-generated &#x2014; do not edit&#10;import Foundation&#10;&#10;enum BuildInfo {&#10;    static let buildTime = \&quot;${BUILD_TIME}\&quot;&#10;    static let commitID = \&quot;${COMMIT}\&quot;&#10;}&quot;&#10;&#10;if [ -f &quot;${OUTPUT_FILE}&quot; ]; then&#10;    OLD_CONTENT=$(cat &quot;${OUTPUT_FILE}&quot;)&#10;    if [ &quot;${OLD_CONTENT}&quot; = &quot;${NEW_CONTENT}&quot; ]; then&#10;        exit 0&#10;    fi&#10;fi&#10;&#10;printf &apos;%s\n&apos; &quot;${NEW_CONTENT}&quot; &gt; &quot;${OUTPUT_FILE}&quot;&#10;">
+               scriptText = "&quot;${PROJECT_DIR}/../Scripts/generate-build-info.sh&quot; &quot;${PROJECT_DIR}&quot;&#10;">
                <EnvironmentBuildable>
                   <BuildableReference
                      BuildableIdentifier = "primary"
