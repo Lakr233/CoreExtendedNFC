@@ -2,6 +2,9 @@ import Foundation
 
 /// DESFire version info (from GET_VERSION, 3 frames: HW + SW + UID).
 public struct DESFireVersionInfo: Sendable {
+    /// Hardware type of NTAG parts such as NTAG 424 DNA (NT4H2421Gx Table 54).
+    public static let ntagHardwareType: UInt8 = 0x04
+
     public let hardwareVendorID: UInt8
     public let hardwareType: UInt8
     public let hardwareSubType: UInt8

@@ -27,7 +27,7 @@
 <h2 id="capabilities">Capabilities</h2>
 <ul>
 <li>Card identification from ATQA, SAK, ATS, FeliCa system code, ISO 15693 metadata, and ISO 7816 application hints, refined by safe probes (Ultralight C, NTAG210/212, DESFire EV1-EV3, FeliCa Lite / Lite-S).</li>
-<li>Memory operations for Ultralight, NTAG, DESFire (read-only), FeliCa Type 3, ISO 15693, and Type 4 NDEF tags.</li>
+<li>Memory operations for Ultralight, NTAG, DESFire (read-only), FeliCa Type 3, ISO 15693, and Type 4 NDEF tags, plus NTAG 424 DNA file settings (including SDM) and plain WriteData.</li>
 <li>Passport and eMRTD reading with PACE (ECDH Generic Mapping on NIST P-256/384/521 and Brainpool P-224 to P-512 curves) or BAC, Secure Messaging, data-group parsing, Passive Authentication against caller-supplied CSCA certificates, and Active Authentication.</li>
 <li>Transit-card readers for Japan IC, Hong Kong Octopus, Singapore CEPAS, China T-Union, and Korea KS X 6924 paths.</li>
 <li>Japan My Number card token reads, protected individual-number reads, and PIN-attempt lookup.</li>
@@ -70,6 +70,7 @@ let passport = try await CoreExtendedNFC.readPassport(
 <tr><td>MIFARE Ultralight / EV1 / C</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
 <tr><td>NTAG 210 / 212 / 213 / 215 / 216</td><td>yes</td><td>yes</td><td>yes</td><td>yes</td></tr>
 <tr><td>MIFARE DESFire EV1-EV3</td><td>yes</td><td>yes</td><td>no</td><td>free-access files</td></tr>
+<tr><td>NTAG 424 DNA</td><td>as DESFire / Type 4</td><td>file settings, NDEF</td><td>plain files</td><td>no</td></tr>
 <tr><td>FeliCa Type 3 NDEF</td><td>yes</td><td>yes</td><td>yes</td><td>partial</td></tr>
 <tr><td>ISO 15693 / Type 5</td><td>yes</td><td>yes</td><td>yes</td><td>extended blocks when supported</td></tr>
 <tr><td>Type 4 NDEF / ISO 7816</td><td>yes</td><td>yes</td><td>yes</td><td>partial</td></tr>
@@ -78,7 +79,7 @@ let passport = try await CoreExtendedNFC.readPassport(
 <tr><td>MIFARE Classic 1K / 4K</td><td>yes</td><td>no</td><td>no</td><td>no</td></tr>
 </tbody>
 </table>
-<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 authentication (iOS cannot send the encrypted parity bits it needs). DESFire has no write API. ISO 15693 tags with more than 256 blocks are read with extended commands; tags that reject them are dumped up to block 255 and marked partially readable.</p>
+<p>MIFARE Classic is identification-only because iOS does not expose Crypto1 authentication (iOS cannot send the encrypted parity bits it needs). DESFire has no write API; NTAG 424 DNA has a plain (CommMode.Plain) WriteData only. ISO 15693 tags with more than 256 blocks are read with extended commands; tags that reject them are dumped up to block 255 and marked partially readable.</p>
 
 <h2 id="where-next">Next Steps</h2>
 <ul class="hub-list">

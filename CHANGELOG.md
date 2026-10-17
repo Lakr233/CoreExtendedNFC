@@ -3,6 +3,16 @@
 All notable changes to CoreExtendedNFC are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- NTAG 424 DNA module (`Cards/NTAG424/`, issue #14) for plain native file operations over the ISO 7816 wrapped transport:
+  - `NTAG424Commands.getFileSettings(fileID:)` (`F5h`) and `CoreExtendedNFC.getNTAG424FileSettings(fileID:transport:)` return the new `NTAG424FileSettings`. Its parser is strict: it decodes FileType, FileOption (communication mode, SDM bit 6), the Read / Write / ReadWrite / Change access-right nibbles and the 24-bit file size, and, when SDM is enabled, SDMOptions, SDMAccessRights and the offsets that SDMOptions and SDMAccessRights make present (UID, SDMReadCtr, PICCData, TTStatus on NTAG 424 DNA TT, SDMMACInput, SDMENC offset and length, SDMMAC, SDMReadCtrLimit). Truncated responses, trailing bytes (such as a response MAC), a file type other than StandardData and a reserved SDMMetaRead value throw `invalidResponse`.
+  - `NTAG424Commands.writeDataPlain(fileID:offset:data:chunkSize:)` and `CoreExtendedNFC.writeNTAG424DataPlain(fileID:offset:data:chunkSize:transport:)` send the NTAG 424 native WriteData `8Dh` (not the DESFire `3Dh`) in CommMode.Plain, with 3-byte little-endian offset and length. Data is split into commands of at most `chunkSize` bytes (default 111, so each command fits one tearing-protected 128-byte ISO 14443-4 frame; at most 248, the datasheet limit per WriteData). Arguments are checked before anything is sent (`invalidParameter`), and the first non-`9100` status stops the write.
+  - `dumpCard` on an NTAG 424 DNA that iOS reports as DESFire no longer fails with `desfireError(.illegalCommand)`: when GetApplicationIDs answers `91 1C` and GetVersion reports hardware type `04h` (`DESFireVersionInfo.ntagHardwareType`), the tag is dumped as a Type 4 tag (CC and NDEF file).
+  - CommMode.MAC / Full, ChangeFileSettings / SDM provisioning and EV2 command counters are not implemented.
+
 ## [2.0.0] - 2026-10-16
 
 2.0 is a major release because it breaks source and behaviour compatibility with 1.1.2. The Swift tools version (6.2), the iOS 15 deployment target and the async/await API style are unchanged. See the [migration guide](docs/guide/migrating-to-2.html) for before/after code.

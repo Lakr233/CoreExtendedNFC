@@ -64,6 +64,10 @@ static func selectDESFireApplication(_ aid: Data, transport: any NFCTagTransport
 static func getDESFireFileIDs(transport: any NFCTagTransport) async throws -> [UInt8]
 static func getDESFireFileSettings(_ fileID: UInt8, transport: any NFCTagTransport) async throws -> DESFireFileSettings
 
+// NTAG 424 DNA (plain, unauthenticated; NDEF application selected)
+static func getNTAG424FileSettings(fileID: UInt8, transport: any NFCTagTransport) async throws -> NTAG424FileSettings
+static func writeNTAG424DataPlain(fileID: UInt8, offset: UInt32 = 0, data: Data, chunkSize: Int = NTAG424Commands.defaultWriteChunkSize, transport: any NFCTagTransport) async throws
+
 // ISO 15693 (block ranges are checked against 0...255)
 static func readISO15693Blocks(range: ClosedRange&lt;Int&gt;, transport: any NFCTagTransport) async throws -> [Data]
 static func getISO15693BlockSecurityStatus(range: ClosedRange&lt;Int&gt;, transport: any NFCTagTransport) async throws -> [Bool]

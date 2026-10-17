@@ -47,12 +47,23 @@ public extension CoreExtendedNFC {
     }
 
     /// Dump a DESFire card: list apps, list files, read all accessible data.
+    ///
+    /// NTAG 424 DNA shares DESFire's ATQA / SAK but answers GetApplicationIDs with
+    /// `91 1C` (NT4H2421Gx Tables 22 and 23). When that happens and GetVersion reports
+    /// hardware type `04h` (NTAG, Table 54), the tag is dumped as the Type 4 tag it is.
     static func dumpDESFire(
         info: CardInfo,
         transport: any NFCTagTransport
     ) async throws -> MemoryDump {
-        try await DESFireDump(commands: DESFireCommands(transport: transport))
-            .dumpAll(cardInfo: info)
+        let commands = DESFireCommands(transport: transport)
+        do {
+            return try await DESFireDump(commands: commands).dumpAll(cardInfo: info)
+        } catch NFCError.desfireError(.illegalCommand) {
+            guard try await commands.getVersion().hardwareType == DESFireVersionInfo.ntagHardwareType else {
+                throw NFCError.desfireError(.illegalCommand)
+            }
+            return try await dumpType4(info: info, transport: transport)
+        }
     }
 
     static func dumpType4(
