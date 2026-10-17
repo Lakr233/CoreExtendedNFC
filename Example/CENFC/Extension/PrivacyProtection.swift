@@ -92,6 +92,15 @@ final class PrivacyCover {
         if let tabBar = controller as? UITabBarController {
             return tabBar.selectedViewController.map(isShowingSensitiveContent) ?? false
         }
+        // A split view counts both columns, whether expanded or collapsed (the
+        // detail column's screens then sit on the list's stack). Its children are
+        // checked too, in case a column is not reported.
+        if let split = controller as? UISplitViewController, split.style != .unspecified {
+            let columns = [UISplitViewController.Column.primary, .secondary].compactMap { split.viewController(for: $0) }
+            if columns.contains(where: { isShowingSensitiveContent($0) }) {
+                return true
+            }
+        }
         return controller.children.contains { isShowingSensitiveContent($0) }
     }
 

@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-class PassportMRZInputViewController: StackScrollController, PrivacySensitiveScreen {
+class PassportMRZInputViewController: StackScrollController, PrivacySensitiveScreen, ClosingAwareScreen {
     var onPassportRead: ((PassportRecord) -> Void)?
 
     private lazy var documentNumberField: UITextField = makeTextField(
@@ -42,11 +42,20 @@ class PassportMRZInputViewController: StackScrollController, PrivacySensitiveScr
         ).accessibilityLabeled(String(localized: "Read Chip"))
     }
 
+    /// Cancels the chip read when the screen goes away for good: popped, or
+    /// removed with its navigation controller from a split view's detail column.
+    /// Switching tabs keeps it running.
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        if isMovingFromParent {
-            readTask.cancel()
+        if isLeavingForGood {
+            screenWillClose()
         }
+    }
+
+    // MARK: - ClosingAwareScreen
+
+    func screenWillClose() {
+        readTask.cancel()
     }
 
     // MARK: - MRZ Fields

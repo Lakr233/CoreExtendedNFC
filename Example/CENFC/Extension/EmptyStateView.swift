@@ -18,9 +18,25 @@ final class EmptyStateView: UIView {
         addSubview(label)
         label.snp.makeConstraints { make in
             make.center.equalToSuperview()
-            make.leading.greaterThanOrEqualToSuperview().offset(40)
-            make.trailing.lessThanOrEqualToSuperview().offset(-40)
+            // Pinned (not just bounded) so the text re-wraps to the full width
+            // when the list column grows, e.g. after unfolding a foldable.
+            make.leading.equalToSuperview().offset(40).priority(.high)
+            make.trailing.equalToSuperview().offset(-40).priority(.high)
+            make.leading.greaterThanOrEqualToSuperview()
+            make.trailing.lessThanOrEqualToSuperview()
         }
+    }
+
+    override func layoutSubviews() {
+        // A multi-line label keeps the wrap width it measured at; after the
+        // view changes width (a foldable folding or unfolding) it would stay
+        // wrapped to the old, narrower width. Re-measure against the new width.
+        let wrapWidth = max(0, bounds.width - 80)
+        if label.preferredMaxLayoutWidth != wrapWidth {
+            label.preferredMaxLayoutWidth = wrapWidth
+            label.invalidateIntrinsicContentSize()
+        }
+        super.layoutSubviews()
     }
 
     @available(*, unavailable)
@@ -37,7 +53,11 @@ final class EmptyStateView: UIView {
     func update(in scrollView: UIScrollView) {
         let inset = scrollView.adjustedContentInset
         let visibleHeight = scrollView.bounds.height - inset.top - inset.bottom
-        frame = CGRect(x: 0, y: 0, width: scrollView.bounds.width, height: visibleHeight)
+        let newFrame = CGRect(x: 0, y: 0, width: scrollView.bounds.width, height: visibleHeight)
+        if frame != newFrame {
+            frame = newFrame
+            layoutIfNeeded()
+        }
 
         let offset = scrollView.contentOffset.y + inset.top
         alpha = max(0, 1 - abs(offset) / 60)

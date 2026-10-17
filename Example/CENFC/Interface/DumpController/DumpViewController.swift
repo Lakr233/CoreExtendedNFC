@@ -1,3 +1,4 @@
+import Combine
 import ConfigurableKit
 import CoreExtendedNFC
 import SPIndicator
@@ -105,6 +106,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
 
     private let emptyState = EmptyStateView.scan()
     private let nfcTask = SingleTaskRunner()
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
 
@@ -119,6 +121,18 @@ class DumpViewController: ObjectListViewController<DumpStore>,
         super.viewDidLoad()
         setupDismissKeyboardOnTap()
         emptyState.install(on: tableView)
+        closeDetailOfDeletedRecords()
+    }
+
+    /// Every delete path (edit mode, context menu, swipe) goes through the store,
+    /// so watching it closes the detail column when its record is deleted.
+    private func closeDetailOfDeletedRecords() {
+        DumpStore.shared.dataDidChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.closeRecordDetail { DumpStore.shared.record(for: $0) != nil }
+            }
+            .store(in: &cancellables)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -151,13 +165,12 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     private func updateEditingNavBar() {
         if tableView.isEditing {
             let hasSelection = (tableView.indexPathsForSelectedRows?.count ?? 0) > 0
-            navigationItem.setLeftBarButton(hasSelection ? deleteBarButton : nil, animated: true)
+            // Delete stays with the trailing items: the leading side is for Back / Close.
             navigationItem.setRightBarButtonItems(
-                hasSelection ? [doneBarButton, exportSelectedBarButton] : [doneBarButton],
+                hasSelection ? [doneBarButton, exportSelectedBarButton, deleteBarButton] : [doneBarButton],
                 animated: true
             )
         } else {
-            navigationItem.setLeftBarButton(nil, animated: true)
             navigationItem.setRightBarButtonItems([dumpBarButton], animated: true)
         }
     }
@@ -184,7 +197,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
             self?.setEditing(false, animated: true)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
-        alert.popoverPresentationController?.sourceView = view
+        alert.popoverPresentationController?.barButtonItem = deleteBarButton
         present(alert, animated: true)
     }
 
@@ -211,10 +224,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
         guard let recordID = diffableItemIdentifier(for: indexPath),
               let record = DumpStore.shared.record(for: recordID)
         else { return }
-        navigationController?.pushViewController(
-            DumpDetailViewController(record: record),
-            animated: true
-        )
+        showRecordDetail(DumpDetailViewController(record: record))
     }
 
     override func tableView(_ tableView: UITableView, didDeselectRowAt _: IndexPath) {
@@ -251,7 +261,7 @@ class DumpViewController: ObjectListViewController<DumpStore>,
                     title: String(localized: "Export"),
                     image: UIImage(systemName: "square.and.arrow.up")
                 ) { _ in
-                    self?.exportRecord(record)
+                    self?.exportRecord(record, sourceView: self?.tableView.cellForRow(at: indexPath))
                 },
                 UIAction(
                     title: String(localized: "Delete"),
@@ -372,19 +382,16 @@ class DumpViewController: ObjectListViewController<DumpStore>,
     }
 
     private func handleNewDump(_ record: DumpRecord) {
-        DumpStore.shared.add(record)
-        navigationController?.pushViewController(
-            DumpDetailViewController(record: record),
-            animated: true
-        )
+        let stored = DumpStore.shared.add(record)
+        showRecordDetail(DumpDetailViewController(record: stored))
     }
 
     // MARK: - Export
 
-    private func exportRecord(_ record: DumpRecord) {
+    private func exportRecord(_ record: DumpRecord, sourceView: UIView?) {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            presentExportSheet(for: [fileURL])
+            presentExportSheet(for: [fileURL], sourceView: sourceView)
         } catch {
             presentErrorAlert(for: error)
         }

@@ -260,6 +260,17 @@ struct PassportScreenPrivacyTests {
         tabBar.selectedIndex = 1
         #expect(PrivacyCover.isShowingSensitiveContent(tabBar))
     }
+
+    @Test
+    func `Privacy cover detects passport screens in the detail column of a split view`() {
+        let split = UISplitViewController(style: .doubleColumn)
+        split.setViewController(UINavigationController(rootViewController: UIViewController()), for: .primary)
+        split.setViewController(UINavigationController(rootViewController: RecordDetailPlaceholderViewController()), for: .secondary)
+        #expect(!PrivacyCover.isShowingSensitiveContent(split))
+
+        split.setViewController(UINavigationController(rootViewController: PassportMRZInputViewController()), for: .secondary)
+        #expect(PrivacyCover.isShowingSensitiveContent(split))
+    }
 }
 
 // MARK: - M5 / F8: format offer

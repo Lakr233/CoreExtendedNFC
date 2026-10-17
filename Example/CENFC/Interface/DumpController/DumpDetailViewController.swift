@@ -4,8 +4,12 @@ import SnapKit
 import Then
 import UIKit
 
-class DumpDetailViewController: StackScrollController {
+class DumpDetailViewController: StackScrollController, RecordDetailScreen {
     private let record: DumpRecord
+
+    var displayedRecordID: UUID? {
+        record.id
+    }
 
     private let dateFormatter = DateFormatter().then {
         $0.dateStyle = .medium
@@ -83,7 +87,7 @@ class DumpDetailViewController: StackScrollController {
     @objc private func exportTapped() {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            presentExportSheet(for: [fileURL])
+            presentExportSheet(for: [fileURL], barButtonItem: navigationItem.rightBarButtonItem)
         } catch {
             presentErrorAlert(for: error, title: String(localized: "Export Error"))
         }

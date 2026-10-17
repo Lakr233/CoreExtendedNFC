@@ -8498,6 +8498,22 @@
           }
         }
       }
+    },
+    "Select a record to see its details." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a record to see its details."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择一条记录以查看详细信息。"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

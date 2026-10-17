@@ -62,15 +62,17 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
         definesPresentationContext = true
     }
 
+    /// A standard menu item rather than a custom view, so it can move to a
+    /// vertical bar or an overflow menu (iPhone Duo) with its title.
+    private lazy var menuBarButton: UIBarButtonItem = UIBarButtonItem(
+        title: String(localized: "More"),
+        image: UIImage(systemName: "ellipsis.circle"),
+        primaryAction: nil,
+        menu: createMenu()
+    ).accessibilityLabeled(String(localized: "More"))
+
     private func setupMenuButton() {
-        let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
-        button.showsMenuAsPrimaryAction = true
-        button.menu = createMenu()
-        button.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
-        // VoiceOver reads the custom view, so the label goes on the button.
-        button.accessibilityLabel = String(localized: "More")
-        navigationItem.rightBarButtonItem = UIBarButtonItem(customView: button)
+        navigationItem.rightBarButtonItem = menuBarButton
     }
 
     private func setupTableView() {
@@ -189,8 +191,7 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
     }
 
     private func updateMenu() {
-        guard let button = navigationItem.rightBarButtonItem?.customView as? UIButton else { return }
-        button.menu = createMenu()
+        menuBarButton.menu = createMenu()
     }
 
     private func applyFilters() {
@@ -315,7 +316,7 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
     private func shareLogs() {
         do {
             let urls = try Self.writeExportFiles(AppLogStore.shared.exportArtifacts())
-            presentExportSheet(for: urls)
+            presentExportSheet(for: urls, barButtonItem: menuBarButton)
         } catch {
             presentTextSheet(AppLogStore.shared.exportText())
         }
@@ -324,8 +325,7 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
     private func presentTextSheet(_ text: String) {
         let ac = UIActivityViewController(activityItems: [text], applicationActivities: nil)
         if let popover = ac.popoverPresentationController {
-            popover.sourceView = view
-            popover.sourceRect = view.bounds
+            anchorPopover(popover, barButtonItem: menuBarButton)
         }
         present(ac, animated: true)
     }

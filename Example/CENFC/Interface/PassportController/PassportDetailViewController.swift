@@ -7,7 +7,7 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-class PassportDetailViewController: StackScrollController, PrivacySensitiveScreen {
+class PassportDetailViewController: StackScrollController, PrivacySensitiveScreen, RecordDetailScreen {
     private let record: PassportRecord
     private var previewURL: URL?
     private var previews: DecodedPreviews?
@@ -46,6 +46,10 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         self.record = record
         super.init(nibName: nil, bundle: nil)
         title = record.displayName
+    }
+
+    var displayedRecordID: UUID? {
+        record.id
     }
 
     @available(*, unavailable)

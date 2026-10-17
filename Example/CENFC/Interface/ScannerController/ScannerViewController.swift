@@ -1,3 +1,4 @@
+import Combine
 import ConfigurableKit
 import CoreExtendedNFC
 import SPIndicator
@@ -123,12 +124,25 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
 
     private let emptyState = EmptyStateView.scan()
     private let nfcTask = SingleTaskRunner()
+    private var cancellables = Set<AnyCancellable>()
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupDismissKeyboardOnTap()
         setupExternalDropInteraction()
         emptyState.install(on: tableView)
+        closeDetailOfDeletedRecords()
+    }
+
+    /// Every delete path (edit mode, context menu, swipe) goes through the store,
+    /// so watching it closes the detail column when its record is deleted.
+    private func closeDetailOfDeletedRecords() {
+        ScanStore.shared.dataDidChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.closeRecordDetail { ScanStore.shared.record(for: $0) != nil }
+            }
+            .store(in: &cancellables)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -162,13 +176,12 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     private func updateEditingNavBar() {
         if tableView.isEditing {
             let hasSelection = (tableView.indexPathsForSelectedRows?.count ?? 0) > 0
-            navigationItem.setLeftBarButton(hasSelection ? deleteBarButton : nil, animated: true)
+            // Delete stays with the trailing items: the leading side is for Back / Close.
             navigationItem.setRightBarButtonItems(
-                hasSelection ? [doneBarButton, exportSelectedBarButton] : [doneBarButton],
+                hasSelection ? [doneBarButton, exportSelectedBarButton, deleteBarButton] : [doneBarButton],
                 animated: true
             )
         } else {
-            navigationItem.setLeftBarButton(nil, animated: true)
             navigationItem.setRightBarButtonItems([scanBarButton], animated: true)
         }
     }
@@ -195,7 +208,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
             self?.setEditing(false, animated: true)
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
-        alert.popoverPresentationController?.sourceView = view
+        alert.popoverPresentationController?.barButtonItem = deleteBarButton
         present(alert, animated: true)
     }
 
@@ -222,10 +235,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         guard let recordID = diffableItemIdentifier(for: indexPath),
               let record = ScanStore.shared.record(for: recordID)
         else { return }
-        navigationController?.pushViewController(
-            CardDetailViewController(record: record),
-            animated: true
-        )
+        showRecordDetail(CardDetailViewController(record: record))
     }
 
     override func tableView(_ tableView: UITableView, didDeselectRowAt _: IndexPath) {
@@ -262,7 +272,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
                     title: String(localized: "Export"),
                     image: UIImage(systemName: "square.and.arrow.up")
                 ) { _ in
-                    self?.exportRecord(record)
+                    self?.exportRecord(record, sourceView: self?.tableView.cellForRow(at: indexPath))
                 },
                 UIAction(
                     title: String(localized: "Delete"),
@@ -479,11 +489,8 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         if let existing = ScanStore.shared.record(withUID: record.cardInfo.uid) {
             promptDuplicateScan(record, existingID: existing.id)
         } else {
-            ScanStore.shared.add(record)
-            navigationController?.pushViewController(
-                CardDetailViewController(record: record),
-                animated: true
-            )
+            let stored = ScanStore.shared.add(record)
+            showRecordDetail(CardDetailViewController(record: stored))
         }
     }
 
@@ -495,17 +502,13 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
         )
         alert.addAction(UIAlertAction(title: String(localized: "Overwrite"), style: .destructive) { [weak self] _ in
             ScanStore.shared.replace(existingID, with: record)
-            self?.navigationController?.pushViewController(
-                CardDetailViewController(record: record),
-                animated: true
-            )
+            // The stored copy keeps the existing ID; the detail must show that one.
+            let stored = ScanStore.shared.record(for: existingID) ?? record
+            self?.showRecordDetail(CardDetailViewController(record: stored))
         })
         alert.addAction(UIAlertAction(title: String(localized: "Save as New"), style: .default) { [weak self] _ in
-            ScanStore.shared.add(record)
-            self?.navigationController?.pushViewController(
-                CardDetailViewController(record: record),
-                animated: true
-            )
+            let stored = ScanStore.shared.add(record)
+            self?.showRecordDetail(CardDetailViewController(record: stored))
         })
         alert.addAction(UIAlertAction(title: String(localized: "Cancel"), style: .cancel))
         presentQueued(alert)
@@ -552,10 +555,10 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
 
     // MARK: - Export
 
-    private func exportRecord(_ record: ScanRecord) {
+    private func exportRecord(_ record: ScanRecord, sourceView: UIView?) {
         do {
             let fileURL = try CardDocument.exportToFile(record)
-            presentExportSheet(for: [fileURL])
+            presentExportSheet(for: [fileURL], sourceView: sourceView)
         } catch {
             presentErrorAlert(for: error)
         }

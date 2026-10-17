@@ -222,13 +222,12 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
     private func updateEditingNavBar() {
         if tableView.isEditing {
             let hasSelection = (tableView.indexPathsForSelectedRows?.count ?? 0) > 0
-            navigationItem.setLeftBarButton(hasSelection ? deleteBarButton : nil, animated: true)
+            // Delete stays with the trailing items: the leading side is for Back / Close.
             navigationItem.setRightBarButtonItems(
-                hasSelection ? [doneBarButton, exportSelectedBarButton] : [doneBarButton],
+                hasSelection ? [doneBarButton, exportSelectedBarButton, deleteBarButton] : [doneBarButton],
                 animated: true
             )
         } else {
-            navigationItem.setLeftBarButton(nil, animated: true)
             navigationItem.setRightBarButtonItems([scanBarButton], animated: true)
         }
     }
@@ -258,15 +257,19 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
 
     /// Asks before deleting passport records: they hold personal data that
     /// cannot be recovered without reading the chip again.
+    ///
+    /// An action sheet by default; use `.alert` when there is nothing to anchor
+    /// the sheet to, so it never floats over the middle of a wide window.
     static func makeDeleteConfirmation(
         count: Int,
+        preferredStyle: UIAlertController.Style = .actionSheet,
         onDelete: @escaping () -> Void,
         onCancel: @escaping () -> Void = {}
     ) -> UIAlertController {
         let alert = UIAlertController(
             title: String(localized: "Delete \(count) Records?"),
             message: String(localized: "This action cannot be undone."),
-            preferredStyle: .actionSheet
+            preferredStyle: preferredStyle
         )
         alert.addAction(UIAlertAction(title: String(localized: "Delete"), style: .destructive) { _ in
             onDelete()
@@ -283,19 +286,23 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
         sourceView: UIView?,
         completion: @escaping (Bool) -> Void = { _ in }
     ) {
-        let alert = Self.makeDeleteConfirmation(count: 1, onDelete: { [weak self] in
-            PassportStore.shared.remove(id: id)
-            self?.reloadSnapshot()
-            completion(true)
-        }, onCancel: {
-            completion(false)
-        })
-        if let popover = alert.popoverPresentationController {
-            popover.sourceView = sourceView ?? view
-            if sourceView == nil {
-                popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
+        // Without a row to point at, ask with an alert instead of a sheet anchored
+        // to the middle of the view (the fold of a wide window).
+        let alert = Self.makeDeleteConfirmation(
+            count: 1,
+            preferredStyle: sourceView == nil ? .alert : .actionSheet,
+            onDelete: { [weak self] in
+                PassportStore.shared.remove(id: id)
+                self?.reloadSnapshot()
+                completion(true)
+            },
+            onCancel: {
+                completion(false)
             }
+        )
+        if let sourceView, let popover = alert.popoverPresentationController {
+            popover.sourceView = sourceView
+            popover.sourceRect = sourceView.bounds
         }
         presentQueued(alert)
     }
@@ -340,6 +347,8 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
         appliedSearchText = query
         dataSource.apply(snapshot, animatingDifferences: animatingDifferences)
         emptyState.isHidden = !PassportStore.shared.records.isEmpty
+        // Every change to the store reloads the list, deletes included.
+        closeRecordDetail { PassportStore.shared.record(for: $0) != nil }
     }
 
     // MARK: - Navigation
@@ -348,20 +357,21 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
         let inputVC = PassportMRZInputViewController()
         inputVC.onPassportRead = { [weak self, weak inputVC] record in
             guard let self else { return }
-            PassportStore.shared.add(record)
+            let stored = PassportStore.shared.add(record)
             reloadSnapshot()
             // Only replace the MRZ screen when it is still on top; the user may have
-            // navigated elsewhere while the chip was being read.
-            guard let navigationController,
-                  let inputVC,
+            // navigated elsewhere while the chip was being read. It is on the list's
+            // stack, or alone in the detail column of a split view.
+            guard let inputVC,
+                  let navigationController = inputVC.navigationController,
                   navigationController.topViewController === inputVC
             else { return }
             var stack = navigationController.viewControllers
             stack.removeLast()
-            stack.append(PassportDetailViewController(record: record))
+            stack.append(PassportDetailViewController(record: stored))
             navigationController.setViewControllers(stack, animated: true)
         }
-        navigationController?.pushViewController(inputVC, animated: true)
+        showRecordDetail(inputVC)
     }
 
     // MARK: - Import
@@ -375,10 +385,10 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
 
     // MARK: - Export
 
-    private func exportRecord(_ record: PassportRecord) {
+    private func exportRecord(_ record: PassportRecord, sourceView: UIView?) {
         do {
             let fileURL = try PassportDocument.exportToFile(record)
-            presentExportSheet(for: [fileURL])
+            presentExportSheet(for: [fileURL], sourceView: sourceView)
         } catch {
             presentErrorAlert(for: error)
         }
@@ -401,10 +411,7 @@ extension PassportViewController: UITableViewDelegate {
         guard let recordID = dataSource.itemIdentifier(for: indexPath),
               let record = PassportStore.shared.record(for: recordID)
         else { return }
-        navigationController?.pushViewController(
-            PassportDetailViewController(record: record),
-            animated: true
-        )
+        showRecordDetail(PassportDetailViewController(record: record))
     }
 
     func tableView(_ tableView: UITableView, didDeselectRowAt _: IndexPath) {
@@ -453,7 +460,7 @@ extension PassportViewController: UITableViewDelegate {
                     title: String(localized: "Export"),
                     image: UIImage(systemName: "square.and.arrow.up")
                 ) { _ in
-                    self?.exportRecord(record)
+                    self?.exportRecord(record, sourceView: self?.tableView.cellForRow(at: indexPath))
                 },
                 UIAction(
                     title: String(localized: "Delete"),
