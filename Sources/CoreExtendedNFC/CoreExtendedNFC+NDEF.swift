@@ -152,13 +152,17 @@ public extension CoreExtendedNFC {
     /// that do not answer it). The data area is CC byte 2 × 8 bytes from page 4
     /// (NFC Forum T2T 1.0 §6.1), so the pages up to its end are read, stopping at
     /// the first page the tag rejects. Only reads are sent; writes keep the memory
-    /// map. Returns `nil` when the dump stopped early (a protected area), the CC
-    /// declares nothing past it, or no message is found there.
+    /// map. Returns `nil` when the dump stopped early (a protected area), already
+    /// holds a complete NDEF TLV (an erased tag's `03 00`), the CC declares nothing
+    /// past it, or no message is found there.
     static func readType2NDEFPastMemoryMap(
         dump: MemoryDump,
         transport: any NFCTagTransport
     ) async throws -> NDEFMessage? {
+        // A complete NDEF TLV inside the map (even an empty one, 03 00) leaves nothing
+        // to look for further on; only a scan that ran out of bytes reads on.
         guard dump.capabilities == [.readable],
+              NDEFTagMapping.extractType2Message(from: dump.pages) == nil,
               let declaredPages = NDEFTagMapping.type2DeclaredPageCount(from: dump.pages),
               let lastPage = dump.pages.last?.number,
               Int(lastPage) + 1 == dump.pages.count,

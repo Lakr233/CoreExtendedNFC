@@ -572,6 +572,24 @@ struct NDEFTests {
         #expect(transport.readStartPages.last == 24)
     }
 
+    // An initialised tag holds an empty NDEF TLV (03 00, NFC Forum T2T 1.0 §6.4.1):
+    // the message is complete within the map, so no page past it is read. A NAK there
+    // would send the tag to IDLE and break a write later in the same session.
+    @Test
+    func `Erased Type 2 tag is not read past the guessed map`() async throws {
+        let transport = MemoryType2Transport(
+            pageCount: 0xE2,
+            cc: Data([0xE1, 0x10, 0x6D, 0x00]),
+            tlvArea: Data([0x03, 0x00, 0xFE])
+        )
+        let info = CardInfo(type: .mifareUltralight, uid: transport.identifier)
+
+        await #expect(throws: NFCError.ndefMessageNotFound) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        }
+        #expect(transport.readStartPages.allSatisfy { $0 < 16 })
+    }
+
     // MARK: - Erased tags read as ndefMessageNotFound on every family
 
     @Test
