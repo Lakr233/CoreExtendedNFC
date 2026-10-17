@@ -3,9 +3,10 @@ import Foundation
 /// FeliCa frame assembly utilities.
 /// FeliCa frames: [Length, Command, IDm(8), Payload...]
 public enum FeliCaFrame {
-    /// FeliCa command codes.
-    public static let POLLING: UInt8 = 0x04
+    /// FeliCa command codes (JIS X 6319-4).
+    public static let POLLING: UInt8 = 0x00
     public static let REQUEST_SERVICE: UInt8 = 0x02
+    public static let REQUEST_RESPONSE: UInt8 = 0x04
     public static let CHECK: UInt8 = 0x06 // Read Without Encryption
     public static let UPDATE: UInt8 = 0x08 // Write Without Encryption
 
