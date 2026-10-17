@@ -53,6 +53,7 @@ This library does.
 | MIFARE Ultralight / EV1 / C      |   yes    | yes  |  yes  |   yes   |
 | NTAG 210 / 212 / 213 / 215 / 216 |   yes    | yes  |  yes  |   yes   |
 | MIFARE DESFire EV1–EV3           |   yes    | yes  |  no   |   yes   |
+| NTAG 424 DNA                     |   yes¹   | yes  | plain |   no    |
 | FeliCa (Type 3 NDEF)             |   yes    | yes  |  yes  | partial |
 | ISO 15693 (ICODE, ST25)          |   yes    | yes  |  yes  | partial |
 | Type 4 NDEF (ISO 7816)           |   yes    | yes  |  yes  | partial |
@@ -60,6 +61,8 @@ This library does.
 | My Number card (Japan)           |   yes    | yes  |  no   |  token  |
 | MIFARE Classic 1K/4K             |   yes    |  no  |  no   |   no    |
 
+> ¹ NTAG 424 DNA is identified as DESFire / Type 4; `NTAG424Commands` reads its file settings (including SDM) and writes CommMode.Plain files with WriteData `8Dh`.
+>
 > DESFire is read-only: there is no write API, and the dump reads only free-access files, keyed by AID + file ID (Transaction MAC files are listed but not read). FeliCa dumps cover the Type 3 NDEF area plus up to 4 blocks per plain service; Type 4 dumps cover the CC and NDEF files. ISO 15693 blocks above 255 use the extended read command; tags that reject it are dumped up to block 255 with a `Blocks Read` fact. Ultralight / NTAG dumps stop at the first read-protected page (AUTH0) and keep what was readable. MIFARE Classic is ID-only because iOS does not support Crypto1 authentication.
 
 Real hardware coverage is tracked in [Tested Cards](docs/research/tested-cards.html).
@@ -221,6 +224,7 @@ Sources/CoreExtendedNFC/
 ├── Cards/
 │   ├── MiFareUltralight/   READ, WRITE, FAST_READ, PWD_AUTH, Ultralight C auth, memory maps
 │   ├── NTAG/               READ_SIG, READ_CNT, variant detection
+│   ├── NTAG424/            NTAG 424 DNA file settings (SDM), plain WriteData
 │   ├── DESFire/            Native commands, AF chaining, app/file ops, auth, dump
 │   ├── FeliCa/             Service probing, Type 3 NDEF, frame assembly
 │   ├── ISO15693/           System info, block R/W, lock status, security
