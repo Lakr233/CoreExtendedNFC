@@ -144,4 +144,48 @@ struct NDEFMessageTests {
         #expect(try message.validatedData() == message.data)
         #expect(throws: NFCError.self) { _ = try NDEFMessage(records: []).validatedData() }
     }
+
+    // MARK: MB / ME position
+
+    // NFC Forum NDEF 1.0 §3.2.1: MB is set on the first record of a message and on
+    // no other record. A message whose first record lacks MB is malformed.
+    @Test
+    func `First record without MB is rejected`() {
+        let data = Data([0x11, 0x01, 0x01, 0x55, 0x00, 0xD1, 0x01, 0x01, 0x55, 0x00])
+        #expect(throws: NFCError.self) { _ = try NDEFMessage(data: data) }
+    }
+
+    // NFC Forum NDEF 1.0 §3.2.1: MB must not be set on a later record.
+    @Test
+    func `MB on a record after the first is rejected`() {
+        let data = Data([0x91, 0x01, 0x01, 0x55, 0x00, 0xD1, 0x01, 0x01, 0x55, 0x00])
+        #expect(throws: NFCError.self) { _ = try NDEFMessage(data: data) }
+    }
+
+    // NFC Forum NDEF 1.0 §3.2.2: ME is set on the last record only, so a record after
+    // the ME record and a message whose last record lacks ME are both malformed.
+    @Test
+    func `ME on a non-last record or missing ME is rejected`() {
+        let earlyEnd = Data([0xD1, 0x01, 0x01, 0x55, 0x00, 0x51, 0x01, 0x01, 0x55, 0x00])
+        #expect(throws: NFCError.self) { _ = try NDEFMessage(data: earlyEnd) }
+        let missingEnd = Data([0x91, 0x01, 0x01, 0x55, 0x00, 0x11, 0x01, 0x01, 0x55, 0x00])
+        #expect(throws: NFCError.self) { _ = try NDEFMessage(data: missingEnd) }
+    }
+
+    // NFC Forum NDEF 1.0 §3.2.1 / §3.2.2 / §2.3.3: MB on the first record, ME on the
+    // last, plain records in between and chunk sequences are all valid.
+    @Test
+    func `Messages with MB first and ME last still parse`() throws {
+        let three = Data([
+            0x91, 0x01, 0x01, 0x55, 0x00,
+            0x11, 0x01, 0x01, 0x55, 0x00,
+            0x51, 0x01, 0x01, 0x55, 0x00,
+        ])
+        #expect(try NDEFMessage(data: three).records.count == 3)
+
+        let chunked = Data([0xB1, 0x01, 0x01, 0x55, 0x00, 0x56, 0x00, 0x01, 0x41])
+        let records = try NDEFMessage(data: chunked).records
+        #expect(records.count == 1)
+        #expect(records.first?.payload == Data([0x00, 0x41]))
+    }
 }

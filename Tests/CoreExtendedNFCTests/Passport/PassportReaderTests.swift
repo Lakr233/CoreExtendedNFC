@@ -46,6 +46,18 @@ struct PassportReaderTests {
         #expect(transport.sentAPDUs.map(\.ins).contains(0x86))
         #expect(transport.sentAPDUs.map(\.ins).contains(0x84))
         #expect(transport.sentAPDUs.map(\.ins).contains(0x82))
+
+        // ICAO 9303-11 §4.2: PACE (step 3) runs before the eMRTD Application is selected,
+        // and "The eMRTD Application MUST be selected before Basic Access Control is
+        // performed" (step 4). After a failed PACE the application is selected in plain,
+        // after the last PACE command and before GET CHALLENGE.
+        let apdus = transport.sentAPDUs
+        let selectApplication = try #require(apdus.lastIndex(of: .selectPassportApplication()))
+        let firstPACE = try #require(apdus.firstIndex { $0.ins == 0x22 })
+        let lastPACE = try #require(apdus.lastIndex { $0.ins == 0x86 })
+        let getChallenge = try #require(apdus.firstIndex { $0.ins == 0x84 })
+        #expect(!apdus[..<firstPACE].contains { $0.ins == 0xA4 && $0.p1 == 0x04 }, "no SELECT by DF name before PACE")
+        #expect(lastPACE < selectApplication && selectApplication < getChallenge)
     }
 
     #if canImport(OpenSSL)
@@ -123,6 +135,58 @@ struct PassportReaderTests {
                 #expect(!instructions.contains(0x84), "\(scenario.name): BAC GET CHALLENGE should not be used")
                 #expect(!instructions.contains(0x82), "\(scenario.name): BAC MUTUAL AUTHENTICATE should not be used")
             }
+        }
+
+        /// ICAO Doc 9303-11 (8th ed.) §4.2 Chip Access Procedure: read EF.CardAccess
+        /// (step 1), then PACE (step 3); BAC (step 4) is skipped after PACE, and only BAC
+        /// requires the eMRTD Application to be selected first. "As a result of the Chip
+        /// Access Procedure, the Current DF can be either the Master File (if PACE was
+        /// used) or the eMRTD Application (if BAC was used)." Appendix K step 1: "Perform
+        /// the Chip Access Procedure (see Section 4.2) and select the eMRTD Application".
+        /// PACE "SHALL restrict access rights to require Secure Messaging" (§4.2 step 3),
+        /// so the SELECT that follows PACE is protected (§9.8: CLA b3-b4 set, DO'87, DO'8E).
+        @Test
+        func `Passport reader runs PACE at the Master File, then selects the eMRTD application under secure messaging`() async throws {
+            let mrzKey = "L898902C<369080619406236"
+            let scenario = PACEReaderScenario.supportedNISTCurves[0]
+            let transport = try PassportPACESuccessTransport(
+                mrzKey: mrzKey,
+                scenario: scenario,
+                cardAccessData: makeCardAccessData(
+                    securityProtocol: scenario.securityProtocol,
+                    parameterID: scenario.parameterID
+                ),
+                files: [DataGroupId.com.fileID: makeCOMData()]
+            )
+
+            let model = try await PassportReader(transport: transport).readPassport(
+                mrzKey: mrzKey,
+                dataGroups: [.com],
+                performActiveAuth: false
+            )
+
+            #expect(model.securityReport.pace.status == .succeeded)
+            #expect(model.rawDataGroups[.com] == makeCOMData())
+
+            let apdus = transport.sentAPDUs
+            let firstPACE = try #require(apdus.firstIndex { $0.ins == 0x22 })
+            let lastPACE = try #require(apdus.lastIndex { $0.ins == 0x86 })
+            // Before PACE the only selections are the MF and EF.CardAccess.
+            #expect(Array(apdus[..<firstPACE].filter { $0.ins == 0xA4 }) == [
+                .selectMasterFile(), .selectEF(id: CardAccessParser.fileID),
+            ])
+            #expect(!apdus.contains(.selectPassportApplication()), "the application is never selected in plain")
+
+            // The first command after PACE selects the eMRTD application under SM.
+            let selectApplication = try #require(apdus.indices.first { $0 > lastPACE })
+            let protectedSelect = apdus[selectApplication]
+            #expect(protectedSelect.cla == 0x0C)
+            #expect(protectedSelect.ins == 0xA4 && protectedSelect.p1 == 0x04 && protectedSelect.p2 == 0x0C)
+            let objects = try ASN1Parser.parseTLV(try #require(protectedSelect.data))
+            #expect(objects.map(\.tag) == [0x87, 0x8E], "P2=0C has no Le, so there is no DO'97")
+            #expect(transport.unprotectedCommands.first == .selectPassportApplication())
+            // The SELECT reply carried only DO'99 and DO'8E and was accepted.
+            #expect(transport.unprotectedCommands.dropFirst().first == .selectEF(id: DataGroupId.com.fileID))
         }
     #endif
 
@@ -261,6 +325,8 @@ struct PassportReaderTests {
 
         var sentAPDUs: [CommandAPDU] = []
         var protectedAPDUs: [CommandAPDU] = []
+        /// Protected commands as the chip decrypted them, in order.
+        var unprotectedCommands: [CommandAPDU] = []
         var didCompletePACE = false
         var didUseSecureMessaging = false
         var didReadProtectedFile = false
@@ -448,9 +514,13 @@ struct PassportReaderTests {
             didUseSecureMessaging = true
             incrementSecureMessagingSSC()
             let plainAPDU = try unprotectSecureMessagingCommand(apdu, sessionKeys: sessionKeys)
+            unprotectedCommands.append(plainAPDU)
 
             let plainResponse: ResponseAPDU
             switch plainAPDU.ins {
+            case 0xA4 where plainAPDU.p1 == 0x04:
+                selectedFile = nil
+                plainResponse = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
             case 0xA4:
                 selectedFile = plainAPDU.data
                 plainResponse = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
@@ -665,13 +735,12 @@ private final class PassportNegotiationTransport: NFCTagTransport, @unchecked Se
             sw2: 0x00
         )
 
+        // SELECT commands are answered in `sendAPDU`, so this script does not depend on
+        // where the reader selects the eMRTD application.
         scriptedResponses = [
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: Data(cardAccessData.prefix(4)), sw1: 0x90, sw2: 0x00),
             ResponseAPDU(data: cardAccessData, sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00), // MSE:Set AT
             paceResponse,
         ]
     }
@@ -684,6 +753,8 @@ private final class PassportNegotiationTransport: NFCTagTransport, @unchecked Se
         sentAPDUs.append(apdu)
 
         switch apdu.ins {
+        case 0xA4:
+            return ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
         case 0x84:
             return ResponseAPDU(data: rndICC, sw1: 0x90, sw2: 0x00)
         case 0x82:

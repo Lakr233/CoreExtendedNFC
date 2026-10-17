@@ -251,14 +251,15 @@ public struct NDEFRecord: Sendable, Equatable {
     /// into one record carrying the initial chunk's TNF, type and ID.
     ///
     /// The parse is strict: records that break the per-TNF field rules of §3.2.6
-    /// (see ``NDEFMessage/validatedData()``; the reserved TNF 07h is read as Unknown) and any byte after
-    /// the record carrying ME are rejected with ``NFCError/invalidResponse(_:)``, as
-    /// Android's `NdefMessage` parser does.
+    /// (see ``NDEFMessage/validatedData()``; the reserved TNF 07h is read as Unknown),
+    /// a first record without MB, MB on any later record (§3.2.1), a last record
+    /// without ME and any byte after the record carrying ME (§3.2.2) are rejected
+    /// with ``NFCError/invalidResponse(_:)``, as Android's `NdefMessage` parser does.
     public static func parseMessage(_ data: Data) throws -> [NDEFRecord] {
         let data = Data(data) // Rebase so integer offsets index from zero.
         var records: [NDEFRecord] = []
         var offset = 0
-        var sawMessageBegin = false
+        var recordCount = 0
         var sawMessageEnd = false
         var pendingChunk: NDEFRecord?
 
@@ -272,6 +273,13 @@ public struct NDEFRecord: Sendable, Equatable {
             let shortRecord = (header & 0x10) != 0
             let idLengthPresent = (header & 0x08) != 0
             let tnfValue = header & 0x07
+
+            // MB is set on the first record of the message and on no other (NDEF 1.0
+            // §3.2.1), including the chunks of a chunked payload.
+            guard messageBegin == (recordCount == 0) else {
+                throw NFCError.invalidResponse(data)
+            }
+            recordCount += 1
 
             guard let tnf = NDEFTypeNameFormat(rawValue: tnfValue) else {
                 throw NFCError.invalidResponse(Data([tnfValue]))
@@ -329,7 +337,6 @@ public struct NDEFRecord: Sendable, Equatable {
             let payload = Data(data[offset ..< offset + payloadLength])
             offset += payloadLength
 
-            sawMessageBegin = sawMessageBegin || messageBegin
             sawMessageEnd = sawMessageEnd || messageEnd
 
             // A non-terminating chunk must not end the message (§2.3.3).
@@ -380,7 +387,7 @@ public struct NDEFRecord: Sendable, Equatable {
         // ME marks the last record of the message (NDEF 1.0 §3.2.2), so nothing may follow
         // it (Android CTS NdefTest.java:94-100 rejects such messages as too long).
         guard offset == data.count,
-              pendingChunk == nil, sawMessageBegin, sawMessageEnd, !records.isEmpty
+              pendingChunk == nil, sawMessageEnd, !records.isEmpty
         else {
             throw NFCError.invalidResponse(data)
         }

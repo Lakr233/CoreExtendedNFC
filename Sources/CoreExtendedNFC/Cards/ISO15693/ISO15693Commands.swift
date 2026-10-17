@@ -61,7 +61,7 @@ open class ISO15693Reader: @unchecked Sendable {
     /// - Throws: ``NFCError/unsupportedOperation(_:)`` when the tag does not
     ///   report its memory size, and transport errors from the mandatory reads.
     open func readAllBlocks(info: CardInfo? = nil) async throws -> MemoryDump {
-        let systemInfo = try await transport.getSystemInfo()
+        let systemInfo = try await getSystemInfo()
         guard systemInfo.blockCount > 0, systemInfo.blockSize > 0 else {
             throw NFCError.unsupportedOperation("The ISO 15693 tag did not report its memory size")
         }
@@ -130,6 +130,32 @@ open class ISO15693Reader: @unchecked Sendable {
             ].compactMap(\.self),
             capabilities: rejectedExtendedBlock == nil ? [.readable] : [.partiallyReadable]
         )
+    }
+
+    /// System information with the full memory size.
+    ///
+    /// GET SYSTEM INFORMATION (2Bh) reports the block count in one byte, so it cannot
+    /// describe more than 256 blocks. When it reports 256 blocks or no memory size,
+    /// EXTENDED GET SYSTEM INFORMATION (ISO/IEC 15693-3:2019, 3Bh) is asked for the
+    /// memory size and its 2-byte block count is used when it is consistent (see
+    /// ``ISO15693ExtendedSystemInfo/merge(standard:extended:)``). A tag that rejects
+    /// 3Bh, stays silent or answers with a malformed response keeps the 2Bh result.
+    ///
+    /// - Throws: Errors from GET SYSTEM INFORMATION, and session loss or
+    ///   cancellation during the extended query.
+    open func getSystemInfo() async throws -> ISO15693SystemInfo {
+        let standard = try await transport.getSystemInfo()
+        guard ISO15693ExtendedSystemInfo.needsExtendedQuery(standard) else { return standard }
+        let payload: Data
+        do {
+            payload = try await transport.extendedGetSystemInfo(
+                infoFlags: ISO15693ExtendedSystemInfo.memorySizeRequest
+            )
+        } catch where !isSessionTerminating(error) || isMissingTagResponse(error) {
+            return standard
+        }
+        guard let extended = try? ISO15693ExtendedSystemInfo.parse(payload) else { return standard }
+        return ISO15693ExtendedSystemInfo.merge(standard: standard, extended: extended)
     }
 
     /// Read one block, using EXTENDED READ SINGLE BLOCK for blocks from 256 on.

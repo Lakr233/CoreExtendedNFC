@@ -89,6 +89,34 @@ open class UltralightDump: @unchecked Sendable {
         )
     }
 
+    /// Read pages `start ..< end` with READ (30h), stopping early at the first page
+    /// the tag does not return.
+    ///
+    /// A NAK (surfaced as a short response) or a missing answer ends the read and
+    /// the pages read so far are returned: past the end of memory or a protected
+    /// area a Type 2 tag NAKs or stays silent. Session loss and cancellation are
+    /// rethrown. `end` is capped at 256, the pages READ can address.
+    open func readPagesUntilRejected(from start: Int, to end: Int) async throws -> [MemoryDump.Page] {
+        let end = min(end, 256)
+        var pages: [MemoryDump.Page] = []
+        var page = max(start, 0)
+        while page < end {
+            try Task.checkCancellation()
+            let data: Data
+            do {
+                data = try await commands.readPages(startPage: UInt8(page))
+            } catch where !isSessionTerminating(error) || isMissingTagResponse(error) {
+                break
+            }
+            for index in 0 ..< 4 where page + index < end {
+                let offset = data.startIndex + index * 4
+                pages.append(MemoryDump.Page(number: UInt8(page + index), data: Data(data[offset ..< offset + 4])))
+            }
+            page += 4
+        }
+        return pages
+    }
+
     /// Restore user pages from a MemoryDump.
     ///
     /// Only pages inside the user data area of `map` are written; pages 0-3, the

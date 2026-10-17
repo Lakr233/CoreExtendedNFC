@@ -40,8 +40,8 @@
 <tr><td><code>ndefCapacityExceeded(required:capacity:)</code></td><td>The encoded message does not fit the tag's NDEF area.</td></tr>
 <tr><td><code>desfireError(DESFireStatus)</code></td><td>A DESFire native status other than success.</td></tr>
 <tr><td><code>felicaBlockReadFailed(statusFlag:)</code> / <code>felicaBlockWriteFailed(statusFlag:)</code></td><td>A FeliCa block command returned a non-zero status flag.</td></tr>
-<tr><td><code>bacFailed(String)</code></td><td>BAC or the eMRTD application SELECT failed.</td></tr>
-<tr><td><code>secureMessagingError(String)</code></td><td>Secure Messaging or PACE failed.</td></tr>
+<tr><td><code>bacFailed(String)</code></td><td>BAC or the plain eMRTD application SELECT before BAC failed.</td></tr>
+<tr><td><code>secureMessagingError(String)</code></td><td>Secure Messaging or PACE failed, or the chip refused the protected eMRTD application SELECT after PACE with a protected status (a plain status word surfaces as <code>unexpectedStatusWord</code>).</td></tr>
 <tr><td><code>dataGroupNotAvailable(String)</code> / <code>dataGroupParseFailed(String)</code></td><td>An eMRTD file is absent or protected, or could not be parsed.</td></tr>
 <tr><td><code>cryptoError(String)</code></td><td>A cryptographic operation failed.</td></tr>
 <tr><td><code>notOperableOnIOS(CardType)</code></td><td>iOS cannot operate this card type, for example MIFARE Classic.</td></tr>

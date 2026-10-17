@@ -108,8 +108,18 @@ public protocol ISO15693TagTransporting: NFCTagTransport {
     /// Read multiple contiguous blocks.
     func readBlocks(range: NSRange) async throws -> [Data]
 
-    /// Query system information for the current tag.
+    /// Query system information for the current tag with GET SYSTEM INFORMATION (2Bh).
+    ///
+    /// 2Bh reports at most 256 blocks. Use ``ISO15693Reader/getSystemInfo()`` to also
+    /// ask EXTENDED GET SYSTEM INFORMATION (3Bh) when the tag may have more.
     func getSystemInfo() async throws -> ISO15693SystemInfo
+
+    /// EXTENDED GET SYSTEM INFORMATION (ISO/IEC 15693-3:2019 command 3Bh) with the
+    /// given Info flags parameter. Returns the response after the response Flags
+    /// byte (Info flags, UID, then the requested fields), for
+    /// ``ISO15693ExtendedSystemInfo/parse(_:)``. The command is optional; the default
+    /// implementation throws ``NFCError/unsupportedOperation(_:)``.
+    func extendedGetSystemInfo(infoFlags: UInt8) async throws -> Data
 
     /// Query lock status for a range of blocks.
     func getBlockSecurityStatus(range: NSRange) async throws -> [Bool]
@@ -154,6 +164,10 @@ public extension ISO15693TagTransporting {
 
     func extendedWriteBlock(_: UInt16, data _: Data) async throws {
         throw NFCError.unsupportedOperation("ISO 15693 extended block writes are not supported by this transport")
+    }
+
+    func extendedGetSystemInfo(infoFlags _: UInt8) async throws -> Data {
+        throw NFCError.unsupportedOperation("ISO 15693 Extended Get System Information is not supported by this transport")
     }
 
     func writeAFI(_: UInt8) async throws {

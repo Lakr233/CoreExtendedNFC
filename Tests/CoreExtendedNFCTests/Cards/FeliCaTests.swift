@@ -4,7 +4,8 @@
 // - JIS X 6319-4: FeliCa interface specification
 // - NFC Forum Type 3 Tag Operation Specification v1.0
 //   https://nfc-forum.org/build/specifications
-// - Sony FeliCa Lite-S User's Manual: command codes POLLING(0x04), CHECK(0x06), UPDATE(0x08)
+// - JIS X 6319-4 / Sony FeliCa command reference: Polling 00h, Request Service 02h,
+//   Request Response 04h, Read Without Encryption 06h, Write Without Encryption 08h
 // - NFC Forum Type 3: Attribute Information Block (16 bytes with 2-byte checksum)
 // - libnfc nfc-read-forum-tag3.c:
 //   https://github.com/nfc-tools/libnfc/blob/master/utils/nfc-read-forum-tag3.c
@@ -110,7 +111,7 @@ struct FeliCaTests {
 
     @Test
     func `Command codes`() {
-        #expect(FeliCaFrame.POLLING == 0x04)
+        #expect(FeliCaFrame.POLLING == 0x00)
         #expect(FeliCaFrame.CHECK == 0x06)
         #expect(FeliCaFrame.UPDATE == 0x08)
     }

@@ -528,6 +528,68 @@ struct NDEFTests {
         #expect(NDEFTagMapping.extractType2Message(from: pages) == message.data)
     }
 
+    // MARK: - Type 2 NDEF read bounded by the CC, not the guessed product size
+
+    // NFC Forum T2T 1.0 §6.1 / §6.4.1: the data area holds CC byte 2 × 8 bytes from
+    // page 4. An NTAG I2C 1k (GET_VERSION 00 04 04 05 02 00 13 03, identified only as
+    // a generic Ultralight with a 16-page map) has CC E1 10 6D 00, a 872-byte data
+    // area, so an 80-byte NDEF message runs past page 15 and must still be read.
+    @Test
+    func `Type 2 NDEF read follows the CC data area size past the guessed map`() async throws {
+        let uri = "https://example.com/" + String(repeating: "a", count: 63)
+        let message = NDEFMessage.uri(uri)
+        #expect(message.data.count == 80)
+        let transport = MemoryType2Transport(
+            pageCount: 0xE2,
+            cc: Data([0xE1, 0x10, 0x6D, 0x00]),
+            tlvArea: Data([0x03, UInt8(message.data.count)]) + message.data + Data([0xFE])
+        )
+        let info = CardInfo(type: .mifareUltralight, uid: transport.identifier)
+        #expect(UltralightMemoryMap.forType(info.type).totalPages == 16)
+
+        let read = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+
+        #expect(read.records.first?.parsedPayload == .uri(uri))
+        // Only the pages the CC declares are read: 4 + 872 / 4 = 222 pages.
+        #expect(transport.readStartPages.allSatisfy { $0 < 222 })
+    }
+
+    // NFC Forum T2T 1.0 §6.4.1: the CC can overstate the readable memory; a NAK while
+    // reading the extra pages ends the read, and only the pages read are scanned.
+    @Test
+    func `Type 2 NDEF read stops at a NAK past the guessed map`() async throws {
+        let message = NDEFMessage.uri("https://example.com/" + String(repeating: "b", count: 40))
+        let transport = MemoryType2Transport(
+            pageCount: 24,
+            cc: Data([0xE1, 0x10, 0x6D, 0x00]),
+            tlvArea: Data([0x03, UInt8(message.data.count)]) + message.data + Data([0xFE])
+        )
+        let info = CardInfo(type: .mifareUltralight, uid: transport.identifier)
+
+        let read = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+
+        #expect(read == message)
+        #expect(transport.readStartPages.last == 24)
+    }
+
+    // An initialised tag holds an empty NDEF TLV (03 00, NFC Forum T2T 1.0 §6.4.1):
+    // the message is complete within the map, so no page past it is read. A NAK there
+    // would send the tag to IDLE and break a write later in the same session.
+    @Test
+    func `Erased Type 2 tag is not read past the guessed map`() async throws {
+        let transport = MemoryType2Transport(
+            pageCount: 0xE2,
+            cc: Data([0xE1, 0x10, 0x6D, 0x00]),
+            tlvArea: Data([0x03, 0x00, 0xFE])
+        )
+        let info = CardInfo(type: .mifareUltralight, uid: transport.identifier)
+
+        await #expect(throws: NFCError.ndefMessageNotFound) {
+            _ = try await CoreExtendedNFC.readNDEF(info: info, transport: transport)
+        }
+        #expect(transport.readStartPages.allSatisfy { $0 < 16 })
+    }
+
     // MARK: - Erased tags read as ndefMessageNotFound on every family
 
     @Test
@@ -1011,6 +1073,37 @@ struct NDEFTests {
         block[14] = UInt8((checksum >> 8) & 0xFF)
         block[15] = UInt8(checksum & 0xFF)
         return block
+    }
+}
+
+/// Type 2 tag memory answering READ (30h) with 4 pages, and a NAK (one byte) for a
+/// start page at or past `pageCount`.
+private final class MemoryType2Transport: NFCTagTransport, @unchecked Sendable {
+    let identifier = Data([0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66])
+    let pageCount: Int
+    let memory: Data
+    var readStartPages: [Int] = []
+
+    init(pageCount: Int, cc: Data, tlvArea: Data) {
+        self.pageCount = pageCount
+        var memory = Data(count: pageCount * 4)
+        memory.replaceSubrange(0 ..< 7, with: identifier)
+        memory.replaceSubrange(12 ..< 16, with: cc)
+        memory.replaceSubrange(16 ..< 16 + tlvArea.count, with: tlvArea)
+        self.memory = memory
+    }
+
+    func send(_ data: Data) async throws -> Data {
+        guard data.count == 2, data[data.startIndex] == 0x30 else { return Data([0x00]) }
+        let start = Int(data[data.startIndex + 1])
+        readStartPages.append(start)
+        guard start < pageCount else { return Data([0x00]) }
+        // READ rolls over at the end of memory.
+        return Data((0 ..< 16).map { memory[(start * 4 + $0) % memory.count] })
+    }
+
+    func sendAPDU(_: CommandAPDU) async throws -> ResponseAPDU {
+        throw NFCError.unsupportedOperation("unused")
     }
 }
 

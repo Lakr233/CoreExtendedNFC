@@ -57,6 +57,18 @@ public enum SMEncryptionMode: Sendable {
     public var macLength: Int {
         8
     }
+
+    /// Length of the protected response data for `plaintextLength` bytes of response
+    /// data: DO'87 (`01` || cryptogram padded with ISO/IEC 9797-1 method 2) when there is
+    /// data, then DO'99 (4 bytes) and DO'8E (`2 + macLength` bytes) (ICAO 9303-11 §9.8).
+    public func protectedResponseLength(plaintextLength: Int) -> Int {
+        var length = 4 + 2 + macLength
+        if plaintextLength > 0 {
+            let value = 1 + (plaintextLength / blockSize + 1) * blockSize
+            length += 1 + ASN1Parser.encodeLength(value).count + value
+        }
+        return length
+    }
 }
 
 /// ICAO 9303 Secure Messaging transport wrapper.
