@@ -165,4 +165,63 @@ struct DESFireDumpTests {
         // Only GetApplicationIDs went out before the per-application check.
         #expect(mock.sentAPDUs.count == 1)
     }
+
+    @Test
+    func `NTAG 424 DNA reported as DESFire is dumped as a Type 4 tag`() async throws {
+        // NTAG 424 DNA shares DESFire's ATQA 0344h / SAK 20h (NT4H2421Gx §6) but has no
+        // GetApplicationIDs: Table 22 omits 6Ah and Table 23 answers an unknown command
+        // with 91 1C. GetVersion frames are the AN12196 Table 12 transcript; hardware
+        // type 04h is "HW type for NTAG" (NT4H2421Gx Table 54).
+        let mock = MockTransport()
+        let ndefMessage = Data([0xD1, 0x01, 0x05, 0x54, 0x02, 0x65, 0x6E, 0x48, 0x69])
+        let cc = Data([
+            0x00, 0x17, 0x20, 0x01, 0x00, 0x00, 0xFF,
+            0x04, 0x06, 0xE1, 0x04, 0x01, 0x00, 0x00, 0x00,
+            0x05, 0x06, 0xE1, 0x05, 0x00, 0x80, 0x82, 0x83,
+        ])
+        let isoOK = ResponseAPDU(data: Data(), sw1: 0x90, sw2: 0x00)
+        mock.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x91, sw2: 0x1C), // GetApplicationIDs
+            ResponseAPDU(data: Data([0x04, 0x04, 0x08, 0x30, 0x00, 0x11, 0x05]), sw1: 0x91, sw2: 0xAF),
+            ResponseAPDU(data: Data([0x04, 0x04, 0x02, 0x01, 0x01, 0x11, 0x05]), sw1: 0x91, sw2: 0xAF),
+            Self.ok([0x04, 0x96, 0x8C, 0xAA, 0x5C, 0x5E, 0x80, 0xCD, 0x65, 0x93, 0x5D, 0x40, 0x21, 0x18]),
+            isoOK, // SELECT NDEF application
+            isoOK, // SELECT CC
+            ResponseAPDU(data: cc, sw1: 0x90, sw2: 0x00),
+            isoOK,
+            isoOK,
+            ResponseAPDU(data: cc, sw1: 0x90, sw2: 0x00),
+            isoOK, // SELECT NDEF file
+            ResponseAPDU(data: Data([0x00, UInt8(ndefMessage.count)]), sw1: 0x90, sw2: 0x00),
+            ResponseAPDU(data: ndefMessage, sw1: 0x90, sw2: 0x00),
+        ]
+
+        let dump = try await CoreExtendedNFC.dumpCard(
+            info: CardInfo(type: .mifareDesfire, uid: mock.identifier),
+            transport: mock
+        )
+
+        #expect(Array(mock.sentAPDUs.prefix(4).map(\.ins)) == [0x6A, 0x60, 0xAF, 0xAF])
+        #expect(dump.ndefMessage == ndefMessage)
+        #expect(dump.files.map(\.identifier) == [Type4Constants.ccFileID, Data([0xE1, 0x04])])
+    }
+
+    @Test
+    func `DESFire illegal command is still reported when the chip is not an NTAG`() async {
+        let mock = MockTransport()
+        mock.apduResponses = [
+            ResponseAPDU(data: Data(), sw1: 0x91, sw2: 0x1C),
+            ResponseAPDU(data: Data([0x04, 0x01, 0x01, 0x01, 0x00, 0x18, 0x05]), sw1: 0x91, sw2: 0xAF),
+            ResponseAPDU(data: Data([0x04, 0x01, 0x01, 0x01, 0x04, 0x18, 0x05]), sw1: 0x91, sw2: 0xAF),
+            Self.ok(Array(repeating: 0x11, count: 14)),
+        ]
+
+        await #expect(throws: NFCError.desfireError(.illegalCommand)) {
+            _ = try await CoreExtendedNFC.dumpCard(
+                info: CardInfo(type: .mifareDesfireEV1, uid: mock.identifier),
+                transport: mock
+            )
+        }
+        #expect(mock.sentAPDUs.count == 4)
+    }
 }
