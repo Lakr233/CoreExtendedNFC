@@ -269,6 +269,44 @@ struct JapanEMoneyTests {
         #expect(result.transactions.map { $0.metadata["cardSequence"] } == ["0004", "0003", "0002"])
     }
 
+    @Test
+    func `WAON capture matches 239 yen and zero points`() async throws {
+        // ACR122U capture on 2026-10-31. The cardholder confirmed 239 yen and 0 points.
+        // Terminal identifiers are replaced with zeros; slot order is retained.
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [WAONConstants.balanceServiceCode: Data([0x00, 0x10])],
+            serviceBlocks: [
+                WAONConstants.balanceServiceCode: [hex("EF 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04")],
+                WAONConstants.pointsServiceCode: [hex("00 00 00 00 00 00 00 00 00 00 00 26 04 25 00 00")],
+                WAONConstants.historyServiceCode: [
+                    Data(repeating: 0, count: 13) + hex("00 04 04"),
+                    hex("11 04 AA C2 4B 00 1D E0 07 A0 00 00 00 00 00 00"),
+                    Data(repeating: 0, count: 13) + hex("00 02 B4"),
+                    hex("C1 04 AA 65 D1 80 6F E0 03 48 00 00 00 00 00 00"),
+                    Data(repeating: 0, count: 13) + hex("00 03 04"),
+                    hex("F6 04 AA 75 D9 80 3C 60 0C E0 00 00 00 00 00 00"),
+                ],
+            ],
+            systemCode: Data([0xFE, 0x00])
+        )
+
+        let result = try await WAONReader(transport: transport).readBalanceAndHistory()
+
+        #expect(result.balanceRaw == 239)
+        #expect(result.currencyCode == "JPY")
+        #expect(result.metadata["points"] == "0")
+        #expect(result.transactions.map(\.type) == [.purchase, .purchase, .purchase])
+        #expect(result.transactions.map(\.amount) == [244, 412, 105])
+        #expect(result.transactions.map(\.balanceAfter) == [239, 483, 895])
+        #expect(
+            result.transactions.map(\.date) == [
+                jst(2026, 5, 16, 18, 22),
+                jst(2026, 4, 29, 14, 51),
+                jst(2026, 4, 25, 14, 35),
+            ])
+        #expect(result.transactions.map { $0.metadata["cardSequence"] } == ["0004", "0003", "0002"])
+    }
+
     // MARK: - nanaco
 
     @Test
