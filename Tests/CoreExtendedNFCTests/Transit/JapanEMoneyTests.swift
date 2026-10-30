@@ -3,9 +3,10 @@
 // ## References
 // - Edy: Metrodroid EdyTrip and jennychan edy.html. The four history records below are the
 //   samples printed on iccard.jennychan.at-ninja.jp/format/edy.html with their decoded values.
-// - WAON: TRETJapanNFCReader WaonCardData and jennychan waon.html. The history records are
-//   synthetic; TRETJapanNFCReader's byte arithmetic decodes them to the same fields.
-// - nanaco: TRETJapanNFCReader NanacoCardData and jennychan nanaco.html (synthetic records).
+// - WAON: TRETJapanNFCReader WaonCardData and jennychan waon.html. Synthetic history records
+//   agree with TRETJapanNFCReader's byte arithmetic; an Apple Wallet capture is also replayed.
+// - nanaco: TRETJapanNFCReader NanacoCardData and jennychan nanaco.html (synthetic records),
+//   plus a physical-card capture from an ACR122U on 2026-10-31 with identifiers omitted.
 import Foundation
 import Testing
 
@@ -191,6 +192,42 @@ struct JapanEMoneyTests {
         #expect(result.metadata["points"] == nil)
     }
 
+    @Test
+    func `WAON Wallet capture matches 77 yen and three purchases`() async throws {
+        // ACR122U capture from Apple Wallet on 2026-10-31; the cardholder confirmed
+        // 77 yen. Terminal identifiers are replaced with zeros; slot order is retained.
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [WAONConstants.balanceServiceCode: Data([0x00, 0x10])],
+            serviceBlocks: [
+                WAONConstants.balanceServiceCode: [hex("4D 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04")],
+                WAONConstants.historyServiceCode: [
+                    Data(repeating: 0, count: 13) + hex("00 04 80"),
+                    hex("3D 04 AA 65 CD 00 09 A0 03 A0 00 00 00 00 00 00"),
+                    Data(repeating: 0, count: 13) + hex("00 02 7F"),
+                    hex("47 04 AA 4A 43 80 5C 20 08 38 00 00 00 00 00 00"),
+                    Data(repeating: 0, count: 13) + hex("00 03 AE"),
+                    hex("C8 04 AA 52 0C 00 18 20 11 00 00 00 00 00 00 00"),
+                ],
+            ],
+            systemCode: Data([0xFE, 0x00])
+        )
+
+        let result = try await WAONReader(transport: transport).readBalanceAndHistory()
+
+        #expect(result.balanceRaw == 77)
+        #expect(result.currencyCode == "JPY")
+        #expect(result.transactions.map(\.type) == [.purchase, .purchase, .purchase])
+        #expect(result.transactions.map(\.amount) == [116, 544, 263])
+        #expect(result.transactions.map(\.balanceAfter) == [77, 193, 737])
+        #expect(
+            result.transactions.map(\.date) == [
+                jst(2026, 4, 25, 14, 26),
+                jst(2026, 4, 20, 16, 24),
+                jst(2026, 4, 18, 18, 7),
+            ])
+        #expect(result.transactions.map { $0.metadata["cardSequence"] } == ["0004", "0003", "0002"])
+    }
+
     // MARK: - nanaco
 
     @Test
@@ -249,6 +286,51 @@ struct JapanEMoneyTests {
         #expect(result.metadata["points"] == "150")
         #expect(result.validFrom == jst(2007, 4, 21))
         #expect(result.transactions.map(\.type) == [.topup, .purchase])
+        #expect(transport.readLog.contains(["0B56:1"]))
+    }
+
+    @Test
+    func `nanaco physical card capture matches 200 yen and 36 points`() async throws {
+        // The cardholder confirmed 200 yen and 36 points. Keep the captured balance,
+        // points and history blocks; omit card-number and metadata services.
+        // The transport supplies a synthetic IDm. Points are 25 + 11, both big-endian.
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [NanacoConstants.balanceServiceCode: Data([0x00, 0x10])],
+            serviceBlocks: [
+                NanacoConstants.balanceServiceCode: [hex("C8 00 00 00 2C 01 00 00 00 00 00 00 00 00 2E 00")],
+                NanacoConstants.pointsServiceCode: [
+                    hex("01 00 34 B1 00 0C 00 00 00 00 00 00 00 00 00 00"),
+                    hex("00 00 19 36 7F 00 00 0B 38 7F 00 00 00 00 00 00"),
+                ],
+                NanacoConstants.historyServiceCode: [
+                    hex("47 00 00 01 2C 00 00 00 C8 03 50 43 C2 00 39 00"),
+                    hex("47 00 00 01 2C 00 00 01 F4 03 50 43 C1 00 38 00"),
+                    hex("47 00 00 02 58 00 00 03 20 03 50 43 C0 00 37 00"),
+                    hex("47 00 00 01 2C 00 00 05 78 03 50 43 BB 00 36 00"),
+                    hex("47 00 00 01 2C 00 00 06 A4 03 50 43 BA 00 35 00"),
+                ],
+            ],
+            systemCode: Data([0xFE, 0x00])
+        )
+
+        let result = try await NanacoReader(transport: transport).readBalanceAndHistory()
+
+        #expect(result.balanceRaw == 200)
+        #expect(result.currencyCode == "JPY")
+        #expect(result.metadata["points"] == "36")
+        #expect(result.serialNumber == transport.identifier.hexString)
+        #expect(result.transactions.map(\.type) == [.purchase, .purchase, .purchase, .purchase, .purchase])
+        #expect(result.transactions.map(\.amount) == [300, 300, 600, 300, 300])
+        #expect(result.transactions.map(\.balanceAfter) == [200, 500, 800, 1400, 1700])
+        #expect(
+            result.transactions.map(\.date) == [
+                jst(2026, 8, 4, 15, 2),
+                jst(2026, 8, 4, 15, 1),
+                jst(2026, 8, 4, 15, 0),
+                jst(2026, 8, 4, 14, 59),
+                jst(2026, 8, 4, 14, 58),
+            ])
+        #expect(result.transactions.map { $0.metadata["sequenceNumber"] } == ["57", "56", "55", "54", "53"])
         #expect(transport.readLog.contains(["0B56:1"]))
     }
 
