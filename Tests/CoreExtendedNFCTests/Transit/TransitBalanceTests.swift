@@ -58,6 +58,32 @@ struct TransitBalanceTests {
         #expect(result.balanceRaw == 1234)
     }
 
+    @Test
+    func `Automatic detection picks the common area purse by its balance service`() async throws {
+        let purses: [(service: Data, name: String)] = [
+            (EdyConstants.balanceServiceCode, "Rakuten Edy"),
+            (WAONConstants.balanceServiceCode, "WAON"),
+            (NanacoConstants.balanceServiceCode, "nanaco"),
+        ]
+        for purse in purses {
+            var block = Data(repeating: 0, count: 16)
+            block[0] = 0xE8
+            block[1] = 0x03
+            let transport = MockFeliCaServiceTransport(
+                serviceVersions: [purse.service: Data([0x00, 0x10])],
+                serviceBlocks: [purse.service: [block]],
+                systemCode: Data([0xFE, 0x00])
+            )
+            let info = CardInfo(type: .felicaStandard, uid: transport.identifier)
+
+            let result = try await CoreExtendedNFC.readTransitBalance(info: info, transport: transport)
+
+            #expect(result.cardName == purse.name)
+            #expect(result.currencyCode == "JPY")
+            #expect(result.balanceRaw == 1000)
+        }
+    }
+
     // MARK: - Typed detection errors
 
     @Test
@@ -114,6 +140,13 @@ struct TransitBalanceTests {
         let noBalanceService = MockFeliCaServiceTransport(serviceVersions: [:], systemCode: Data([0x00, 0x03]))
         await expectTransitNFCError(.tagNotSupported) {
             _ = try await JapanICReader(transport: noBalanceService).readBalance()
+        }
+        let noPurse = MockFeliCaServiceTransport(serviceVersions: [:], systemCode: Data([0xFE, 0x00]))
+        await expectTransitNFCError(.tagNotSupported) {
+            _ = try await CoreExtendedNFC.readTransitBalance(
+                info: CardInfo(type: .felicaStandard, uid: noPurse.identifier),
+                transport: noPurse
+            )
         }
     }
 }

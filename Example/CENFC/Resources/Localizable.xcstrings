@@ -5537,18 +5537,18 @@
         }
       }
     },
-    "Supports Japan IC (Suica, PASMO, ICOCA…), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported." : {
+    "Supports Japan IC (Suica, PASMO, ICOCA…), Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supports Japan IC (Suica, PASMO, ICOCA…), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
+            "value" : "Supports Japan IC (Suica, PASMO, ICOCA…), Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "支持日本交通卡（Suica、PASMO、ICOCA…）、香港八达通、韩国 T-Money/Cashbee、中国交通联合，以及新加坡传统 EZ-Link/CEPAS。不支持 SimplyGo 历史。"
+            "value" : "支持日本交通卡（Suica、PASMO、ICOCA…）、日本电子货币（乐天 Edy、WAON、nanaco）、香港八达通、韩国 T-Money/Cashbee、中国交通联合，以及新加坡传统 EZ-Link/CEPAS。不支持 SimplyGo 历史。"
           }
         }
       }

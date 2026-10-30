@@ -2,13 +2,14 @@ import Foundation
 
 public extension CoreExtendedNFC {
     /// Read transit card balance from a connected tag.
-    /// Automatically detects Japan IC (FeliCa), Octopus, Singapore CEPAS,
-    /// T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
+    /// Automatically detects Japan IC (FeliCa), Rakuten Edy, WAON, nanaco, Octopus,
+    /// Singapore CEPAS, T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
     /// Call directly after `NFCSessionManager.scan`, before `refineCardInfo` or other
     /// application-selection commands change the default application used by CEPAS.
     ///
     /// Detection order:
-    /// 1. FeliCa system code → Japan IC or Octopus
+    /// 1. FeliCa system code → Japan IC (0003), Octopus (8008), or the common area (FE00),
+    ///    where the Rakuten Edy, WAON, and nanaco balance services are tried in that order
     /// 2. ISO 7816 → probe Singapore CEPAS purse
     /// 3. ISO 7816 → try KS X 6924 AIDs (T-Money / Snapper, Cashbee, MOIBA, K-Cash)
     /// 4. ISO 7816 → try T-Union AID
@@ -29,6 +30,17 @@ public extension CoreExtendedNFC {
             }
             if felicaTransport.systemCode == OctopusConstants.systemCode {
                 return try await readOctopusBalance(transport: felicaTransport)
+            }
+            if felicaTransport.systemCode == FeliCaCommonAreaConstants.systemCode {
+                // One common area can hold several purses; each reader checks for its own
+                // balance service and throws tagNotSupported when it is missing.
+                do {
+                    return try await readEdyBalance(transport: felicaTransport)
+                } catch NFCError.tagNotSupported {}
+                do {
+                    return try await readWAONBalance(transport: felicaTransport)
+                } catch NFCError.tagNotSupported {}
+                return try await readNanacoBalance(transport: felicaTransport)
             }
             throw NFCError.tagNotSupported
         }
@@ -74,6 +86,36 @@ public extension CoreExtendedNFC {
         transport: any FeliCaTagTransporting
     ) async throws -> TransitBalance {
         try await OctopusReader(transport: transport).readBalance()
+    }
+
+    /// Read Rakuten Edy balance + history.
+    ///
+    /// The consumer app must register system code `0xFE00` in Info.plist
+    /// under `com.apple.developer.nfc.readersession.felica.systemcodes`.
+    static func readEdyBalance(
+        transport: any FeliCaTagTransporting
+    ) async throws -> TransitBalance {
+        try await EdyReader(transport: transport).readBalanceAndHistory()
+    }
+
+    /// Read WAON balance + history; the point balance is in `metadata["points"]`.
+    ///
+    /// The consumer app must register system code `0xFE00` in Info.plist
+    /// under `com.apple.developer.nfc.readersession.felica.systemcodes`.
+    static func readWAONBalance(
+        transport: any FeliCaTagTransporting
+    ) async throws -> TransitBalance {
+        try await WAONReader(transport: transport).readBalanceAndHistory()
+    }
+
+    /// Read nanaco balance + history; the point balance is in `metadata["points"]`.
+    ///
+    /// The consumer app must register system code `0xFE00` in Info.plist
+    /// under `com.apple.developer.nfc.readersession.felica.systemcodes`.
+    static func readNanacoBalance(
+        transport: any FeliCaTagTransporting
+    ) async throws -> TransitBalance {
+        try await NanacoReader(transport: transport).readBalanceAndHistory()
     }
 
     /// Read KS X 6924 balance + history (T-Money, Cashbee, MOIBA, K-Cash; Snapper is reported in NZD).
