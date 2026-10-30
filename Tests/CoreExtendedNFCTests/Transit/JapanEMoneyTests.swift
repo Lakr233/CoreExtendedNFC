@@ -3,6 +3,7 @@
 // ## References
 // - Edy: Metrodroid EdyTrip and jennychan edy.html. The four history records below are the
 //   samples printed on iccard.jennychan.at-ninja.jp/format/edy.html with their decoded values.
+//   A physical-card capture from an ACR122U on 2026-10-31 is replayed with identifiers omitted.
 // - WAON: TRETJapanNFCReader WaonCardData and jennychan waon.html. Synthetic history records
 //   agree with TRETJapanNFCReader's byte arithmetic; an Apple Wallet capture is also replayed.
 // - nanaco: TRETJapanNFCReader NanacoCardData and jennychan nanaco.html (synthetic records),
@@ -120,6 +121,46 @@ struct JapanEMoneyTests {
         await expectTransitNFCError(.tagConnectionLost) {
             _ = try await EdyReader(transport: transport).readBalance()
         }
+    }
+
+    @Test
+    func `Edy capture matches 542 yen and six purchases`() async throws {
+        // ACR122U capture on 2026-10-31. Card identifiers are omitted; the transport supplies
+        // a synthetic IDm. The cardholder confirmed the 542-yen balance.
+        let transport = MockFeliCaServiceTransport(
+            serviceVersions: [EdyConstants.balanceServiceCode: Data([0x00, 0x10])],
+            serviceBlocks: [
+                EdyConstants.balanceServiceCode: [hex("1E 02 00 00 5E 01 00 00 00 00 00 00 00 00 2D 00")],
+                EdyConstants.historyServiceCode: [
+                    hex("20 00 00 2D 4A EC BA 73 00 00 01 5E 00 00 02 1E"),
+                    hex("20 00 00 2C 4A E2 EA 4A 00 00 01 5E 00 00 03 7C"),
+                    hex("20 00 00 2B 4A E0 BB CC 00 00 04 1F 00 00 04 DA"),
+                    hex("20 00 00 2A 4A DD 1F 13 00 00 03 F9 00 00 08 F9"),
+                    hex("20 00 00 29 47 90 CD F3 00 00 0D 7C 00 00 0C F2"),
+                    hex("20 00 00 28 47 5D 24 8F 00 00 0C A2 00 00 1A 6E"),
+                ],
+            ],
+            systemCode: Data([0xFE, 0x00])
+        )
+
+        let result = try await EdyReader(transport: transport).readBalanceAndHistory()
+
+        #expect(result.balanceRaw == 542)
+        #expect(result.currencyCode == "JPY")
+        #expect(result.serialNumber == transport.identifier.hexString)
+        #expect(result.transactions.map(\.type) == [.purchase, .purchase, .purchase, .purchase, .purchase, .purchase])
+        #expect(result.transactions.map(\.amount) == [350, 350, 1055, 1017, 3452, 3234])
+        #expect(result.transactions.map(\.balanceAfter) == [542, 892, 1242, 2297, 3314, 6766])
+        #expect(
+            result.transactions.map(\.date) == [
+                jst(2026, 4, 4, 13, 15, 31),
+                jst(2026, 3, 30, 16, 39, 38),
+                jst(2026, 3, 29, 13, 21, 16),
+                jst(2026, 3, 27, 20, 24, 51),
+                jst(2025, 1, 29, 14, 38, 43),
+                jst(2025, 1, 3, 20, 48, 15),
+            ])
+        #expect(result.transactions.map { $0.metadata["sequenceNumber"] } == ["45", "44", "43", "42", "41", "40"])
     }
 
     // MARK: - WAON
