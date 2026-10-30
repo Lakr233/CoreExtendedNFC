@@ -1,11 +1,12 @@
 import Foundation
 
 /// Reads balance and transaction history from Japan FeliCa IC transit cards
-/// (Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken, etc.).
+/// (Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken,
+/// IruCa, PASPY and SAPICA).
 ///
 /// ## Requirements
-/// The consumer app must register system code `0x0003` in its Info.plist
-/// under `com.apple.developer.nfc.readersession.felicasystemcodes`.
+/// Register the card's system code (`0003`, `80DE`, `8592` or `865E`) in Info.plist
+/// under `com.apple.developer.nfc.readersession.felica.systemcodes`.
 ///
 /// ## References
 /// - CJRC system code 0x0003
@@ -20,17 +21,19 @@ open class JapanICReader: @unchecked Sendable {
         self.transport = transport
     }
 
-    /// Read balance only (fast — single block read).
+    /// Read balance and optional SAPICA points without transaction history.
     open func readBalance() async throws -> TransitBalance {
         NFCLog.info("Japan IC balance read start idm=\(NFCLog.payload(transport.identifier))", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
+        let metadata = try await readMetadata()
         NFCLog.info("Japan IC balance read complete balance=\(NFCLog.cardValue(balance)) JPY", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: "Japan IC"
+            cardName: JapanICConstants.cardNamesBySystemCode[transport.systemCode] ?? "Japan IC",
+            metadata: metadata
         )
     }
 
@@ -40,23 +43,44 @@ open class JapanICReader: @unchecked Sendable {
         try validateSystemCode()
         let balance = try await readRawBalance()
         let transactions = try await readHistory()
+        let metadata = try await readMetadata()
         NFCLog.info("Japan IC balance/history read complete balance=\(NFCLog.cardValue(balance)) JPY transactions=\(transactions.count)", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: "Japan IC",
-            transactions: transactions
+            cardName: JapanICConstants.cardNamesBySystemCode[transport.systemCode] ?? "Japan IC",
+            transactions: transactions,
+            metadata: metadata
         )
     }
 
     // MARK: - Steps
 
     open func validateSystemCode() throws {
-        NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString) expected=\(JapanICConstants.systemCode.hexString)", source: "JapanIC")
-        guard transport.systemCode == JapanICConstants.systemCode else {
-            // Not a CJRC (0x0003) card.
+        NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString)", source: "JapanIC")
+        guard JapanICConstants.cardNamesBySystemCode[transport.systemCode] != nil else {
             throw NFCError.tagNotSupported
+        }
+    }
+
+    /// SAPICA points when the public points block is readable. Session loss and
+    /// cancellation propagate even though points are optional.
+    open func readMetadata() async throws -> [String: String] {
+        guard transport.systemCode == JapanICConstants.sapicaSystemCode else { return [:] }
+        try Task.checkCancellation()
+        do {
+            let blocks = try await transport.readWithoutEncryption(
+                serviceCode: JapanICConstants.sapicaPointsServiceCode,
+                blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
+            )
+            guard let block = blocks.first, block.count == 16 else { return [:] }
+            let bytes = [UInt8](block)
+            let points = Int(bytes[0]) | Int(bytes[1]) << 8 | Int(bytes[2]) << 16
+            return ["points": String(points)]
+        } catch  where !isSessionTerminating(error) {
+            NFCLog.debug("SAPICA points unavailable: \(error.localizedDescription)", source: "JapanIC")
+            return [:]
         }
     }
 

@@ -8,8 +8,20 @@ import Foundation
 /// - Service code layout: little-endian 2 bytes
 public enum JapanICConstants {
     /// CJRC system code. Must be registered in the app's Info.plist
-    /// under `com.apple.developer.nfc.readersession.felicasystemcodes`.
+    /// under `com.apple.developer.nfc.readersession.felica.systemcodes`.
     public static let systemCode = Data([0x00, 0x03])
+
+    public static let irucaSystemCode = Data([0x80, 0xDE])
+    public static let paspySystemCode = Data([0x85, 0x92])
+    public static let sapicaSystemCode = Data([0x86, 0x5E])
+
+    /// Systems sharing the public balance and transaction-history services.
+    public static let cardNamesBySystemCode: [Data: String] = [
+        systemCode: "Japan IC",
+        irucaSystemCode: "IruCa",
+        paspySystemCode: "PASPY",
+        sapicaSystemCode: "SAPICA",
+    ]
 
     // MARK: - Service Codes (little-endian)
 
@@ -18,6 +30,9 @@ public enum JapanICConstants {
 
     /// Transaction history service (cyclic read-only, up to 20 blocks).
     public static let historyServiceCode = Data([0x0F, 0x09]) // 0x090F
+
+    /// SAPICA points, service 0xBA4B: bytes 0-2 little-endian.
+    public static let sapicaPointsServiceCode = Data([0x4B, 0xBA])
 
     /// Maximum transaction history blocks stored by common CJRC cards.
     public static let maxHistoryBlocks = 20

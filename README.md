@@ -22,7 +22,7 @@ This library does.
 - **Memory operations** — Read, write, and dump tag memory across Ultralight, NTAG, DESFire, FeliCa, ISO 15693, and NFC Forum Type 4 Tags
 - **DESFire application layer** — Enumerate applications and files, handle Additional Frame chaining, authenticated reads (ISO & EV2)
 - **Passport / eMRTD reading** — PACE (ECDH Generic Mapping on NIST P-256/384/521 and Brainpool P-224 to P-512 curves) with BAC fallback, Secure Messaging, data group parsing (MRZ, face photo), Passive Authentication against your CSCA trust anchors, Active Authentication, and a per-stage security report
-- **Transit cards** — Balance and history for Japan IC, Hong Kong Octopus, Singapore CEPAS, Korea KS X 6924 (including Snapper), and China T-Union
+- **Transit cards** — Balance and history for Japan IC (including IruCa, PASPY and SAPICA), Okinawa OKICA, Hong Kong Octopus, Singapore CEPAS, Korea KS X 6924 (including Snapper), and China T-Union
 - **My Number card (Japan)** — JPKI token read, individual-number read with card-info-input-support PIN, PIN-attempt lookup
 - **Crypto primitives** — CRC_A/CRC_B, AES-CMAC, 3DES, ISO 9797-1 MAC, key derivation; OpenSSL backs the elliptic-curve and CMS work
 - **Dump export** — Hex, JSON, Flipper NFC, Proxmark3 MFU, and libnfc MFD formats
@@ -230,7 +230,7 @@ Sources/CoreExtendedNFC/
 │   ├── ISO15693/           System info, block R/W, lock status, security
 │   ├── Type4/              CC parsing, NDEF via SELECT/READ BINARY
 │   ├── IndividualNumber/   Japanese My Number APDU flows
-│   ├── Transit/            Japan IC, Octopus, CEPAS, KS X 6924, T-Union
+│   ├── Transit/            Japan IC, OKICA, Octopus, CEPAS, KS X 6924, T-Union
 │   └── Passport/           PACE, BAC, Secure Messaging, DG parsers, AA/PA
 ├── Crypto/        AES-CMAC, ISO 9797 MAC, key derivation, SHA, 3DES, secret redaction
 ├── Concurrency/   Lock-protected shared state

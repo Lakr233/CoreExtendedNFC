@@ -29,8 +29,9 @@ struct NFCConfigurationTests {
 
         #expect(systemCodes.contains("0003")) // Japan IC
         #expect(systemCodes.contains("8008")) // Octopus
-        #expect(systemCodes.contains("80DE")) // CardBal transit code
-        #expect(systemCodes.contains("865E")) // CardBal transit code
-        #expect(systemCodes.contains("8592")) // CardBal transit code
+        #expect(systemCodes.contains("80DE")) // IruCa
+        #expect(systemCodes.contains("865E")) // SAPICA
+        #expect(systemCodes.contains("8592")) // PASPY
+        #expect(systemCodes.contains("8FC1")) // OKICA
     }
 }

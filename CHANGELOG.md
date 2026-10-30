@@ -3,6 +3,15 @@
 All notable changes to CoreExtendedNFC are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Regional Japanese FeliCa transit cards: `JapanICReader` and `readJapanICBalance` recognize IruCa (`80DE`), PASPY (`8592`) and SAPICA (`865E`), return their card names, and read the public balance and history services. SAPICA points from `BA4B` are in `metadata["points"]`.
+- `OKICAReader`, `OKICAConstants` and `CoreExtendedNFC.readOKICABalance(transport:)`: Okinawa OKICA (`8FC1`) balance and history from `028F`, with JST dates, operation types, rail station codes, raw bus location codes, sequence numbers and raw records. Amounts are inferred from adjacent populated balance records when the direction matches the operation.
+- `readTransitBalance` routes regional Japanese system codes to the relevant reader. The example registers `8FC1` in its FeliCa system list.
+- Tested OKICA with an ACR122U capture on 2026-10-31, replayed as a regression test: 250-yen balance, a 250-yen Yui Rail journey and a 500-yen issuance record. The fixture replaces the IDm.
+
 ## [2.1.0] - 2026-10-17
 
 2.1.0 is a minor release: it adds public API (an experimental NTAG 424 DNA module, `DESFireVersionInfo.ntagHardwareType`, `FeliCaFrame.REQUEST_RESPONSE`, `DESFireStatus.authenticationDelay` and the passport and ISO 15693 helpers listed below) and fixes conformance issues found by checking every supported card family against its standard, cross-checked with closed-source readers. Not yet confirmed on real hardware: the passport Chip Access Procedure order and extended-length Active Authentication, ISO 15693 Extended Get System Information, and the NTAG 424 DNA module.
