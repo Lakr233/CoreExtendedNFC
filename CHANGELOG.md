@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - Regional Japanese FeliCa transit cards: `JapanICReader` and `readJapanICBalance` recognize IruCa (`80DE`), PASPY (`8592`) and SAPICA (`865E`), return their card names, and read the public balance and history services. SAPICA points from `BA4B` are in `metadata["points"]`.
+- Hayakaken identification: when a CJRC (`0003`) card advertises the additional system `927A`, `JapanICReader` returns `cardName == "Hayakaken"` while reading balance and history through `0003`. `FeliCaTagTransporting.requestSystemCode()` has a default unsupported implementation for existing conformers; `FeliCaTransport` uses CoreNFC's system enumeration. Unavailable enumeration preserves the generic name; session loss and cancellation propagate.
 - `OKICAReader`, `OKICAConstants` and `CoreExtendedNFC.readOKICABalance(transport:)`: Okinawa OKICA (`8FC1`) balance and history from `028F`, with JST dates, operation types, rail station codes, raw bus location codes, sequence numbers and raw records. Amounts are inferred from adjacent populated balance records when the direction matches the operation.
 - `readTransitBalance` routes regional Japanese system codes to the relevant reader. The example registers `8FC1` in its FeliCa system list.
 - Tested OKICA with an ACR122U capture on 2026-10-31, replayed as a regression test: 250-yen balance, a 250-yen Yui Rail journey and a 500-yen issuance record. The fixture replaces the IDm.

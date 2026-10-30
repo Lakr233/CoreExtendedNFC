@@ -15,6 +15,10 @@ public enum JapanICConstants {
     public static let paspySystemCode = Data([0x85, 0x92])
     public static let sapicaSystemCode = Data([0x86, 0x5E])
 
+    /// Hayakaken's additional system identifies the issuer of a card read through
+    /// CJRC (`0003`). It is not a selector for the shared balance/history services.
+    public static let hayakakenSystemCode = Data([0x92, 0x7A])
+
     /// Systems sharing the public balance and transaction-history services.
     public static let cardNamesBySystemCode: [Data: String] = [
         systemCode: "Japan IC",

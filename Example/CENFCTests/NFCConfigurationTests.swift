@@ -33,5 +33,6 @@ struct NFCConfigurationTests {
         #expect(systemCodes.contains("865E")) // SAPICA
         #expect(systemCodes.contains("8592")) // PASPY
         #expect(systemCodes.contains("8FC1")) // OKICA
+        #expect(systemCodes.contains("927A")) // Hayakaken's additional system
     }
 }

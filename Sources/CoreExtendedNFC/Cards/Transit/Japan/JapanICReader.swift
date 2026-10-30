@@ -26,13 +26,14 @@ open class JapanICReader: @unchecked Sendable {
         NFCLog.info("Japan IC balance read start idm=\(NFCLog.payload(transport.identifier))", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
+        let cardName = try await readCardName()
         let metadata = try await readMetadata()
         NFCLog.info("Japan IC balance read complete balance=\(NFCLog.cardValue(balance)) JPY", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: JapanICConstants.cardNamesBySystemCode[transport.systemCode] ?? "Japan IC",
+            cardName: cardName,
             metadata: metadata
         )
     }
@@ -43,13 +44,14 @@ open class JapanICReader: @unchecked Sendable {
         try validateSystemCode()
         let balance = try await readRawBalance()
         let transactions = try await readHistory()
+        let cardName = try await readCardName()
         let metadata = try await readMetadata()
         NFCLog.info("Japan IC balance/history read complete balance=\(NFCLog.cardValue(balance)) JPY transactions=\(transactions.count)", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: JapanICConstants.cardNamesBySystemCode[transport.systemCode] ?? "Japan IC",
+            cardName: cardName,
             transactions: transactions,
             metadata: metadata
         )
@@ -61,6 +63,23 @@ open class JapanICReader: @unchecked Sendable {
         NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString)", source: "JapanIC")
         guard JapanICConstants.cardNamesBySystemCode[transport.systemCode] != nil else {
             throw NFCError.tagNotSupported
+        }
+    }
+
+    /// Identify Hayakaken by its additional advertised system (`927A`), while
+    /// keeping all balance/history reads on the selected CJRC (`0003`) system.
+    /// A refused or unsupported enumeration preserves the generic name.
+    open func readCardName() async throws -> String {
+        let fallback = JapanICConstants.cardNamesBySystemCode[transport.systemCode] ?? "Japan IC"
+        guard transport.systemCode == JapanICConstants.systemCode else { return fallback }
+        try Task.checkCancellation()
+        do {
+            let codes = try await transport.requestSystemCode()
+            guard codes.allSatisfy({ $0.count == 2 }) else { return fallback }
+            return codes.contains(JapanICConstants.hayakakenSystemCode) ? "Hayakaken" : fallback
+        } catch where !isSessionTerminating(error) {
+            NFCLog.debug("Japan IC issuer identification unavailable: \(error.localizedDescription)", source: "JapanIC")
+            return fallback
         }
     }
 

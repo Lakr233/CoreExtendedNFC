@@ -152,6 +152,84 @@ struct JapanRegionalTests {
     }
 
     @Test
+    func `Hayakaken is identified by advertised 927A while reading CJRC balance and history`() async throws {
+        let base = regionalTransport(systemCode: JapanICConstants.systemCode)
+        let transport = AdvertisedSystemsTransport(
+            base: base,
+            systemCodes: [hex("0003"), hex("FE00"), hex("927A")]
+        )
+        let result = try await CoreExtendedNFC.readTransitBalance(info: felicaInfo, transport: transport)
+        #expect(result.cardName == "Hayakaken")
+        #expect(result.balanceRaw == 1234)
+        #expect(result.transactions.count == 1)
+        #expect(result.transactions.first?.entryStation == "0123")
+        #expect(result.transactions.first?.exitStation == "0456")
+        #expect(base.readLog.flatMap { $0 }.allSatisfy { $0.hasPrefix("8B00:") || $0.hasPrefix("0F09:") })
+
+        let balanceOnly = try await JapanICReader(transport: transport).readBalance()
+        #expect(balanceOnly.cardName == "Hayakaken")
+        #expect(balanceOnly.balanceRaw == 1234)
+        #expect(balanceOnly.transactions.isEmpty)
+    }
+
+    @Test
+    func `CJRC keeps its generic name without a valid Hayakaken marker`() async throws {
+        for codes: [Data] in [
+            [],
+            [hex("0003")],
+            [hex("0003"), hex("86A7")],
+            [hex("0003"), hex("7A92")],
+            [hex("0003"), hex("92")],
+            [hex("927A"), hex("000300")],
+        ] {
+            let transport = AdvertisedSystemsTransport(
+                base: regionalTransport(systemCode: JapanICConstants.systemCode),
+                systemCodes: codes
+            )
+            #expect(try await JapanICReader(transport: transport).readBalance().cardName == "Japan IC")
+        }
+    }
+
+    @Test
+    func `Optional issuer lookup tolerates refusal but propagates session loss and cancellation`() async throws {
+        let base = regionalTransport(systemCode: JapanICConstants.systemCode)
+        // Existing conformers inherit unsupported enumeration and keep working.
+        #expect(try await JapanICReader(transport: base).readBalance().cardName == "Japan IC")
+        for error in [
+            NFCError.unsupportedOperation("no system enumeration"),
+            NFCError.invalidResponse(Data()),
+            NFCError.felicaBlockReadFailed(statusFlag: 0xA1),
+        ] {
+            let transport = AdvertisedSystemsTransport(base: base, enumerationError: error)
+            #expect(try await JapanICReader(transport: transport).readBalanceAndHistory().cardName == "Japan IC")
+        }
+        for error in [NFCError.tagConnectionLost, .userCanceled] {
+            let transport = AdvertisedSystemsTransport(base: base, enumerationError: error)
+            await expectTransitNFCError(error) {
+                _ = try await JapanICReader(transport: transport).readBalanceAndHistory()
+            }
+        }
+        let cancelled = AdvertisedSystemsTransport(base: base, enumerationError: CancellationError())
+        await #expect(throws: CancellationError.self) {
+            _ = try await JapanICReader(transport: cancelled).readBalance()
+        }
+    }
+
+    @Test
+    func `Issuer marker is not treated as a balance system and regional names do not enumerate`() async throws {
+        let markerOnly = regionalTransport(systemCode: JapanICConstants.hayakakenSystemCode)
+        await expectTransitNFCError(.tagNotSupported) {
+            _ = try await CoreExtendedNFC.readTransitBalance(info: felicaInfo, transport: markerOnly)
+        }
+        let iruca = AdvertisedSystemsTransport(
+            base: regionalTransport(systemCode: JapanICConstants.irucaSystemCode),
+            systemCodes: [JapanICConstants.hayakakenSystemCode],
+            enumerationError: CancellationError()
+        )
+        #expect(try await JapanICReader(transport: iruca).readBalance().cardName == "IruCa")
+    }
+
+    @Test
     func `SAPICA points use all three little-endian bytes and preserve zero`() async throws {
         for points in [0, 0x123456] {
             var block = Data(count: 16)
@@ -261,6 +339,32 @@ struct JapanRegionalTests {
                 return UInt8(text[start ..< text.index(start, offsetBy: 2)], radix: 16)!
             })
     }
+}
+
+/// Supplies advertised systems independently of the selected balance system.
+private struct AdvertisedSystemsTransport: FeliCaTagTransporting {
+    let base: MockFeliCaServiceTransport
+    var systemCodes: [Data] = []
+    var enumerationError: (any Error)?
+    var identifier: Data { base.identifier }
+    var systemCode: Data { base.systemCode }
+
+    func requestSystemCode() async throws -> [Data] {
+        if let enumerationError { throw enumerationError }
+        return systemCodes
+    }
+
+    func send(_ data: Data) async throws -> Data { try await base.send(data) }
+    func sendAPDU(_ apdu: CommandAPDU) async throws -> ResponseAPDU { try await base.sendAPDU(apdu) }
+    func requestService(nodeCodeList: [Data]) async throws -> [Data] {
+        try await base.requestService(nodeCodeList: nodeCodeList)
+    }
+
+    func readWithoutEncryption(serviceCode: Data, blockList: [Data]) async throws -> [Data] {
+        try await base.readWithoutEncryption(serviceCode: serviceCode, blockList: blockList)
+    }
+
+    func writeWithoutEncryption(serviceCode _: Data, blockList _: [Data], blockData _: [Data]) async throws {}
 }
 
 /// Immutable failure injection at a particular service and slot.
