@@ -11,7 +11,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Each reader returns the yen balance and history, with the number printed on the card as `serialNumber` (the IDm when that block cannot be read; the IDm is always in `metadata["idm"]`). WAON and nanaco add the point balance in `metadata["points"]`; Edy and nanaco set `validFrom` to the issue date, and nanaco adds `metadata["lastUseDate"]`.
   - Payments are purchases and charges top-ups; Edy gifts and nanaco point exchanges are top-ups. Other record types, including nanaco transfers, are `.unknown` with no amount. WAON history is sorted newest first.
   - `readTransitBalance` routes `FE00` cards to Edy, then WAON, then nanaco. A reader whose balance service is missing throws `tagNotSupported`, which moves on to the next one. Apps must list `FE00` under `com.apple.developer.nfc.readersession.felica.systemcodes`; the example app already does.
-  - The readers are tested with mock transports and, for Edy, against published sample records. CardBal's Edy decoder, which uses the same layout, has read a physical card through an ACR122U reader; no WAON or nanaco card has been read.
+  - The readers are tested with mock transports and, for Edy, against published sample records. CardBal's Edy, WAON and nanaco decoders, which use the same balance, card number and history layouts, have read physical cards. CardBal decodes point balances differently, so the point layout is still unconfirmed.
 
 ## [2.1.0] - 2026-10-17
 
