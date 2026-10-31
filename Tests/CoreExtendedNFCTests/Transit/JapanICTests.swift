@@ -303,6 +303,7 @@ struct JapanICTests {
             let tx = try #require(JapanICReader.parseHistoryBlock(block))
             #expect(tx.entryStation == "0123")
             #expect(tx.exitStation == nil)
+            #expect(tx.mode == nil)
         }
     }
 
@@ -315,6 +316,7 @@ struct JapanICTests {
         #expect(tx.exitStation == nil)
         #expect(tx.metadata["busLineCode"] == "0E38")
         #expect(tx.metadata["busStopCode"] == "011F")
+        #expect(tx.mode == .bus)
         #expect(tx.balanceAfter == 2168)
     }
 
@@ -323,6 +325,7 @@ struct JapanICTests {
         let tx = try #require(JapanICReader.parseHistoryBlock(hexToData("1601000230B563237024A80000006E00")))
         #expect(tx.entryStation == "6323")
         #expect(tx.exitStation == "7024")
+        #expect(tx.mode == .rail)
     }
 
     @Test

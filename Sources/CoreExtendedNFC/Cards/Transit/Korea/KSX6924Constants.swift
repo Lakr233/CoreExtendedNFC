@@ -69,4 +69,49 @@ public enum KSX6924Constants {
     /// Snapper records are 46 bytes with bytes 26..<46 always 0xFF (Metrodroid SnapperTransitData.check).
     public static let snapperRecordLength = 46
     public static let snapperFillerRange = 26 ..< 46
+
+    // MARK: - Tap Records (EF SFI 3)
+
+    /// Short file identifier of the boarding / alighting record file.
+    public static let tapRecordSFI: UInt8 = 0x03
+    /// SFI 3 records are 52 bytes on T-Money and Cashbee.
+    public static let tapRecordLength = 52
+
+    /// Tap record field offsets.
+    public static let tapEvent = 2 // 1 byte: 0x00 tap on (boarding), 0x01 tap off (alighting)
+    public static let tapStation = 5 // 4 bytes, station or stop identifier
+    public static let tapModeCode = 9 // 2 bytes BE, KOTRIS transport code
+    public static let tapDateTime = 11 // 7 bytes BCD YYYYMMDDhhmmss, or a 33-bit packed date-time
+    public static let tapDistance = 19 // 2 bytes BE, distance travelled in metres
+
+    /// Transport codes whose terminals write another clock format at ``tapDateTime``
+    /// (CardBal's Mybi and Gwangju profiles). Only a BCD date-time is decoded for them.
+    public static let bcdOnlyClockModeCodes: [ClosedRange<Int>] = [
+        600 ... 619, 621 ... 660, 684 ... 685, 691 ... 691, 711 ... 713, 729 ... 729, 770 ... 799,
+        870 ... 871, 877 ... 877, 887 ... 888, 901 ... 905, 909 ... 909, 913 ... 916, 925 ... 931,
+        936 ... 936, 940 ... 940,
+    ]
+
+    // MARK: - KOTRIS Transport Codes
+
+    /// Rail codes in KORAIL's KOTRIS public-transport code table (class `R`), plus Seoul
+    /// Smart Card and Incheon Institute codes for 209, 210, 235 and 237.
+    public static let kotrisRailCodes: [ClosedRange<Int>] = [
+        200 ... 210, 231 ... 232, 235 ... 235, 237 ... 237, 440 ... 440, 691 ... 691, 699 ... 699,
+        850 ... 851, 853 ... 853, 870 ... 872,
+    ]
+
+    /// Bus codes in the KOTRIS table (class `B`), plus Seoul Smart Card code 142
+    /// and reviewed station-catalog codes 736 and 741.
+    /// Codes 800-802 (Namsan tunnel tolls, parking, Manwolsan tunnel) are left out.
+    public static let kotrisBusCodes: [ClosedRange<Int>] = [
+        100 ... 106, 110 ... 110, 115 ... 115, 120 ... 122, 130 ... 134, 140 ... 140, 142 ... 142,
+        151 ... 152, 400 ... 404, 406 ... 406, 408 ... 408, 430 ... 431, 450 ... 467, 470 ... 472,
+        474 ... 477, 480 ... 491, 496 ... 496, 500 ... 546, 550 ... 550, 570 ... 570, 580 ... 584,
+        599 ... 690, 692 ... 695, 701 ... 722, 729 ... 729, 736 ... 736, 741 ... 741, 770 ... 799,
+        810 ... 820, 990 ... 999,
+    ]
+
+    /// Taxi codes in the KOTRIS table (class `T`).
+    public static let kotrisTaxiCodes: [ClosedRange<Int>] = [300 ... 303, 321 ... 321]
 }
