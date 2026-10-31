@@ -376,8 +376,8 @@ open class KSX6924Reader: @unchecked Sendable {
         )
     }
 
-    /// Transport mode of a KOTRIS transport code, from the class in KORAIL's table
-    /// (`R` rail, `B` bus, `T` taxi). Unlisted codes return nil.
+    /// Transport mode from KORAIL's table and the supplementary codes documented
+    /// in ``KSX6924Constants`` (`R` rail, `B` bus, `T` taxi). Other codes return nil.
     open class func transitMode(forKOTRISCode code: Int) -> TransitMode? {
         if KSX6924Constants.kotrisRailCodes.contains(where: { $0.contains(code) }) { return .rail }
         if KSX6924Constants.kotrisBusCodes.contains(where: { $0.contains(code) }) { return .bus }

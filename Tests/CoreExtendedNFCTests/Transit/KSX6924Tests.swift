@@ -305,10 +305,12 @@ struct KSX6924Tests {
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 872) == .rail) // Daegu Transportation Corporation
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 115) == .bus) // Seoul trunk bus
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 601) == .bus) // Busan city bus
+        #expect(KSX6924Reader.transitMode(forKOTRISCode: 736) == .bus) // Reviewed station catalog
+        #expect(KSX6924Reader.transitMode(forKOTRISCode: 741) == .bus)
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 691) == .rail) // Gwangju Line 1
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 301) == .taxi)
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 801) == nil) // parking
-        #expect(KSX6924Reader.transitMode(forKOTRISCode: 190) == nil) // no class in the table
+        #expect(KSX6924Reader.transitMode(forKOTRISCode: 190) == nil) // Unclassified observed code
         #expect(KSX6924Reader.transitMode(forKOTRISCode: 0) == nil)
     }
 
