@@ -15,6 +15,45 @@ struct TransitBalanceTests {
 
         #expect(balance.formattedBalance == "NT$245")
     }
+
+    @Test
+    func `Balances encoded before tap events decode with none`() throws {
+        let oldJSON = Data(
+            #"{"serialNumber":"","balanceRaw":5000,"currencyCode":"KRW","cardName":"T-Money","transactions":[{"type":"trip","amount":1250,"metadata":{}}],"metadata":{}}"#.utf8
+        )
+        let balance = try JSONDecoder().decode(TransitBalance.self, from: oldJSON)
+        #expect(balance.tapEvents.isEmpty)
+        let transaction = try #require(balance.transactions.first)
+        #expect(transaction.amount == 1250)
+        #expect(transaction.mode == nil)
+        #expect(transaction.event == nil)
+        #expect(transaction.distanceMeters == nil)
+    }
+
+    @Test
+    func `Tap events and transport fields survive a coding round trip`() throws {
+        let tap = TransitTransaction(
+            type: .trip,
+            exitStation: "00000290",
+            mode: .rail,
+            event: .tapOff,
+            distanceMeters: 12900,
+            recordNumber: 2
+        )
+        let balance = TransitBalance(
+            serialNumber: "",
+            balanceRaw: 5000,
+            currencyCode: "KRW",
+            cardName: "T-Money",
+            transactions: [TransitTransaction(type: .trip, amount: 100, mode: .bus)],
+            tapEvents: [tap]
+        )
+        let data = try JSONEncoder().encode(balance)
+        let json = try #require(String(data: data, encoding: .utf8))
+        #expect(json.contains(#""mode":"rail""#))
+        #expect(json.contains(#""event":"tapOff""#))
+        #expect(try JSONDecoder().decode(TransitBalance.self, from: data) == balance)
+    }
     @Test
     func `Automatic detection reaches T-Union after Singapore and Korea reject selection`() async throws {
         let transport = MockTransport()

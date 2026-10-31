@@ -52,6 +52,7 @@ struct CEPASTests {
         #expect(tripComponents.minute == 0)
         #expect(trip.entryStation == "BFT")
         #expect(trip.exitStation == "CGA")
+        #expect(trip.mode == .rail)
         #expect(trip.rawData == debit)
         let recharge = try #require(result.transactions.dropFirst().first)
         #expect(recharge.type == .topup)
@@ -60,6 +61,7 @@ struct CEPASTests {
         let busTrip = try #require(result.transactions.dropFirst(2).first)
         #expect(busTrip.type == .trip)
         #expect(busTrip.metadata["busRoute"] == "12")
+        #expect(busTrip.mode == .bus)
         #expect(result.transactions.last?.type == .purchase)
     }
 
@@ -221,6 +223,7 @@ struct CEPASTests {
                         success, // KS X 6924 SELECT
                         ResponseAPDU(data: Data([0, 0, 0x13, 0x88]), sw1: 0x90, sw2: 0x00),
                         ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // No history
+                        ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // No tap records
                     ]
                 let info = CardInfo(type: .smartMX, uid: transport.identifier)
 
@@ -243,7 +246,8 @@ struct CEPASTests {
             notFound, // Hyundai
             success, // T-Money / Snapper
             ResponseAPDU(data: Data([0, 0, 0x27, 0x10]), sw1: 0x90, sw2: 0x00),
-            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83),
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // SFI 4
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83), // SFI 3
         ]
         let info = CardInfo(type: .smartMX, uid: transport.identifier)
 
@@ -326,11 +330,13 @@ struct CEPASTests {
         #expect(busRefund.amount == 100)
         #expect(busRefund.metadata["balanceChange"] == "100")
         #expect(busRefund.metadata["transactionType"] == "76")
+        #expect(busRefund.mode == .bus)
         let charge = try #require(result.transactions.last)
         #expect(charge.type == .purchase)
         #expect(charge.amount == 50)
         #expect(charge.metadata["balanceChange"] == "-50")
         #expect(charge.metadata["transactionType"] == "04")
+        #expect(charge.mode == nil)
     }
 
     @Test
