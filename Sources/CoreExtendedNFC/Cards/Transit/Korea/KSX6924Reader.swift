@@ -89,13 +89,25 @@ open class KSX6924Reader: @unchecked Sendable {
         )
     }
 
-    /// Try each known AID until one succeeds. Returns (name, aid, fciResponseData).
+    /// Try each known AID until one succeeds. Follow a Hyundai configuration DF's
+    /// advertised purse AID before reading. Returns (name, aid, fciResponseData).
     open func selectCard() async throws -> (String, Data, Data) {
         for (name, aid) in KSX6924Constants.allAIDs {
             NFCLog.debug("KSX6924 SELECT AID \(aid.hexString) (\(name))", source: "KSX6924")
             do {
                 let response = try await transport.sendAPDUWithChaining(CommandAPDU.select(aid: aid))
                 if response.isSuccess {
+                    if aid == KSX6924Constants.hyundaiAID,
+                        let applicationAID = Self.configuredApplicationAID(response.data),
+                        let application = KSX6924Constants.allAIDs.first(where: { $0.aid == applicationAID })
+                    {
+                        NFCLog.debug("KSX6924 configuration DF selects purse AID \(applicationAID.hexString)", source: "KSX6924")
+                        let purseResponse = try await transport.sendAPDUWithChaining(CommandAPDU.select(aid: applicationAID))
+                        if purseResponse.isSuccess {
+                            return (application.name, applicationAID, purseResponse.data)
+                        }
+                        continue
+                    }
                     NFCLog.debug("KSX6924 SELECT AID success card=\(name) data=\(NFCLog.payload(response.data))", source: "KSX6924")
                     return (name, aid, response.data)
                 }
@@ -108,6 +120,18 @@ open class KSX6924Reader: @unchecked Sendable {
         }
         // None of the KS X 6924 AIDs was selectable; report the primary (T-Money) AID.
         throw NFCError.applicationNotFound(aid: KSX6924Constants.tMoneyAID)
+    }
+
+    /// A Hyundai configuration DF advertises its purse application in tag `4F`.
+    /// Only known purse AIDs are followed, once; an FCI with purse info is already selected.
+    open class func configuredApplicationAID(_ fciData: Data) -> Data? {
+        guard let nodes = try? ASN1Parser.parseTLV(fciData),
+            ASN1Parser.findTag(KSX6924Constants.PURSE_TAG, in: nodes) == nil,
+            let aid = ASN1Parser.findTag(0x4F, in: nodes)?.value,
+            aid != KSX6924Constants.hyundaiAID,
+            KSX6924Constants.allAIDs.contains(where: { $0.aid == aid })
+        else { return nil }
+        return aid
     }
 
     open func readRawBalance() async throws -> Int {
@@ -292,10 +316,12 @@ open class KSX6924Reader: @unchecked Sendable {
     ///
     /// Layout: byte 0 type, bytes 2..<6 balance after (BE), 6..<10 counter,
     /// 10..<14 cost (BE, unsigned), 26..<33 BCD date-time (KST).
-    /// Returns nil for unused slots (zero cost and no valid timestamp).
+    /// Returns nil for unused slots (all `00` or all `FF`).
     open class func parseRecord(_ data: Data, recordNumber: Int? = nil) -> TransitTransaction? {
         let bytes = [UInt8](data)
-        guard bytes.count >= KSX6924Constants.recordMinimumLength else { return nil }
+        guard bytes.count >= KSX6924Constants.recordMinimumLength,
+            !bytes.allSatisfy({ $0 == 0x00 }), !bytes.allSatisfy({ $0 == 0xFF })
+        else { return nil }
 
         func uint32(at offset: Int) -> Int {
             bytes[offset ..< offset + 4].reduce(0) { $0 << 8 | Int($1) }
@@ -306,8 +332,6 @@ open class KSX6924Reader: @unchecked Sendable {
         let cost = uint32(at: KSX6924Constants.recordCost)
         let dateRange = KSX6924Constants.recordDateTime ..< KSX6924Constants.recordDateTime + KSX6924Constants.recordDateTimeLength
         let date = parseBCDDateTime(Data(bytes[dateRange]))
-        if cost == 0, date == nil { return nil }
-
         let txType: TransactionType = switch recordType {
         case 0x01: .trip
         case 0x02: .topup
@@ -364,7 +388,7 @@ open class KSX6924Reader: @unchecked Sendable {
             exitStation: event == .tapOff ? station : nil,
             mode: transitMode(forKOTRISCode: modeCode),
             event: event,
-            distanceMeters: distance > 0 ? distance : nil,
+            distanceMeters: event == .tapOff && distance > 0 ? distance : nil,
             recordNumber: recordNumber,
             rawData: Data(bytes),
             metadata: [
