@@ -24,6 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - Japan IC bus records are `.bus` and gate records `.rail`; CEPAS MRT records are `.rail`, and bus and bus-refund records `.bus` (Metrodroid `SuicaTrip.mode`, `EZLinkTrip.getMode`).
   - The example app lists tap events with their event, mode, station and distance, and shows the mode in the transaction history.
   - The SFI 3 parser is tested against the SFI 3 records in Metrodroid's public `oldtmoney` T-Money sample, whose times, fares and distance agree with its SFI 4 records.
+  - Tested on a physical T-Money card with an ACR122U on 2026-10-31: 5,300 won, 20 transactions and 20 tap events. The sanitized capture is replayed through both the reader and automatic transit detection.
+  - Hyundai configuration directories select the known purse AID advertised in FCI tag `4F` before GET BALANCE. SFI 4 zero-fare records without a clock are preserved; only all-`00` and all-`FF` slots are skipped.
 
 ### Changed
 

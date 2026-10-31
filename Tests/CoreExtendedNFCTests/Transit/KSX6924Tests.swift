@@ -13,6 +13,54 @@ struct KSX6924Tests {
     // MARK: - AID Selection
 
     @Test
+    func `Configuration DF only follows known purse AIDs without purse info`() {
+        #expect(KSX6924Reader.configuredApplicationAID(configurationFCI(aid: KSX6924Constants.tMoneyAID)) == KSX6924Constants.tMoneyAID)
+        #expect(KSX6924Reader.configuredApplicationAID(configurationFCI(aid: KSX6924Constants.hyundaiAID)) == nil)
+        #expect(KSX6924Reader.configuredApplicationAID(configurationFCI(aid: hexToData("A0000000000000"))) == nil)
+        #expect(KSX6924Reader.configuredApplicationAID(hexToData("6F054F07D410")) == nil)
+        let purse = buildFCI(serial: "1234567890ABCDEF", issueDate: "20200101", expiryDate: "20301231")
+        #expect(KSX6924Reader.configuredApplicationAID(purse + configurationFCI(aid: KSX6924Constants.tMoneyAID)) == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func `Rejected configured purse continues ordinary AID selection`(thrownStatus: Bool) async throws {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: configurationFCI(aid: KSX6924Constants.tMoneyAID), sw1: 0x90, sw2: 0x00)
+        ]
+        if thrownStatus {
+            transport.apduFailures[1] = .unexpectedStatusWord(0x6A, 0x82)
+        } else {
+            transport.apduResponses.append(ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82))
+        }
+        transport.apduResponses += [
+            ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x82), // ordinary T-Money probe
+            ResponseAPDU(data: buildMinimalFCI(), sw1: 0x90, sw2: 0x00), // Cashbee
+        ]
+        let (name, aid, _) = try await KSX6924Reader(transport: transport).selectCard()
+        #expect(name == "Cashbee")
+        #expect(aid == KSX6924Constants.cashbeeAID)
+        #expect(
+            transport.sentAPDUs.map(\.data) == [
+                KSX6924Constants.hyundaiAID, KSX6924Constants.tMoneyAID,
+                KSX6924Constants.tMoneyAID, KSX6924Constants.cashbeeAID,
+            ])
+    }
+
+    @Test
+    func `Tag loss selecting the configured purse propagates`() async {
+        let transport = MockTransport()
+        transport.apduResponses = [
+            ResponseAPDU(data: configurationFCI(aid: KSX6924Constants.tMoneyAID), sw1: 0x90, sw2: 0x00)
+        ]
+        transport.apduFailures[1] = .tagConnectionLost
+        await #expect(throws: NFCError.tagConnectionLost) {
+            _ = try await KSX6924Reader(transport: transport).selectCard()
+        }
+        #expect(transport.sentAPDUs.count == 2)
+    }
+
+    @Test
     func `Select T-Money AID successfully`() async throws {
         let transport = MockTransport()
         // SELECT succeeds with FCI containing purse info
@@ -165,7 +213,21 @@ struct KSX6924Tests {
     func `Unused record slot is skipped`() {
         let empty = Data(repeating: 0x00, count: 46)
         #expect(KSX6924Reader.parseRecord(empty) == nil)
+        #expect(KSX6924Reader.parseRecord(Data(repeating: 0xFF, count: 46)) == nil)
         #expect(KSX6924Reader.parseRecord(Data(repeating: 0x00, count: 20)) == nil)
+    }
+
+    @Test
+    func `Zero fare without a clock is still a transaction`() throws {
+        var record = Data(repeating: 0x00, count: 46)
+        record[0] = 0x01
+        record.replaceSubrange(2 ..< 6, with: [0x00, 0x00, 0x14, 0xB4])
+        let tx = try #require(KSX6924Reader.parseRecord(record, recordNumber: 1))
+        #expect(tx.type == .trip)
+        #expect(tx.amount == 0)
+        #expect(tx.balanceAfter == 5300)
+        #expect(tx.date == nil)
+        #expect(tx.rawData == record)
     }
 
     @Test
@@ -245,6 +307,17 @@ struct KSX6924Tests {
         #expect(tap.distanceMeters == nil)
         #expect(tap.date == Date(timeIntervalSince1970: 1_481_423_187))
         #expect(tap.metadata["modeCode"] == "820")
+    }
+
+    @Test
+    func `Only tap off records expose distance bytes`() throws {
+        var record = hexToData(Self.tapOffRecordHex)
+        for event: UInt8 in [0x00, 0x05] {
+            record[2] = event
+            let tap = try #require(KSX6924Reader.parseTapRecord(record))
+            #expect(tap.distanceMeters == nil)
+            #expect(tap.rawData == record)
+        }
     }
 
     @Test
@@ -455,6 +528,10 @@ struct KSX6924Tests {
     }
 
     // MARK: - Helpers
+
+    private func configurationFCI(aid: Data) -> Data {
+        ASN1Parser.encodeTLV(tag: 0x6F, value: ASN1Parser.encodeTLV(tag: 0xA5, value: ASN1Parser.encodeTLV(tag: 0x4F, value: aid)))
+    }
 
     /// Build a minimal FCI with no purse info (empty data).
     private func buildMinimalFCI() -> Data {

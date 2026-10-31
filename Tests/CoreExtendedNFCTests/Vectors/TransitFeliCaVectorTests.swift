@@ -251,7 +251,7 @@ struct TransitFeliCaVectorTests {
     // MARK: - KS X 6924 T-Money (Metrodroid oldtmoney)
 
     @Test
-    func `T-Money oldtmoney dump matches Metrodroid parsed output`() async throws {
+    func `T-Money oldtmoney replays parsed fares and preserves zero-fare records`() async throws {
         // [MD-TM] tmoney/oldtmoney.json: appFci, "balance": "000044f2", SFI 4 records 1-8, SFI 3 records 1-4.
         let fci = try Self.hex("6f31b02f0010010810100300001234560319835994201607272021072601000007a120d0000000000000000000000000000000")
         let records = try [
@@ -295,7 +295,8 @@ struct TransitFeliCaVectorTests {
         #expect(Self.day(result.validFrom, in: "Asia/Seoul") == "2016-07-27")
         #expect(Self.day(result.validUntil, in: "Asia/Seoul") == "2021-07-26")
 
-        // Five trips; records 6-8 have zero cost and an FF timestamp and are dropped.
+        // The five entries in Metrodroid's parsed output, plus zero-fare raw records
+        // 6-8 with an FF timestamp. Zero fare and no clock do not identify an empty slot.
         // Metrodroid fare is signed (top-up -46000); the library reports magnitude + kind.
         let expected: [(ms: Int64?, fare: Int, balance: Int, type: TransactionType)] = [
             (1_481_423_187_000, 13500, 17650, .trip),
@@ -303,6 +304,9 @@ struct TransitFeliCaVectorTests {
             (1_481_273_472_000, 1250, 31250, .trip),
             (1_481_193_516_000, 13500, 32500, .trip),
             (nil, 46000, 46000, .topup),
+            (nil, 0, 0, .trip),
+            (nil, 0, 0, .trip),
+            (nil, 0, 0, .trip),
         ]
         try #require(result.transactions.count == expected.count)
         for (tx, ref) in zip(result.transactions, expected) {
@@ -311,6 +315,7 @@ struct TransitFeliCaVectorTests {
             #expect(tx.type == ref.type)
             #expect(tx.date == ref.ms.map { Date(timeIntervalSince1970: Double($0) / 1000) })
         }
+        #expect(result.transactions.map(\.rawData) == records)
 
         // SFI 3 tap records: the times match SFI 4 records 1-4, as BCD for the airport bus
         // (KOTRIS 820) and packed for Seoul Metro (KOTRIS 201). The Seoul Metro tap off
