@@ -101,7 +101,8 @@ public enum KSX6924Constants {
         850 ... 851, 853 ... 853, 870 ... 872,
     ]
 
-    /// Bus codes in the KOTRIS table (class `B`), plus the Seoul Smart Card code 142.
+    /// Bus codes in the KOTRIS table (class `B`), plus Seoul Smart Card code 142
+    /// and reviewed station-catalog codes 736 and 741.
     /// Codes 800-802 (Namsan tunnel tolls, parking, Manwolsan tunnel) are left out.
     public static let kotrisBusCodes: [ClosedRange<Int>] = [
         100 ... 106, 110 ... 110, 115 ... 115, 120 ... 122, 130 ... 134, 140 ... 140, 142 ... 142,
