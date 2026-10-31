@@ -252,7 +252,7 @@ struct TransitFeliCaVectorTests {
 
     @Test
     func `T-Money oldtmoney dump matches Metrodroid parsed output`() async throws {
-        // [MD-TM] tmoney/oldtmoney.json: appFci, "balance": "000044f2", SFI 4 records 1-8.
+        // [MD-TM] tmoney/oldtmoney.json: appFci, "balance": "000044f2", SFI 4 records 1-8, SFI 3 records 1-4.
         let fci = try Self.hex("6f31b02f0010010810100300001234560319835994201607272021072601000007a120d0000000000000000000000000000000")
         let records = try [
             "012c000044f200000008000034bc07200900200191370003b5422016121111262700000000000000000000000000",
@@ -264,6 +264,12 @@ struct TransitFeliCaVectorTests {
             "012c00000000000000020000000007200100200010080040547dffffffffffffffffffffffffffffffffffffffff",
             "012c000000000000000100000000072009002002380000128497ffffffffffffffffffffffffffffffffffffffff",
         ].map(Self.hex)
+        let tapRecords = try [
+            "0132000003000060000334201612111126270000000034bc08a60dcf0101000000000546c00700002189942c0000000000000000",
+            "01320100020000029000c92189942c0000000032640005460000001f010100000000000ac000000004e200000b06054600000000",
+            "01320000020000095000c921898e660000000000000004e200000004010100000000007dc000000004e200000b0504e200000000",
+            "0132000001400173000334201612081938360000000034bc08a60d750000000000000546c0040000000000000000000000000000",
+        ].map(Self.hex)
 
         let balance = try Self.hex("000044f2")
         let transport = MockTransport()
@@ -274,6 +280,8 @@ struct TransitFeliCaVectorTests {
                 ResponseAPDU(data: balance, sw1: 0x90, sw2: 0x00), // GET BALANCE
             ]
             + records.map { ResponseAPDU(data: $0, sw1: 0x90, sw2: 0x00) }
+            + [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83)]
+            + tapRecords.map { ResponseAPDU(data: $0, sw1: 0x90, sw2: 0x00) }
             + [ResponseAPDU(data: Data(), sw1: 0x6A, sw2: 0x83)]
 
         let result = try await KSX6924Reader(transport: transport).readBalanceAndHistory()
@@ -303,6 +311,28 @@ struct TransitFeliCaVectorTests {
             #expect(tx.type == ref.type)
             #expect(tx.date == ref.ms.map { Date(timeIntervalSince1970: Double($0) / 1000) })
         }
+
+        // SFI 3 tap records: the times match SFI 4 records 1-4, as BCD for the airport bus
+        // (KOTRIS 820) and packed for Seoul Metro (KOTRIS 201). The Seoul Metro tap off
+        // (record 2) ends the journey that record 3 began, 12.9 km later.
+        let expectedTaps: [(ms: Int64, event: TransitTapEvent, mode: TransitMode, station: String, distance: Int?)] = [
+            (1_481_423_187_000, .tapOn, .bus, "00006000", nil),
+            (1_481_276_004_000, .tapOff, .rail, "00000290", 12900),
+            (1_481_273_472_000, .tapOn, .rail, "00000950", nil),
+            (1_481_193_516_000, .tapOn, .bus, "40017300", nil),
+        ]
+        try #require(result.tapEvents.count == expectedTaps.count)
+        for (index, (tap, ref)) in zip(result.tapEvents, expectedTaps).enumerated() {
+            #expect(tap.type == .trip)
+            #expect(tap.amount == nil)
+            #expect(tap.date == Date(timeIntervalSince1970: Double(ref.ms) / 1000))
+            #expect(tap.event == ref.event)
+            #expect(tap.mode == ref.mode)
+            #expect((ref.event == .tapOn ? tap.entryStation : tap.exitStation) == ref.station)
+            #expect(tap.distanceMeters == ref.distance)
+            #expect(tap.recordNumber == index + 1)
+        }
+        #expect(transport.sentAPDUs.last?.bytes == Data([0x00, 0xB2, 0x05, 0x1C, 0x00]))
     }
 
     // MARK: - CEPAS (Metrodroid cepas/legacy)
