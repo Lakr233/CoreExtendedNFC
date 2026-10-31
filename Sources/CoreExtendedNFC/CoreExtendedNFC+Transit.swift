@@ -2,14 +2,16 @@ import Foundation
 
 public extension CoreExtendedNFC {
     /// Read transit card balance from a connected tag.
-    /// Automatically detects Japan IC (FeliCa), Rakuten Edy, WAON, nanaco, Octopus,
-    /// Singapore CEPAS, T-Money/Cashbee/Snapper (KS X 6924), or T-Union cards.
+    /// Automatically detects Japan IC (including IruCa, PASPY and SAPICA), OKICA,
+    /// Rakuten Edy, WAON, nanaco, Octopus, Singapore CEPAS, T-Money/Cashbee/Snapper
+    /// (KS X 6924), or T-Union cards.
     /// Call directly after `NFCSessionManager.scan`, before `refineCardInfo` or other
     /// application-selection commands change the default application used by CEPAS.
     ///
     /// Detection order:
-    /// 1. FeliCa system code → Japan IC (0003), Octopus (8008), or the common area (FE00),
-    ///    where the Rakuten Edy, WAON, and nanaco balance services are tried in that order
+    /// 1. FeliCa system code → Japan IC (0003/80DE/8592/865E), OKICA (8FC1),
+    ///    Octopus (8008), or the common area (FE00), where the Rakuten Edy, WAON,
+    ///    and nanaco balance services are tried in that order
     /// 2. ISO 7816 → probe Singapore CEPAS purse
     /// 3. ISO 7816 → try KS X 6924 AIDs (T-Money / Snapper, Cashbee, MOIBA, K-Cash)
     /// 4. ISO 7816 → try T-Union AID
@@ -25,8 +27,11 @@ public extension CoreExtendedNFC {
             guard let felicaTransport = transport as? any FeliCaTagTransporting else {
                 throw NFCError.unsupportedOperation("FeliCa transit reading requires a FeliCa transport")
             }
-            if felicaTransport.systemCode == JapanICConstants.systemCode {
+            if JapanICConstants.cardNamesBySystemCode[felicaTransport.systemCode] != nil {
                 return try await readJapanICBalance(transport: felicaTransport)
+            }
+            if felicaTransport.systemCode == OKICAConstants.systemCode {
+                return try await readOKICABalance(transport: felicaTransport)
             }
             if felicaTransport.systemCode == OctopusConstants.systemCode {
                 return try await readOctopusBalance(transport: felicaTransport)
@@ -72,13 +77,20 @@ public extension CoreExtendedNFC {
 
     /// Read Japan FeliCa IC card balance + history.
     ///
-    /// Supports Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken.
-    /// The consumer app must register system code `0x0003` in Info.plist
-    /// under `com.apple.developer.nfc.readersession.felicasystemcodes`.
+    /// Supports Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken,
+    /// IruCa, PASPY and SAPICA. Register the relevant system code (`0003`, `80DE`,
+    /// `8592` or `865E`) under `com.apple.developer.nfc.readersession.felica.systemcodes`.
     static func readJapanICBalance(
         transport: any FeliCaTagTransporting
     ) async throws -> TransitBalance {
         try await JapanICReader(transport: transport).readBalanceAndHistory()
+    }
+
+    /// Read Okinawa OKICA balance and history. Register system code `8FC1` in Info.plist.
+    static func readOKICABalance(
+        transport: any FeliCaTagTransporting
+    ) async throws -> TransitBalance {
+        try await OKICAReader(transport: transport).readBalanceAndHistory()
     }
 
     /// Read Hong Kong Octopus balance.
