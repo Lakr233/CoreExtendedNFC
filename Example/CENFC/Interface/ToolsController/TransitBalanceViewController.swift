@@ -94,7 +94,7 @@ class TransitBalanceViewController: StackScrollController {
         addSectionFooter(
             String(
                 localized:
-                    "Supports Japan IC (Suica, PASMO, ICOCA…), Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
+                    "Supports Japan IC (Suica, PASMO, ICOCA, IruCa, PASPY, SAPICA…), Okinawa OKICA, Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
             ))
 
         stackView.addArrangedSubview(resultSentinel)
