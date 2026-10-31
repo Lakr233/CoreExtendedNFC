@@ -36,7 +36,7 @@ Sources/CoreExtendedNFC/
 │   ├── ISO15693/          Block read/write, system info
 │   ├── Type4/             NDEF via ISO 7816 SELECT/READ BINARY
 │   ├── IndividualNumber/  Japanese My Number card APDU flows
-│   ├── Transit/           Japan IC, Octopus, CEPAS, KS X 6924, T-Union
+│   ├── Transit/           Japan IC, Edy, WAON, nanaco, Octopus, CEPAS, KS X 6924, T-Union
 │   └── Passport/          BAC, PACE, CA, AA, SM; DG parsers in DataGroups/
 │
 ├── Crypto/             AES-CMAC, ISO 9797 MAC, key derivation, padding, hashing
