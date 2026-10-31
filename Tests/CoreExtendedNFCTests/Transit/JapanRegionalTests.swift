@@ -23,6 +23,7 @@ struct JapanRegionalTests {
         try #require(result.transactions.count == 2)
         let trip = result.transactions[0]
         #expect(trip.type == .trip)
+        #expect(trip.mode == .rail)
         #expect(trip.amount == 250)
         #expect(trip.balanceAfter == 250)
         #expect(trip.entryStation == "DC0D")
@@ -37,6 +38,7 @@ struct JapanRegionalTests {
 
         let issue = result.transactions[1]
         #expect(issue.type == .topup)
+        #expect(issue.mode == nil)
         #expect(issue.amount == nil)
         #expect(issue.balanceAfter == 500)
         #expect(issue.entryStation == nil)
@@ -100,12 +102,14 @@ struct JapanRegionalTests {
             let block = okicaBlock(usage: usage, balance: 800)
             let tx = try #require(OKICAReader.parseHistoryBlock(block, previousBlock: older))
             #expect(tx.type == .topup)
+            #expect(tx.mode == nil)
             #expect(tx.amount == 300)
             #expect(tx.entryStation == nil)
             #expect(tx.exitStation == nil)
         }
         let bus = try #require(OKICAReader.parseHistoryBlock(okicaBlock(usage: 0x050F_000F, balance: 250), previousBlock: older))
         #expect(bus.type == .trip)
+        #expect(bus.mode == .bus)
         #expect(bus.amount == 250)
         #expect(bus.entryStation == nil)
         #expect(bus.exitStation == nil)
@@ -115,6 +119,7 @@ struct JapanRegionalTests {
 
         let unknown = try #require(OKICAReader.parseHistoryBlock(okicaBlock(usage: 0xABCD_EF01, balance: 250), previousBlock: older))
         #expect(unknown.type == .unknown)
+        #expect(unknown.mode == nil)
         #expect(unknown.amount == nil)
         #expect(unknown.metadata["usageCode"] == "ABCDEF01")
         #expect(unknown.rawData != nil)

@@ -25,6 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - The example app lists tap events with their event, mode, station and distance, and shows the mode in the transaction history.
   - The SFI 3 parser is tested against the SFI 3 records in Metrodroid's public `oldtmoney` T-Money sample, whose times, fares and distance agree with its SFI 4 records.
 
+### Changed
+
+- OKICA journeys populate the common `TransitTransaction.mode`: Yui Rail is `.rail` and bus journeys are `.bus`. The existing `metadata["mode"]` values (`"monorail"` / `"bus"`) remain available. Top-ups, issuance and unknown operations have no mode. The captured Yui Rail regression and the bus / top-up parser tests cover the typed field.
+
 ## [2.1.0] - 2026-10-17
 
 2.1.0 is a minor release: it adds public API (an experimental NTAG 424 DNA module, `DESFireVersionInfo.ntagHardwareType`, `FeliCaFrame.REQUEST_RESPONSE`, `DESFireStatus.authenticationDelay` and the passport and ISO 15693 helpers listed below) and fixes conformance issues found by checking every supported card family against its standard, cross-checked with closed-source readers. Not yet confirmed on real hardware: the passport Chip Access Procedure order and extended-length Active Authentication, ISO 15693 Extended Get System Information, and the NTAG 424 DNA module.

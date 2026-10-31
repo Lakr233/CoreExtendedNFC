@@ -137,15 +137,18 @@ open class OKICAReader: @unchecked Sendable {
         var metadata = ["usageCode": String(format: "%08X", usage), "operation": operation]
         var entryStation: String?
         var exitStation: String?
+        var mode: TransitMode?
         let entryCode = Data(bytes[6 ... 7]).hexString
         let exitCode = Data(bytes[8 ... 9]).hexString
         if usage == OKICAConstants.yuiRailTrip {
+            mode = .rail
             metadata["mode"] = "monorail"
             metadata["entryRegion"] = "3"
             metadata["exitRegion"] = "3"
             entryStation = entryCode
             exitStation = exitCode
         } else if usage == OKICAConstants.busTrip {
+            mode = .bus
             metadata["mode"] = "bus"
             metadata["entryLocationCode"] = entryCode
             metadata["exitLocationCode"] = exitCode
@@ -157,6 +160,7 @@ open class OKICAReader: @unchecked Sendable {
             date: JapanICReader.parseDate(block),
             entryStation: entryStation,
             exitStation: exitStation,
+            mode: mode,
             recordNumber: recordNumber,
             rawData: block,
             metadata: metadata
