@@ -151,6 +151,13 @@ open class CEPASReader: @unchecked Sendable {
         case 0x04: type = .purchase // service charge
         default: type = .unknown
         }
+        // Modes follow Metrodroid EZLinkTrip.getMode: MRT is rail, bus and bus refund are bus.
+        let mode: TransitMode? =
+            switch record[0] {
+            case 0x30: .rail
+            case 0x31, 0x76: .bus
+            default: nil
+            }
         // Interpret amount bytes only for recognized monetary records.
         let change = type == .unknown ? nil : signedAmount(Data(record[1 ..< 4]))
         var metadata = ["transactionType": String(format: "%02X", record[0])]
@@ -178,6 +185,7 @@ open class CEPASReader: @unchecked Sendable {
             date: epoch.addingTimeInterval(Double(Data(record[4 ..< 8]).uint32BE)),
             entryStation: entry,
             exitStation: exit,
+            mode: mode,
             recordNumber: recordNumber,
             rawData: record,
             metadata: metadata

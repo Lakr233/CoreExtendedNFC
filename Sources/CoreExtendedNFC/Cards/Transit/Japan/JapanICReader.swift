@@ -1,11 +1,12 @@
 import Foundation
 
 /// Reads balance and transaction history from Japan FeliCa IC transit cards
-/// (Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken, etc.).
+/// (Suica, PASMO, ICOCA, Kitaca, TOICA, manaca, SUGOCA, nimoca, Hayakaken,
+/// IruCa, PASPY and SAPICA).
 ///
 /// ## Requirements
-/// The consumer app must register system code `0x0003` in its Info.plist
-/// under `com.apple.developer.nfc.readersession.felicasystemcodes`.
+/// Register the card's system code (`0003`, `80DE`, `8592` or `865E`) in Info.plist
+/// under `com.apple.developer.nfc.readersession.felica.systemcodes`.
 ///
 /// ## References
 /// - CJRC system code 0x0003
@@ -20,17 +21,20 @@ open class JapanICReader: @unchecked Sendable {
         self.transport = transport
     }
 
-    /// Read balance only (fast — single block read).
+    /// Read balance and optional SAPICA points without transaction history.
     open func readBalance() async throws -> TransitBalance {
         NFCLog.info("Japan IC balance read start idm=\(NFCLog.payload(transport.identifier))", source: "JapanIC")
         try validateSystemCode()
         let balance = try await readRawBalance()
+        let cardName = try await readCardName()
+        let metadata = try await readMetadata()
         NFCLog.info("Japan IC balance read complete balance=\(NFCLog.cardValue(balance)) JPY", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: "Japan IC"
+            cardName: cardName,
+            metadata: metadata
         )
     }
 
@@ -40,23 +44,62 @@ open class JapanICReader: @unchecked Sendable {
         try validateSystemCode()
         let balance = try await readRawBalance()
         let transactions = try await readHistory()
+        let cardName = try await readCardName()
+        let metadata = try await readMetadata()
         NFCLog.info("Japan IC balance/history read complete balance=\(NFCLog.cardValue(balance)) JPY transactions=\(transactions.count)", source: "JapanIC")
         return TransitBalance(
             serialNumber: transport.identifier.hexString,
             balanceRaw: balance,
             currencyCode: "JPY",
-            cardName: "Japan IC",
-            transactions: transactions
+            cardName: cardName,
+            transactions: transactions,
+            metadata: metadata
         )
     }
 
     // MARK: - Steps
 
     open func validateSystemCode() throws {
-        NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString) expected=\(JapanICConstants.systemCode.hexString)", source: "JapanIC")
-        guard transport.systemCode == JapanICConstants.systemCode else {
-            // Not a CJRC (0x0003) card.
+        NFCLog.debug("Japan IC system code=\(transport.systemCode.hexString)", source: "JapanIC")
+        guard JapanICConstants.cardNamesBySystemCode[transport.systemCode] != nil else {
             throw NFCError.tagNotSupported
+        }
+    }
+
+    /// Identify Hayakaken by its additional advertised system (`927A`), while
+    /// keeping all balance/history reads on the selected CJRC (`0003`) system.
+    /// A refused or unsupported enumeration preserves the generic name.
+    open func readCardName() async throws -> String {
+        let fallback = JapanICConstants.cardNamesBySystemCode[transport.systemCode] ?? "Japan IC"
+        guard transport.systemCode == JapanICConstants.systemCode else { return fallback }
+        try Task.checkCancellation()
+        do {
+            let codes = try await transport.requestSystemCode()
+            guard codes.allSatisfy({ $0.count == 2 }) else { return fallback }
+            return codes.contains(JapanICConstants.hayakakenSystemCode) ? "Hayakaken" : fallback
+        } catch where !isSessionTerminating(error) {
+            NFCLog.debug("Japan IC issuer identification unavailable: \(error.localizedDescription)", source: "JapanIC")
+            return fallback
+        }
+    }
+
+    /// SAPICA points when the public points block is readable. Session loss and
+    /// cancellation propagate even though points are optional.
+    open func readMetadata() async throws -> [String: String] {
+        guard transport.systemCode == JapanICConstants.sapicaSystemCode else { return [:] }
+        try Task.checkCancellation()
+        do {
+            let blocks = try await transport.readWithoutEncryption(
+                serviceCode: JapanICConstants.sapicaPointsServiceCode,
+                blockList: [FeliCaFrame.blockListElement(blockNumber: 0)]
+            )
+            guard let block = blocks.first, block.count == 16 else { return [:] }
+            let bytes = [UInt8](block)
+            let points = Int(bytes[0]) | Int(bytes[1]) << 8 | Int(bytes[2]) << 16
+            return ["points": String(points)]
+        } catch  where !isSessionTerminating(error) {
+            NFCLog.debug("SAPICA points unavailable: \(error.localizedDescription)", source: "JapanIC")
+            return [:]
         }
     }
 
@@ -166,7 +209,8 @@ open class JapanICReader: @unchecked Sendable {
 
         // Station codes as hex strings, following Metrodroid SuicaTrip.parse: unused blocks, product
         // sales, and charges carry none; bus records carry a line and stop instead of stations;
-        // ticket machines record a single station and no exit.
+        // ticket machines record a single station and no exit. Bus records are `.bus` and gate
+        // records `.rail` (SuicaTrip.mode).
         var metadata = [
             "consoleType": String(format: "%02X", consoleType),
             "processType": String(format: "%02X", bytes[JapanICConstants.historyUsageType]),
@@ -175,11 +219,13 @@ open class JapanICReader: @unchecked Sendable {
         let exitCode = Data(bytes[JapanICConstants.historyStationExit ..< JapanICConstants.historyStationExit + 2]).hexString
         var entryStation: String?
         var exitStation: String?
+        var mode: TransitMode?
         let regionByte = bytes[JapanICConstants.historyRegionCode]
         if hasDateField(block), !isProductSale, processType != JapanICConstants.chargeProcessType {
             if consoleType == JapanICConstants.busConsoleType {
                 metadata["busLineCode"] = entryCode
                 metadata["busStopCode"] = exitCode
+                mode = .bus
             } else if JapanICConstants.ticketMachineConsoleTypes.contains(consoleType) {
                 entryStation = entryCode
                 metadata["entryRegion"] = String(regionByte >> 6 & 0x03)
@@ -188,6 +234,7 @@ open class JapanICReader: @unchecked Sendable {
                 exitStation = exitCode
                 metadata["entryRegion"] = String(regionByte >> 6 & 0x03)
                 metadata["exitRegion"] = String(regionByte >> 4 & 0x03)
+                mode = .rail
             }
         }
 
@@ -202,6 +249,7 @@ open class JapanICReader: @unchecked Sendable {
             date: date,
             entryStation: entryStation,
             exitStation: exitStation,
+            mode: mode,
             metadata: metadata
         )
     }

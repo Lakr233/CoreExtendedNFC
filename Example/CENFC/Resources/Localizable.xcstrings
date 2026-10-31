@@ -5537,18 +5537,18 @@
         }
       }
     },
-    "Supports Japan IC (Suica, PASMO, ICOCA…), Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported." : {
+    "Supports Japan IC (Suica, PASMO, ICOCA, IruCa, PASPY, SAPICA…), Okinawa OKICA, Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supports Japan IC (Suica, PASMO, ICOCA…), Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
+            "value" : "Supports Japan IC (Suica, PASMO, ICOCA, IruCa, PASPY, SAPICA…), Okinawa OKICA, Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "支持日本交通卡（Suica、PASMO、ICOCA…）、日本电子货币（乐天 Edy、WAON、nanaco）、香港八达通、韩国 T-Money/Cashbee、中国交通联合，以及新加坡传统 EZ-Link/CEPAS。不支持 SimplyGo 历史。"
+            "value" : "支持日本交通卡（Suica、PASMO、ICOCA、IruCa、PASPY、SAPICA…）、冲绳 OKICA、日本电子货币（乐天 Edy、WAON、nanaco）、香港八达通、韩国 T-Money/Cashbee、中国交通联合，以及新加坡传统 EZ-Link/CEPAS。不支持 SimplyGo 历史。"
           }
         }
       }
@@ -8511,6 +8511,150 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择一条记录以查看详细信息。"
+          }
+        }
+      }
+    },
+    "Tap Events" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap Events"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷卡记录"
+          }
+        }
+      }
+    },
+    "Tap events: %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap events: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷卡记录：%lld 条"
+          }
+        }
+      }
+    },
+    "Tap on" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap on"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上车 / 进站"
+          }
+        }
+      }
+    },
+    "Tap off" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下车 / 出站"
+          }
+        }
+      }
+    },
+    "Bus" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公交"
+          }
+        }
+      }
+    },
+    "Rail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rail"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轨道交通"
+          }
+        }
+      }
+    },
+    "Tram" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tram"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有轨电车"
+          }
+        }
+      }
+    },
+    "Ferry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ferry"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轮渡"
+          }
+        }
+      }
+    },
+    "Taxi" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taxi"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出租车"
           }
         }
       }

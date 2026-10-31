@@ -94,7 +94,7 @@ class TransitBalanceViewController: StackScrollController {
         addSectionFooter(
             String(
                 localized:
-                    "Supports Japan IC (Suica, PASMO, ICOCA…), Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
+                    "Supports Japan IC (Suica, PASMO, ICOCA, IruCa, PASPY, SAPICA…), Okinawa OKICA, Japanese e-money (Rakuten Edy, WAON, nanaco), Hong Kong Octopus, Korea T-Money/Cashbee, China T-Union, and traditional Singapore EZ-Link/CEPAS. SimplyGo history is not supported."
             ))
 
         stackView.addArrangedSubview(resultSentinel)
@@ -249,6 +249,9 @@ class TransitBalanceViewController: StackScrollController {
                 if let route = tx.metadata["busRoute"] {
                     details.append(String(localized: "Bus: \(route)"))
                 }
+                if let mode = tx.mode {
+                    details.append(Self.modeLabel(mode))
+                }
 
                 let value: String
                 if tx.amount != nil, let formattedAmount = Self.formatTransactionAmount(tx, currencyCode: balance.currencyCode) {
@@ -271,6 +274,63 @@ class TransitBalanceViewController: StackScrollController {
 
             addSectionFooter(String(localized: "Transactions: \(balance.transactions.count)"))
         }
+
+        // Tap records: where and how the card was used; fares stay in the history above.
+        if !balance.tapEvents.isEmpty {
+            addSectionHeader(String(localized: "Tap Events"))
+
+            for (index, tap) in balance.tapEvents.enumerated() {
+                var details: [String] = []
+                if let mode = tap.mode {
+                    details.append(Self.modeLabel(mode))
+                }
+                if let date = tap.date {
+                    details.append(dateFormatter.string(from: date))
+                }
+                if let entry = tap.entryStation {
+                    details.append(String(localized: "Entry: \(entry)"))
+                }
+                if let exit = tap.exitStation {
+                    details.append(String(localized: "Exit: \(exit)"))
+                }
+                if let distance = tap.distanceMeters {
+                    details.append(Self.formatDistance(meters: distance))
+                }
+
+                addInfoRow(
+                    icon: tap.event == .tapOff ? "arrow.down.right.circle" : "arrow.up.right.circle",
+                    title: "#\(index + 1)",
+                    description: details.joined(separator: " · "),
+                    value: tap.event.map(Self.tapEventLabel) ?? "—",
+                    wrapValue: true
+                )
+            }
+
+            addSectionFooter(String(localized: "Tap events: \(balance.tapEvents.count)"))
+        }
+    }
+
+    nonisolated static func modeLabel(_ mode: TransitMode) -> String {
+        switch mode {
+        case .bus: String(localized: "Bus")
+        case .rail: String(localized: "Rail")
+        case .tram: String(localized: "Tram")
+        case .ferry: String(localized: "Ferry")
+        case .taxi: String(localized: "Taxi")
+        }
+    }
+
+    nonisolated static func tapEventLabel(_ event: TransitTapEvent) -> String {
+        switch event {
+        case .tapOn: String(localized: "Tap on")
+        case .tapOff: String(localized: "Tap off")
+        }
+    }
+
+    /// Distance in kilometres with one decimal, such as "12.9 km".
+    nonisolated static func formatDistance(meters: Int) -> String {
+        Measurement(value: Double(meters) / 1000, unit: UnitLength.kilometers)
+            .formatted(.measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(1))))
     }
 
     private func clearResults() {

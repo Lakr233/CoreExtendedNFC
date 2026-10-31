@@ -16,6 +16,12 @@ public struct TransitBalance: Sendable, Equatable, Codable {
     public let validUntil: Date?
     /// Recent transaction history (newest first).
     public let transactions: [TransitTransaction]
+    /// Recent journey tap records (newest first), kept apart from ``transactions``.
+    ///
+    /// A tap record tells where, when and how the card was used, through ``TransitTransaction/event``,
+    /// ``TransitTransaction/mode`` and the station fields. Fares and balance changes stay in
+    /// ``transactions``, so tap records must not be added to them.
+    public let tapEvents: [TransitTransaction]
     /// Reader-specific decoded fields.
     public let metadata: [String: String]
 
@@ -27,6 +33,7 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         validFrom: Date? = nil,
         validUntil: Date? = nil,
         transactions: [TransitTransaction] = [],
+        tapEvents: [TransitTransaction] = [],
         metadata: [String: String] = [:]
     ) {
         self.serialNumber = serialNumber
@@ -36,7 +43,22 @@ public struct TransitBalance: Sendable, Equatable, Codable {
         self.validFrom = validFrom
         self.validUntil = validUntil
         self.transactions = transactions
+        self.tapEvents = tapEvents
         self.metadata = metadata
+    }
+
+    /// Decodes values encoded before ``tapEvents`` existed as having no tap records.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        serialNumber = try container.decode(String.self, forKey: .serialNumber)
+        balanceRaw = try container.decode(Int.self, forKey: .balanceRaw)
+        currencyCode = try container.decode(String.self, forKey: .currencyCode)
+        cardName = try container.decode(String.self, forKey: .cardName)
+        validFrom = try container.decodeIfPresent(Date.self, forKey: .validFrom)
+        validUntil = try container.decodeIfPresent(Date.self, forKey: .validUntil)
+        transactions = try container.decode([TransitTransaction].self, forKey: .transactions)
+        tapEvents = try container.decodeIfPresent([TransitTransaction].self, forKey: .tapEvents) ?? []
+        metadata = try container.decode([String: String].self, forKey: .metadata)
     }
 
     /// Human-readable formatted balance.
@@ -81,6 +103,12 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
     public let entryStation: String?
     /// Exit station code, if available. Encoding depends on the reader.
     public let exitStation: String?
+    /// Means of transport, if the record identifies it.
+    public let mode: TransitMode?
+    /// Whether a tap record marks the start or the end of a journey, if the record says so.
+    public let event: TransitTapEvent?
+    /// Distance travelled in metres, if the record stores it.
+    public let distanceMeters: Int?
     /// Source record number, if the card exposes cyclic record slots.
     public let recordNumber: Int?
     /// Raw record payload, if retained by the reader.
@@ -95,6 +123,9 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
         date: Date? = nil,
         entryStation: String? = nil,
         exitStation: String? = nil,
+        mode: TransitMode? = nil,
+        event: TransitTapEvent? = nil,
+        distanceMeters: Int? = nil,
         recordNumber: Int? = nil,
         rawData: Data? = nil,
         metadata: [String: String] = [:]
@@ -105,6 +136,9 @@ public struct TransitTransaction: Sendable, Equatable, Codable {
         self.date = date
         self.entryStation = entryStation
         self.exitStation = exitStation
+        self.mode = mode
+        self.event = event
+        self.distanceMeters = distanceMeters
         self.recordNumber = recordNumber
         self.rawData = rawData
         self.metadata = metadata
@@ -117,4 +151,22 @@ public enum TransactionType: String, Sendable, Codable {
     case topup
     case purchase
     case unknown
+}
+
+/// Means of transport of a transit record.
+public enum TransitMode: String, Sendable, Codable, CaseIterable {
+    case bus
+    /// Any rail service: metro, light rail, monorail, commuter and intercity trains.
+    case rail
+    case tram
+    case ferry
+    case taxi
+}
+
+/// The end of a journey that a tap record marks.
+public enum TransitTapEvent: String, Sendable, Codable, CaseIterable {
+    /// Boarding, or entering through a gate.
+    case tapOn
+    /// Alighting, or leaving through a gate.
+    case tapOff
 }

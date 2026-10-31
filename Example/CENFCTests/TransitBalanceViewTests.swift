@@ -129,6 +129,28 @@ struct TransitBalanceViewTests {
     }
 
     @Test
+    func `Tap events are listed with their event, mode, station and distance`() throws {
+        let controller = TransitBalanceViewController()
+        controller.loadViewIfNeeded()
+        controller.displayResults(
+            TransitBalance(
+                serialNumber: "",
+                balanceRaw: 5000,
+                currencyCode: "KRW",
+                cardName: "T-Money",
+                tapEvents: [TransitTransaction(type: .trip, exitStation: "00000290", mode: .rail, event: .tapOff, distanceMeters: 12900)]
+            )
+        )
+
+        let row = try #require(infoRows(in: controller.view).first { $0.titleLabel.text == "#1" })
+        #expect(row.valueLabel.attributedTitle(for: .normal)?.string == TransitBalanceViewController.tapEventLabel(.tapOff))
+        let description = try #require(row.descriptionLabel.text)
+        #expect(description.contains(TransitBalanceViewController.modeLabel(.rail)))
+        #expect(description.contains("00000290"))
+        #expect(description.contains(TransitBalanceViewController.formatDistance(meters: 12900)))
+    }
+
+    @Test
     func `Minor-unit transaction amounts are formatted in the card currency`() {
         // T-Union stores signed fen; a ¥2.50 fare used to show as "-250".
         #expect(TransitBalanceViewController.formatAmount(minorUnits: -250, currencyCode: "CNY") == "−¥2.50")

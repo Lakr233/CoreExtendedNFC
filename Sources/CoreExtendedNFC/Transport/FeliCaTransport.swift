@@ -129,4 +129,14 @@ open class FeliCaTransport: FeliCaTagTransporting, @unchecked Sendable {
         NFCLog.debug("← REQUEST_SERVICE \(result.count) response(s)", source: "FeliCa")
         return result
     }
+
+    /// List every advertised system without polling or selecting another system.
+    open func requestSystemCode() async throws -> [Data] {
+        NFCLog.debug("→ REQUEST_SYSTEM_CODE", source: "FeliCa")
+        let result = try await withNFCErrorMapping(terminationMonitor) {
+            try await tag.requestSystemCode()
+        }
+        NFCLog.debug("← REQUEST_SYSTEM_CODE \(result.map(\.hexString).joined(separator: ","))", source: "FeliCa")
+        return result
+    }
 }
