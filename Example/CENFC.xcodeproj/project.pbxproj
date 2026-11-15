@@ -602,7 +602,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CENFC/Resources/Entitlements.entitlements;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 30;
 				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;
@@ -621,7 +621,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
+				MARKETING_VERSION = 2.1.2;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -642,7 +642,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CENFC/Resources/Entitlements.entitlements;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 30;
 				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;
@@ -666,7 +666,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.1.1;
+				MARKETING_VERSION = 2.1.2;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -768,7 +768,7 @@
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CENFCClip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = CENFC;
+				INFOPLIST_KEY_CFBundleDisplayName = "CENFC Lite";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NFCReaderUsageDescription = "This App Clip reads NFC tags and cards to show their details. All data is processed on your device and is never uploaded to any server.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -804,7 +804,7 @@
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CENFCClip/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = CENFC;
+				INFOPLIST_KEY_CFBundleDisplayName = "CENFC Lite";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NFCReaderUsageDescription = "This App Clip reads NFC tags and cards to show their details. All data is processed on your device and is never uploaded to any server.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
