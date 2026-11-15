@@ -10,9 +10,14 @@ extension StackScrollController {
     }
 
     func addSectionFooter(_ text: String) {
-        stackView.addArrangedSubviewWithMargin(
-            ConfigurableSectionFooterView().with(rawFooter: text)
-        ) { $0.top /= 2 }
-        stackView.addArrangedSubview(SeparatorView())
+        #if APPCLIP
+            // The App Clip leaves the explanations to the full app.
+            _ = text
+        #else
+            stackView.addArrangedSubviewWithMargin(
+                ConfigurableSectionFooterView().with(rawFooter: text)
+            ) { $0.top /= 2 }
+            stackView.addArrangedSubview(SeparatorView())
+        #endif
     }
 }

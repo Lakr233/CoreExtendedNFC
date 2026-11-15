@@ -15,8 +15,14 @@ extension StackScrollController {
         let infoView = ConfigurableInfoView()
         infoView.configure(icon: UIImage(systemName: icon))
         infoView.configure(title: String.LocalizationValue(stringLiteral: title))
-        infoView.configure(description: String.LocalizationValue(stringLiteral: description))
-        infoView.configure(value: value, isDestructive: isDestructive, wrapValue: wrapValue)
+        #if APPCLIP
+            // The App Clip shows the name and the whole value, without the explanation.
+            infoView.configure(description: "")
+            infoView.configure(value: value, isDestructive: isDestructive, wrapValue: true)
+        #else
+            infoView.configure(description: String.LocalizationValue(stringLiteral: description))
+            infoView.configure(value: value, isDestructive: isDestructive, wrapValue: wrapValue)
+        #endif
         // Passport screens keep copied values on this device and let them expire.
         let copiesSensitively = self is PrivacySensitiveScreen
         infoView.use { [weak self] in
