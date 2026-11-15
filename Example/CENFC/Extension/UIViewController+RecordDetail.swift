@@ -31,62 +31,65 @@ protocol ClosingAwareScreen: AnyObject {
     func screenWillClose()
 }
 
-extension UIViewController {
-    /// Opens a record from a list.
-    ///
-    /// In a split view with two columns the record replaces the detail column;
-    /// otherwise (collapsed split view, plain navigation) it is pushed onto this
-    /// screen's navigation stack. Screens opened from inside a record are pushed
-    /// on that record's own navigation controller instead.
-    func showRecordDetail(_ detail: UIViewController) {
-        if let split = splitViewController, !split.isCollapsed {
-            split.showRecordDetailColumn(detail)
-        } else {
-            navigationController?.pushViewController(detail, animated: true)
+// The App Clip shows one record on a plain navigation stack: no split view.
+#if !APPCLIP
+    extension UIViewController {
+        /// Opens a record from a list.
+        ///
+        /// In a split view with two columns the record replaces the detail column;
+        /// otherwise (collapsed split view, plain navigation) it is pushed onto this
+        /// screen's navigation stack. Screens opened from inside a record are pushed
+        /// on that record's own navigation controller instead.
+        func showRecordDetail(_ detail: UIViewController) {
+            if let split = splitViewController, !split.isCollapsed {
+                split.showRecordDetailColumn(detail)
+            } else {
+                navigationController?.pushViewController(detail, animated: true)
+            }
         }
-    }
 
-    /// Puts the placeholder back in the detail column when it shows a record
-    /// that `isStored` no longer finds.
-    func closeRecordDetail(ifRecordIsGone isStored: (UUID) -> Bool) {
-        guard let split = splitViewController,
-              let detail = split.recordDetailNavigationController
-        else { return }
-        let deletedScreens = detail.viewControllers.compactMap { controller -> (any RecordDetailScreen)? in
-            guard let screen = controller as? any RecordDetailScreen,
-                  let id = screen.displayedRecordID,
-                  !isStored(id)
-            else { return nil }
-            return screen
+        /// Puts the placeholder back in the detail column when it shows a record
+        /// that `isStored` no longer finds.
+        func closeRecordDetail(ifRecordIsGone isStored: (UUID) -> Bool) {
+            guard let split = splitViewController,
+                  let detail = split.recordDetailNavigationController
+            else { return }
+            let deletedScreens = detail.viewControllers.compactMap { controller -> (any RecordDetailScreen)? in
+                guard let screen = controller as? any RecordDetailScreen,
+                      let id = screen.displayedRecordID,
+                      !isStored(id)
+                else { return nil }
+                return screen
+            }
+            guard !deletedScreens.isEmpty else { return }
+            deletedScreens.forEach { $0.recordWasDeleted() }
+            split.showRecordPlaceholder()
         }
-        guard !deletedScreens.isEmpty else { return }
-        deletedScreens.forEach { $0.recordWasDeleted() }
-        split.showRecordPlaceholder()
-    }
 
-    /// Whether this screen is going away for good, as opposed to being covered
-    /// by a push, a sheet or another tab.
-    ///
-    /// Besides a pop or a dismissal, a screen in a split view's detail column
-    /// also leaves when its whole navigation controller is replaced (another
-    /// record opened, a deleted record closed). Then the screen itself does not
-    /// report `isMovingFromParent`, so this also checks whether its navigation
-    /// controller is leaving or has already been detached. Check it in both
-    /// `viewWillDisappear(_:)` and `viewDidDisappear(_:)`: the navigation
-    /// controller may only be detached by the time the transition ends.
-    var isLeavingForGood: Bool {
-        if isMovingFromParent || isBeingDismissed {
-            return true
+        /// Whether this screen is going away for good, as opposed to being covered
+        /// by a push, a sheet or another tab.
+        ///
+        /// Besides a pop or a dismissal, a screen in a split view's detail column
+        /// also leaves when its whole navigation controller is replaced (another
+        /// record opened, a deleted record closed). Then the screen itself does not
+        /// report `isMovingFromParent`, so this also checks whether its navigation
+        /// controller is leaving or has already been detached. Check it in both
+        /// `viewWillDisappear(_:)` and `viewDidDisappear(_:)`: the navigation
+        /// controller may only be detached by the time the transition ends.
+        var isLeavingForGood: Bool {
+            if isMovingFromParent || isBeingDismissed {
+                return true
+            }
+            guard let navigationController else {
+                // Popped or removed: in no container and not presented.
+                return parent == nil && presentingViewController == nil
+            }
+            if navigationController.isMovingFromParent || navigationController.isBeingDismissed {
+                return true
+            }
+            return navigationController.parent == nil
+                && navigationController.presentingViewController == nil
+                && navigationController.view.window == nil
         }
-        guard let navigationController else {
-            // Popped or removed: in no container and not presented.
-            return parent == nil && presentingViewController == nil
-        }
-        if navigationController.isMovingFromParent || navigationController.isBeingDismissed {
-            return true
-        }
-        return navigationController.parent == nil
-            && navigationController.presentingViewController == nil
-            && navigationController.view.window == nil
     }
-}
+#endif

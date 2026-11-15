@@ -15,6 +15,12 @@
 		504CD4672F608D8A0015F2E4 /* CoreExtendedNFC in Frameworks */ = {isa = PBXBuildFile; productRef = 504CD4662F608D8A0015F2E4 /* CoreExtendedNFC */; };
 		5067F67B2F6169DB00633731 /* SPIndicator in Frameworks */ = {isa = PBXBuildFile; productRef = 5067F67A2F6169DB00633731 /* SPIndicator */; };
 		508966122F7005B200F40110 /* ConfigurableKit in Frameworks */ = {isa = PBXBuildFile; productRef = 508966112F7005B200F40110 /* ConfigurableKit */; };
+		50CC00112F90000100CC0011 /* CoreExtendedNFC in Frameworks */ = {isa = PBXBuildFile; productRef = 50CC00162F90000100CC0016 /* CoreExtendedNFC */; };
+		50CC00122F90000100CC0012 /* ConfigurableKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50CC00172F90000100CC0017 /* ConfigurableKit */; };
+		50CC00132F90000100CC0013 /* SnapKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50CC00182F90000100CC0018 /* SnapKit */; };
+		50CC00142F90000100CC0014 /* Then in Frameworks */ = {isa = PBXBuildFile; productRef = 50CC00192F90000100CC0019 /* Then */; };
+		50CC00152F90000100CC0015 /* SPIndicator in Frameworks */ = {isa = PBXBuildFile; productRef = 50CC001A2F90000100CC001A /* SPIndicator */; };
+		50CC001B2F90000100CC001B /* CENFCClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = 50CC00022F90000100CC0002 /* CENFCClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,12 +38,34 @@
 			remoteGlobalIDString = 501BBCFF2F5D768E00C52667;
 			remoteInfo = CENFC;
 		};
+		50CC000A2F90000100CC000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 501BBCF82F5D768E00C52667 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 50CC00012F90000100CC0001;
+			remoteInfo = CENFCClip;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		50CC000C2F90000100CC000C /* Embed App Clips */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/AppClips";
+			dstSubfolderSpec = 16;
+			files = (
+				50CC001B2F90000100CC001B /* CENFCClip.app in Embed App Clips */,
+			);
+			name = "Embed App Clips";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		501BBD002F5D768E00C52667 /* CENFC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CENFC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50AA00022F70000100AA0002 /* CENFCTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CENFCTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		50BB00022F80000100BB0002 /* CENFCUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CENFCUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		50CC00022F90000100CC0002 /* CENFCClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CENFCClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -52,6 +80,38 @@
 			);
 			target = 501BBCFF2F5D768E00C52667 /* CENFC */;
 		};
+		50CC000D2F90000100CC000D /* Exceptions for "CENFC" folder in "CENFCClip" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Application/ClipInvocation.swift,
+				Backend/Card/ScanRecord.swift,
+				Backend/Storage/StoredRecord.swift,
+				Extension/AlertQueue.swift,
+				Extension/ConfigurableInfoView.swift,
+				Extension/NFCErrorMessage.swift,
+				Extension/PrivacyProtection.swift,
+				Extension/SingleTaskRunner.swift,
+				"Extension/StackScrollController+Edge.swift",
+				"Extension/StackScrollController+InfoRow.swift",
+				"Extension/StackScrollController+Sections.swift",
+				"Extension/UIBarButtonItem+Accessibility.swift",
+				"Extension/UIViewController+DismissKeyboard.swift",
+				"Extension/UIViewController+NFCAvailability.swift",
+				"Extension/UIViewController+RecordDetail.swift",
+				Interface/ScannerController/CardDetailViewController.swift,
+				Resources/AppIcon.icon,
+				Resources/Assets.xcassets,
+				Resources/Localizable.xcstrings,
+			);
+			target = 50CC00012F90000100CC0001 /* CENFCClip */;
+		};
+		50CC000E2F90000100CC000E /* Exceptions for "CENFCClip" folder in "CENFCClip" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 50CC00012F90000100CC0001 /* CENFCClip */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -59,8 +119,17 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				503A36BC2F5D790000C51966 /* Exceptions for "CENFC" folder in "CENFC" target */,
+				50CC000D2F90000100CC000D /* Exceptions for "CENFC" folder in "CENFCClip" target */,
 			);
 			path = CENFC;
+			sourceTree = "<group>";
+		};
+		50CC00092F90000100CC0009 /* CENFCClip */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				50CC000E2F90000100CC000E /* Exceptions for "CENFCClip" folder in "CENFCClip" target */,
+			);
+			path = CENFCClip;
 			sourceTree = "<group>";
 		};
 		50AA00092F70000100AA0009 /* CENFCTests */ = {
@@ -91,6 +160,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		50CC00042F90000100CC0004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				50CC00112F90000100CC0011 /* CoreExtendedNFC in Frameworks */,
+				50CC00122F90000100CC0012 /* ConfigurableKit in Frameworks */,
+				50CC00132F90000100CC0013 /* SnapKit in Frameworks */,
+				50CC00142F90000100CC0014 /* Then in Frameworks */,
+				50CC00152F90000100CC0015 /* SPIndicator in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		50AA00042F70000100AA0004 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -112,6 +193,7 @@
 			isa = PBXGroup;
 			children = (
 				501BBD022F5D768E00C52667 /* CENFC */,
+				50CC00092F90000100CC0009 /* CENFCClip */,
 				50AA00092F70000100AA0009 /* CENFCTests */,
 				50BB00092F80000100BB0009 /* CENFCUITests */,
 				503A36B92F5D785B00C51966 /* Frameworks */,
@@ -123,6 +205,7 @@
 			isa = PBXGroup;
 			children = (
 				501BBD002F5D768E00C52667 /* CENFC.app */,
+				50CC00022F90000100CC0002 /* CENFCClip.app */,
 				50AA00022F70000100AA0002 /* CENFCTests.xctest */,
 				50BB00022F80000100BB0002 /* CENFCUITests.xctest */,
 			);
@@ -146,10 +229,12 @@
 				501BBCFC2F5D768E00C52667 /* Sources */,
 				501BBCFD2F5D768E00C52667 /* Frameworks */,
 				501BBCFE2F5D768E00C52667 /* Resources */,
+				50CC000C2F90000100CC000C /* Embed App Clips */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				50CC000B2F90000100CC000B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				501BBD022F5D768E00C52667 /* CENFC */,
@@ -168,6 +253,33 @@
 			productName = CENFC;
 			productReference = 501BBD002F5D768E00C52667 /* CENFC.app */;
 			productType = "com.apple.product-type.application";
+		};
+		50CC00012F90000100CC0001 /* CENFCClip */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 50CC00082F90000100CC0008 /* Build configuration list for PBXNativeTarget "CENFCClip" */;
+			buildPhases = (
+				50CC00032F90000100CC0003 /* Sources */,
+				50CC00042F90000100CC0004 /* Frameworks */,
+				50CC00052F90000100CC0005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				50CC00092F90000100CC0009 /* CENFCClip */,
+			);
+			name = CENFCClip;
+			packageProductDependencies = (
+				50CC00162F90000100CC0016 /* CoreExtendedNFC */,
+				50CC00172F90000100CC0017 /* ConfigurableKit */,
+				50CC00182F90000100CC0018 /* SnapKit */,
+				50CC00192F90000100CC0019 /* Then */,
+				50CC001A2F90000100CC001A /* SPIndicator */,
+			);
+			productName = CENFCClip;
+			productReference = 50CC00022F90000100CC0002 /* CENFCClip.app */;
+			productType = "com.apple.product-type.application.on-demand-install-capable";
 		};
 		50AA00012F70000100AA0001 /* CENFCTests */ = {
 			isa = PBXNativeTarget;
@@ -224,6 +336,9 @@
 					501BBCFF2F5D768E00C52667 = {
 						CreatedOnToolsVersion = 26.3;
 					};
+					50CC00012F90000100CC0001 = {
+						CreatedOnToolsVersion = 27.2;
+					};
 					50AA00012F70000100AA0001 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 501BBCFF2F5D768E00C52667;
@@ -260,6 +375,7 @@
 			projectRoot = "";
 			targets = (
 				501BBCFF2F5D768E00C52667 /* CENFC */,
+				50CC00012F90000100CC0001 /* CENFCClip */,
 				50AA00012F70000100AA0001 /* CENFCTests */,
 				50BB00012F80000100BB0001 /* CENFCUITests */,
 			);
@@ -282,6 +398,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		50BB00052F80000100BB0005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		50CC00052F90000100CC0005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -312,6 +435,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		50CC00032F90000100CC0003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -324,6 +454,11 @@
 			isa = PBXTargetDependency;
 			target = 501BBCFF2F5D768E00C52667 /* CENFC */;
 			targetProxy = 50BB000A2F80000100BB000A /* PBXContainerItemProxy */;
+		};
+		50CC000B2F90000100CC000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 50CC00012F90000100CC0001 /* CENFCClip */;
+			targetProxy = 50CC000A2F90000100CC000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -622,6 +757,78 @@
 			};
 			name = Release;
 		};
+		50CC00062F90000100CC0006 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 501BBD022F5D768E00C52667 /* CENFC */;
+			baseConfigurationReferenceRelativePath = Configuration/Development.xcconfig;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = CENFCClip/CENFCClip.entitlements;
+				ENABLE_POINTER_AUTHENTICATION = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CENFCClip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CENFC;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NFCReaderUsageDescription = "This App Clip reads NFC tags and cards to show their details. All data is processed on your device and is never uploaded to any server.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = wiki.qaq.nfc.app.Clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) APPCLIP";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		50CC00072F90000100CC0007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 501BBD022F5D768E00C52667 /* CENFC */;
+			baseConfigurationReferenceRelativePath = Configuration/Release.xcconfig;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = CENFCClip/CENFCClip.entitlements;
+				ENABLE_POINTER_AUTHENTICATION = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CENFCClip/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = CENFC;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NFCReaderUsageDescription = "This App Clip reads NFC tags and cards to show their details. All data is processed on your device and is never uploaded to any server.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = wiki.qaq.nfc.app.Clip;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) APPCLIP";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -657,6 +864,15 @@
 			buildConfigurations = (
 				50BB00062F80000100BB0006 /* Debug */,
 				50BB00072F80000100BB0007 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		50CC00082F90000100CC0008 /* Build configuration list for PBXNativeTarget "CENFCClip" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				50CC00062F90000100CC0006 /* Debug */,
+				50CC00072F90000100CC0007 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -769,6 +985,31 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 508966102F7005B200F40110 /* XCRemoteSwiftPackageReference "ConfigurableKit" */;
 			productName = ConfigurableKit;
+		};
+		50CC00162F90000100CC0016 /* CoreExtendedNFC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 504CD4682F608D8A0015F2E4 /* XCLocalSwiftPackageReference ".." */;
+			productName = CoreExtendedNFC;
+		};
+		50CC00172F90000100CC0017 /* ConfigurableKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 508966102F7005B200F40110 /* XCRemoteSwiftPackageReference "ConfigurableKit" */;
+			productName = ConfigurableKit;
+		};
+		50CC00182F90000100CC0018 /* SnapKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 504CD45D2F608D480015F2E4 /* XCRemoteSwiftPackageReference "SnapKit" */;
+			productName = SnapKit;
+		};
+		50CC00192F90000100CC0019 /* Then */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 504CD4632F608D650015F2E4 /* XCRemoteSwiftPackageReference "Then" */;
+			productName = Then;
+		};
+		50CC001A2F90000100CC001A /* SPIndicator */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5067F6792F6169DB00633731 /* XCRemoteSwiftPackageReference "SPIndicator" */;
+			productName = SPIndicator;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

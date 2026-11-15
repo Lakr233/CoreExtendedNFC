@@ -47,55 +47,67 @@ class CardDetailViewController: StackScrollController, RecordDetailScreen {
 
     // MARK: - Share Button
 
-    private func setupShareButton() {
-        var menuItems: [UIAction] = [
-            UIAction(
-                title: String(localized: "Copy All Info"),
-                image: UIImage(systemName: "doc.on.doc")
-            ) { [weak self] _ in
-                self?.copyAllInfo()
-            },
-            UIAction(
-                title: String(localized: "View Raw Data"),
-                image: UIImage(systemName: "doc.plaintext")
-            ) { [weak self] _ in
-                self?.viewRawData()
-            },
-        ]
+    #if APPCLIP
+        /// The App Clip keeps nothing and exports nothing: its only action copies the details.
+        private func setupShareButton() {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "doc.on.doc"),
+                primaryAction: UIAction { [weak self] _ in
+                    self?.copyAllInfo()
+                }
+            ).accessibilityLabeled(String(localized: "Copy All Info"))
+        }
+    #else
+        private func setupShareButton() {
+            var menuItems: [UIAction] = [
+                UIAction(
+                    title: String(localized: "Copy All Info"),
+                    image: UIImage(systemName: "doc.on.doc")
+                ) { [weak self] _ in
+                    self?.copyAllInfo()
+                },
+                UIAction(
+                    title: String(localized: "View Raw Data"),
+                    image: UIImage(systemName: "doc.plaintext")
+                ) { [weak self] _ in
+                    self?.viewRawData()
+                },
+            ]
 
-        if record.cardInfo.type.isOperableOnIOS {
-            menuItems.append(UIAction(
-                title: String(localized: "Raw Communication"),
-                image: UIImage(systemName: "terminal")
-            ) { [weak self] _ in
-                self?.openRawCommunication()
-            })
+            if record.cardInfo.type.isOperableOnIOS {
+                menuItems.append(UIAction(
+                    title: String(localized: "Raw Communication"),
+                    image: UIImage(systemName: "terminal")
+                ) { [weak self] _ in
+                    self?.openRawCommunication()
+                })
+            }
+
+            let shareMenu = UIMenu(children: menuItems)
+
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "square.and.arrow.up"),
+                primaryAction: UIAction { [weak self] _ in
+                    self?.exportFile()
+                },
+                menu: shareMenu
+            ).accessibilityLabeled(String(localized: "Export"))
         }
 
-        let shareMenu = UIMenu(children: menuItems)
-
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "square.and.arrow.up"),
-            primaryAction: UIAction { [weak self] _ in
-                self?.exportFile()
-            },
-            menu: shareMenu
-        ).accessibilityLabeled(String(localized: "Export"))
-    }
-
-    private func openRawCommunication() {
-        let vc = RawCommunicationViewController(cardInfo: record.cardInfo)
-        navigationController?.pushViewController(vc, animated: true)
-    }
-
-    private func exportFile() {
-        do {
-            let fileURL = try CardDocument.exportToFile(record)
-            presentExportSheet(for: [fileURL], barButtonItem: navigationItem.rightBarButtonItem)
-        } catch {
-            presentErrorAlert(for: error, title: String(localized: "Export Failed"))
+        private func openRawCommunication() {
+            let vc = RawCommunicationViewController(cardInfo: record.cardInfo)
+            navigationController?.pushViewController(vc, animated: true)
         }
-    }
+
+        private func exportFile() {
+            do {
+                let fileURL = try CardDocument.exportToFile(record)
+                presentExportSheet(for: [fileURL], barButtonItem: navigationItem.rightBarButtonItem)
+            } catch {
+                presentErrorAlert(for: error, title: String(localized: "Export Failed"))
+            }
+        }
+    #endif
 
     private func copyAllInfo() {
         var lines: [String] = []
@@ -131,18 +143,20 @@ class CardDetailViewController: StackScrollController, RecordDetailScreen {
         )
     }
 
-    private func viewRawData() {
-        let data: Data
-        do {
-            data = try ScanRecordDocument.export(record)
-        } catch { return }
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
-              let prettyData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0),
-              let text = String(data: prettyData, encoding: .utf8)
-        else { return }
-        let viewer = TextViewerController(title: String(localized: "Raw Data"), text: text)
-        navigationController?.pushViewController(viewer, animated: true)
-    }
+    #if !APPCLIP
+        private func viewRawData() {
+            let data: Data
+            do {
+                data = try ScanRecordDocument.export(record)
+            } catch { return }
+            guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+                  let prettyData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0),
+                  let text = String(data: prettyData, encoding: .utf8)
+            else { return }
+            let viewer = TextViewerController(title: String(localized: "Raw Data"), text: text)
+            navigationController?.pushViewController(viewer, animated: true)
+        }
+    #endif
 
     // MARK: - Identification
 
