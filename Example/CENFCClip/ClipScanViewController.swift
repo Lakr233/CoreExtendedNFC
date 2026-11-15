@@ -19,14 +19,6 @@ final class ClipScanViewController: UIViewController {
         icon.contentMode = .scaleAspectFit
         icon.isAccessibilityElement = false
 
-        let hint = UILabel()
-        hint.text = String(localized: "Identify NFC tags via ATQA/SAK lookup. Supports ISO 14443, FeliCa, and ISO 15693.")
-        hint.font = .preferredFont(forTextStyle: .footnote)
-        hint.adjustsFontForContentSizeCategory = true
-        hint.textColor = .secondaryLabel
-        hint.textAlignment = .center
-        hint.numberOfLines = 0
-
         var configuration = UIButton.Configuration.filled()
         configuration.title = String(localized: "Scan Card")
         configuration.buttonSize = .large
@@ -36,9 +28,9 @@ final class ClipScanViewController: UIViewController {
         })
         scanButton.accessibilityIdentifier = "clip.scan"
 
-        let stack = UIStackView(arrangedSubviews: [icon, hint, scanButton])
+        let stack = UIStackView(arrangedSubviews: [icon, scanButton])
         stack.axis = .vertical
-        stack.spacing = 24
+        stack.spacing = 32
         view.addSubview(stack)
         stack.snp.makeConstraints { make in
             make.centerY.equalTo(view.safeAreaLayoutGuide)
