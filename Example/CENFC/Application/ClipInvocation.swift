@@ -15,11 +15,12 @@ nonisolated struct ClipInvocation: Equatable, Sendable {
     /// The first value wins when a name is repeated.
     let parameters: [String: String]
 
-    /// `nil` when `url` is not a web link.
+    /// `nil` when `url` is not Apple's App Clip link.
     init?(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
               let scheme = components.scheme?.lowercased(),
-              scheme == "https" || scheme == "http"
+              scheme == "https" || scheme == "http",
+              components.host?.lowercased() == "appclip.apple.com"
         else { return nil }
         let items = (components.queryItems ?? []).filter { $0.name != "p" }
         parameters = Dictionary(

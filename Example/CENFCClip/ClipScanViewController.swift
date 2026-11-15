@@ -10,6 +10,7 @@ final class ClipScanViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupDismissKeyboardOnTap()
         title = String(localized: "Scanner")
         view.backgroundColor = .systemBackground
 

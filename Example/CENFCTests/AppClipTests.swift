@@ -21,6 +21,7 @@ struct AppClipTests {
     @Test
     func `Only web links are invocations`() throws {
         #expect(ClipInvocation(URL(fileURLWithPath: "/tmp/card.cenfc")) == nil)
+        #expect(try ClipInvocation(#require(URL(string: "https://example.com/id?p=wiki.qaq.nfc.app.Clip"))) == nil)
 
         let other = NSUserActivity(activityType: "wiki.qaq.nfc.app.other")
         other.webpageURL = URL(string: "https://appclip.apple.com/id?p=wiki.qaq.nfc.app.Clip")
