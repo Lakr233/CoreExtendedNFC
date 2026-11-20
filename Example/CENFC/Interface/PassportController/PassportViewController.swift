@@ -212,6 +212,8 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
         tableView.setEditing(editing, animated: animated)
+        // The editing controls narrow the self-sizing rows.
+        tableView.remeasureRows(animated: animated)
         updateEditingNavBar()
     }
 
@@ -558,5 +560,19 @@ extension PassportViewController: UITableViewDropDelegate {
         performDropWith _: UITableViewDropCoordinator
     ) {
         AppLogStore.shared.debug("performDrop local noop; datasource handles reorder", source: "PassportReorder")
+    }
+}
+
+private extension UITableView {
+    /// Asks the visible self-sizing rows for their heights again, for a change
+    /// that alters their width without changing their content (edit mode adds
+    /// the selection and reorder controls, so descriptions wrap differently).
+    func remeasureRows(animated: Bool) {
+        guard window != nil else { return }
+        if animated {
+            performBatchUpdates(nil)
+        } else {
+            UIView.performWithoutAnimation { performBatchUpdates(nil) }
+        }
     }
 }

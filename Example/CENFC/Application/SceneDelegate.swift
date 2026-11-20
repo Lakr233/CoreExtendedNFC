@@ -30,6 +30,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 self?.handleOpenURL(urlContext.url)
             }
         }
+
+        // A launch from the App Clip's link (see `scene(_:continue:)`).
+        if let invocation = connectionOptions.userActivities.lazy.compactMap(ClipInvocation.init(userActivity:)).first {
+            DispatchQueue.main.async { [weak self] in
+                self?.route(invocation)
+            }
+        }
+    }
+
+    /// The App Clip's link reaches the full app once it is installed.
+    func scene(_: UIScene, continue userActivity: NSUserActivity) {
+        if let invocation = ClipInvocation(userActivity: userActivity) {
+            route(invocation)
+        }
+    }
+
+    /// Lands on the Scanner tab, where the App Clip's one task (scan a card) lives.
+    /// Routing the same link again changes nothing.
+    private func route(_: ClipInvocation) {
+        (window?.rootViewController as? TabBarController)?.selectedIndex = 0
     }
 
     func sceneWillResignActive(_: UIScene) {

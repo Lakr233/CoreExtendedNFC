@@ -50,10 +50,20 @@ final class EmptyStateView: UIView {
 
     /// Reposition in content space and fade based on scroll offset.
     /// Call from both `viewDidLayoutSubviews` and `scrollViewDidScroll`.
+    ///
+    /// The message stays between the left and right safe area insets: a
+    /// vertically scrolling list does not inset its content sideways, and on
+    /// the iPhone Duo the status bar and the vertical tab bar sit there.
     func update(in scrollView: UIScrollView) {
         let inset = scrollView.adjustedContentInset
+        let safeArea = scrollView.safeAreaInsets
         let visibleHeight = scrollView.bounds.height - inset.top - inset.bottom
-        let newFrame = CGRect(x: 0, y: 0, width: scrollView.bounds.width, height: visibleHeight)
+        let newFrame = CGRect(
+            x: safeArea.left,
+            y: 0,
+            width: max(0, scrollView.bounds.width - safeArea.left - safeArea.right),
+            height: visibleHeight
+        )
         if frame != newFrame {
             frame = newFrame
             layoutIfNeeded()

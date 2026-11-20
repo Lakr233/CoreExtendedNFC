@@ -130,7 +130,7 @@ class WelcomePageViewController: UIViewController {
 
         actionButton.snp.makeConstraints { make in
             make.top.equalTo(separator.snp.bottom).offset(12)
-            make.leading.trailing.equalToSuperview().inset(contentInsets.left)
+            make.leading.trailing.equalTo(view.safeAreaLayoutGuide).inset(contentInsets.left)
             make.bottom.equalTo(view.safeAreaLayoutGuide).inset(contentInsets.bottom)
             make.height.equalTo(48)
         }

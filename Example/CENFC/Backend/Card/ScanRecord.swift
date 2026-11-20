@@ -13,9 +13,11 @@ nonisolated struct ScanRecord: StoredRecord {
         self.cardInfo = cardInfo
     }
 
-    static func synthesized(from dump: DumpRecord) -> ScanRecord {
-        ScanRecord(cardInfo: dump.dump.cardInfo, date: dump.date)
-    }
+    #if !APPCLIP
+        static func synthesized(from dump: DumpRecord) -> ScanRecord {
+            ScanRecord(cardInfo: dump.dump.cardInfo, date: dump.date)
+        }
+    #endif
 
     func withNewID() -> ScanRecord {
         replacingID(UUID(), date: date)
