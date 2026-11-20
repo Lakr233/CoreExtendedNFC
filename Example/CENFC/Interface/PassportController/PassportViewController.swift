@@ -562,3 +562,17 @@ extension PassportViewController: UITableViewDropDelegate {
         AppLogStore.shared.debug("performDrop local noop; datasource handles reorder", source: "PassportReorder")
     }
 }
+
+private extension UITableView {
+    /// Asks the visible self-sizing rows for their heights again, for a change
+    /// that alters their width without changing their content (edit mode adds
+    /// the selection and reorder controls, so descriptions wrap differently).
+    func remeasureRows(animated: Bool) {
+        guard window != nil else { return }
+        if animated {
+            performBatchUpdates(nil)
+        } else {
+            UIView.performWithoutAnimation { performBatchUpdates(nil) }
+        }
+    }
+}

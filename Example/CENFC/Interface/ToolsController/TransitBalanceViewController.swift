@@ -5,7 +5,7 @@ import SnapKit
 import Then
 import UIKit
 
-class TransitBalanceViewController: SafeAreaStackScrollController {
+class TransitBalanceViewController: StackScrollController {
     private let dateFormatter = DateFormatter().then {
         $0.dateStyle = .medium
         $0.timeStyle = .none

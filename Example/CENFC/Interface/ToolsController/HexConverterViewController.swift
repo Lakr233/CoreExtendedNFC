@@ -3,7 +3,7 @@ import SnapKit
 import Then
 import UIKit
 
-class HexConverterViewController: SafeAreaStackScrollController {
+class HexConverterViewController: StackScrollController {
     private enum InputFormat: Int, CaseIterable {
         case hex = 0, decimal, binary, ascii
 

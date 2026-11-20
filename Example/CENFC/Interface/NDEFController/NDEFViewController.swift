@@ -5,7 +5,7 @@ import SPIndicator
 import UIKit
 import UniformTypeIdentifiers
 
-class NDEFViewController: SafeAreaObjectListViewController<NDEFStore>,
+class NDEFViewController: ObjectListViewController<NDEFStore>,
     ObjectListViewControllerDelegate,
     UIDocumentPickerDelegate
 {

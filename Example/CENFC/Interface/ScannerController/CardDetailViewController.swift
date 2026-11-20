@@ -5,7 +5,7 @@ import SPIndicator
 import Then
 import UIKit
 
-class CardDetailViewController: SafeAreaStackScrollController, RecordDetailScreen {
+class CardDetailViewController: StackScrollController, RecordDetailScreen {
     private let record: ScanRecord
 
     var displayedRecordID: UUID? {

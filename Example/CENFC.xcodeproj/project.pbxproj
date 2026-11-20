@@ -90,7 +90,6 @@
 				Extension/ConfigurableInfoView.swift,
 				Extension/NFCErrorMessage.swift,
 				Extension/PrivacyProtection.swift,
-				Extension/SafeAreaStackScrollController.swift,
 				Extension/SingleTaskRunner.swift,
 				"Extension/StackScrollController+Edge.swift",
 				"Extension/StackScrollController+InfoRow.swift",
@@ -933,7 +932,7 @@
 			repositoryURL = "https://github.com/Lakr233/ConfigurableKit";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 4.2.0;
+				minimumVersion = 4.2.1;
 			};
 		};
 		74E5A552E8D49D4D2EBB38F5 /* XCRemoteSwiftPackageReference "LookInside-Release" */ = {

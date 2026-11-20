@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-class DumpDetailViewController: SafeAreaStackScrollController, RecordDetailScreen {
+class DumpDetailViewController: StackScrollController, RecordDetailScreen {
     private let record: DumpRecord
 
     var displayedRecordID: UUID? {

@@ -7,7 +7,7 @@ import Then
 import UIKit
 import UniformTypeIdentifiers
 
-class PassportDetailViewController: SafeAreaStackScrollController, PrivacySensitiveScreen, RecordDetailScreen {
+class PassportDetailViewController: StackScrollController, PrivacySensitiveScreen, RecordDetailScreen {
     private let record: PassportRecord
     private var previewURL: URL?
     private var previews: DecodedPreviews?
