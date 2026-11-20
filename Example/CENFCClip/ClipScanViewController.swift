@@ -4,7 +4,8 @@ import SnapKit
 import UIKit
 
 /// The App Clip's first screen: one button that scans a card or tag and opens
-/// its details. Nothing is stored.
+/// its details, with the banner that offers the full app below. Nothing is
+/// stored.
 final class ClipScanViewController: UIViewController {
     private let nfcTask = SingleTaskRunner()
 
@@ -34,11 +35,17 @@ final class ClipScanViewController: UIViewController {
         stack.spacing = 32
         view.addSubview(stack)
         stack.snp.makeConstraints { make in
-            make.centerY.equalTo(view.safeAreaLayoutGuide)
+            make.centerY.equalTo(view.safeAreaLayoutGuide).priority(.high)
             make.top.greaterThanOrEqualTo(view.safeAreaLayoutGuide).offset(16)
-            make.bottom.lessThanOrEqualTo(view.safeAreaLayoutGuide).offset(-16)
+            // Clear of the banner that offers the full app.
+            make.bottom.lessThanOrEqualTo(view.safeAreaLayoutGuide).offset(-ClipStoreOverlay.clearance)
             make.leading.trailing.equalTo(view.layoutMarginsGuide).inset(16)
         }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        ClipStoreOverlay.shared.present(in: view.window?.windowScene)
     }
 
     // MARK: - Scan
