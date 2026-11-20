@@ -5,7 +5,7 @@ import SPIndicator
 import Then
 import UIKit
 
-class RawCommunicationViewController: StackScrollController, ClosingAwareScreen {
+class RawCommunicationViewController: SafeAreaStackScrollController, ClosingAwareScreen {
     private let cardInfo: CardInfo
 
     init(cardInfo: CardInfo) {

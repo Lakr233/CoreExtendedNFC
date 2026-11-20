@@ -90,6 +90,7 @@
 				Extension/ConfigurableInfoView.swift,
 				Extension/NFCErrorMessage.swift,
 				Extension/PrivacyProtection.swift,
+				Extension/SafeAreaStackScrollController.swift,
 				Extension/SingleTaskRunner.swift,
 				"Extension/StackScrollController+Edge.swift",
 				"Extension/StackScrollController+InfoRow.swift",
@@ -602,7 +603,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CENFC/Resources/Entitlements.entitlements;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;
@@ -642,7 +643,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CENFC/Resources/Entitlements.entitlements;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				ENABLE_ENHANCED_SECURITY = YES;
 				ENABLE_POINTER_AUTHENTICATION = NO;
 				ENABLE_PREVIEWS = YES;

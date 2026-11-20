@@ -47,7 +47,9 @@ extension PassportViewController {
         override func layoutSubviews() {
             super.layoutSubviews()
             preservesSuperviewLayoutMargins = false
-            separatorInset = .zero
+            // Edge to edge, but inside the side safe area: on the iPhone Duo the
+            // status bar and the vertical tab bar sit there.
+            separatorInset = UIEdgeInsets(top: 0, left: safeAreaInsets.left, bottom: 0, right: safeAreaInsets.right)
             layoutMargins = .zero
         }
     }

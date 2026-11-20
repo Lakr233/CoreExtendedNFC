@@ -5,7 +5,7 @@ import SPIndicator
 import UIKit
 import UniformTypeIdentifiers
 
-class ScannerViewController: ObjectListViewController<ScanStore>,
+class ScannerViewController: SafeAreaObjectListViewController<ScanStore>,
     ObjectListViewControllerDelegate,
     UIDocumentPickerDelegate,
     UIDropInteractionDelegate

@@ -212,6 +212,8 @@ class PassportViewController: UIViewController, PrivacySensitiveScreen {
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
         tableView.setEditing(editing, animated: animated)
+        // The editing controls narrow the self-sizing rows.
+        tableView.remeasureRows(animated: animated)
         updateEditingNavBar()
     }
 

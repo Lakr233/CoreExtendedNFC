@@ -6,7 +6,7 @@ import UIKit
 
 // MARK: - Base Editor
 
-class NDEFEditorViewController: StackScrollController, RecordDetailScreen, ClosingAwareScreen {
+class NDEFEditorViewController: SafeAreaStackScrollController, RecordDetailScreen, ClosingAwareScreen {
     /// The stored record being edited, or `nil` for a record that has not been saved yet.
     /// Set to the saved record after the first save.
     var existingRecord: NDEFDataRecord?

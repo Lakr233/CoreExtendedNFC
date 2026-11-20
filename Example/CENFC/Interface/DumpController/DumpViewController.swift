@@ -5,7 +5,7 @@ import SPIndicator
 import UIKit
 import UniformTypeIdentifiers
 
-class DumpViewController: ObjectListViewController<DumpStore>,
+class DumpViewController: SafeAreaObjectListViewController<DumpStore>,
     ObjectListViewControllerDelegate,
     UIDocumentPickerDelegate
 {

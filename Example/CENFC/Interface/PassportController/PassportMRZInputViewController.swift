@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-class PassportMRZInputViewController: StackScrollController, PrivacySensitiveScreen, ClosingAwareScreen {
+class PassportMRZInputViewController: SafeAreaStackScrollController, PrivacySensitiveScreen, ClosingAwareScreen {
     var onPassportRead: ((PassportRecord) -> Void)?
 
     private lazy var documentNumberField: UITextField = makeTextField(

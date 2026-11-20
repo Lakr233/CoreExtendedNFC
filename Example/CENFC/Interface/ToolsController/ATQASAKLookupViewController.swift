@@ -4,7 +4,7 @@ import SnapKit
 import Then
 import UIKit
 
-class ATQASAKLookupViewController: StackScrollController {
+class ATQASAKLookupViewController: SafeAreaStackScrollController {
     private lazy var atqaField = UITextField().then {
         $0.borderStyle = .roundedRect
         $0.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
