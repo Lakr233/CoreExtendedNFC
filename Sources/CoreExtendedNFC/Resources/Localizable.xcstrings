@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@, %@" : {
+      "comment" : "Joins two parts of a dump summary, as in \"16 pages, 64 bytes\" or \"16 pages, 64 bytes, 1 NDEF record\"",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$@"
+          }
+        }
+      }
+    },
     "%@ cards cannot be read on iOS." : {
       "localizations" : {
         "zh-Hans" : {
@@ -762,6 +773,41 @@
         }
       }
     },
+    "%lld bytes" : {
+      "comment" : "Dump size: bytes in the binary export, as in \"16 pages, 64 bytes\"",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld byte"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bytes"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 字节"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld files" : {
       "comment" : "Dump size: Type 4 / DESFire files",
       "localizations" : {
@@ -825,41 +871,6 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld 页"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "%lld-byte export" : {
-      "comment" : "Size of the binary export, as in \"16 pages, 64-byte export, and 1 NDEF record\"",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld-byte export"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld-byte export"
-                }
-              }
-            }
-          }
-        },
-        "zh-Hans" : {
-          "variations" : {
-            "plural" : {
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "导出 %lld 字节"
                 }
               }
             }
