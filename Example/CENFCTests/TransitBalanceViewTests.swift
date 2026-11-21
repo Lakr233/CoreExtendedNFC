@@ -69,22 +69,26 @@ struct TransitBalanceViewTests {
         controller.view.layoutIfNeeded()
         #expect(infoRows(in: controller.view).last?.valueLabel.attributedTitle(for: .normal)?.string == "")
 
+        // A value too long for the row moves under the title and wraps instead of
+        // being cut off; once it fits again it goes back beside the title.
         let longValue = String(repeating: "1234567890", count: 4)
-        controller.addInfoRow(icon: "info.circle", title: "Amount", value: longValue, wrapValue: true)
         controller.addInfoRow(icon: "info.circle", title: "Amount", value: longValue)
-        let comparisonRows = Array(infoRows(in: controller.view).suffix(2))
-        let reconfigured = try #require(comparisonRows.first)
-        let fresh = try #require(comparisonRows.last)
         controller.view.layoutIfNeeded()
         controller.view.layoutIfNeeded()
-        #expect(reconfigured.bounds.height > fresh.bounds.height)
+        let longRow = try #require(infoRows(in: controller.view).last)
+        #expect(longRow.isValueBelowTitle)
+        let longLabel = try #require(longRow.valueLabel.titleLabel)
+        #expect(longLabel.numberOfLines == 0)
+        let longHeight = longLabel.sizeThatFits(CGSize(width: longLabel.bounds.width, height: .greatestFiniteMagnitude)).height
+        #expect(longLabel.bounds.height >= longHeight - 1)
+        #expect(longLabel.frame.maxY <= longRow.valueLabel.bounds.height + 1)
+        #expect(longRow.valueLabel.frame.maxX <= longRow.bounds.width + 1)
 
-        reconfigured.configure(value: longValue)
+        longRow.configure(value: "12")
         controller.view.layoutIfNeeded()
         controller.view.layoutIfNeeded()
-        #expect(abs(reconfigured.bounds.height - fresh.bounds.height) < 1)
-        #expect(abs(reconfigured.valueLabel.bounds.width - fresh.valueLabel.bounds.width) < 1)
-        #expect(abs(reconfigured.verticalStack.bounds.width - fresh.verticalStack.bounds.width) < 1)
+        #expect(!longRow.isValueBelowTitle)
+        #expect(longRow.valueLabel.titleLabel?.numberOfLines == 1)
     }
 
     @Test

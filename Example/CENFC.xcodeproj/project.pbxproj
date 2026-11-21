@@ -931,8 +931,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Lakr233/ConfigurableKit";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 4.2.1;
+				branch = "developer/value-layout";
+				kind = branch;
 			};
 		};
 		74E5A552E8D49D4D2EBB38F5 /* XCRemoteSwiftPackageReference "LookInside-Release" */ = {

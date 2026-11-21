@@ -46,6 +46,9 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
         self.record = record
         super.init(nibName: nil, bundle: nil)
         title = record.displayName
+        // A data page: the values matter, so hide the explanations to fit more
+        // rows. VoiceOver and each value's menu still offer them.
+        descriptionStyle = .hidden
     }
 
     var displayedRecordID: UUID? {
@@ -197,6 +200,7 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
                 icon: "photo",
                 title: String(localized: "Open Photo Preview"),
                 description: String(localized: "This photo cannot be shown here. Tap to open a preview."),
+                descriptionStyle: .full,
                 value: previewPayload.sourceFormatName,
                 extraMenuActions: [
                     UIAction(
@@ -269,6 +273,8 @@ class PassportDetailViewController: StackScrollController, PrivacySensitiveScree
             icon: record.isImported ? "square.and.arrow.down" : "clock",
             title: dateRow.title,
             description: dateRow.description,
+            // An imported record says the chip was not read on this device.
+            descriptionStyle: record.isImported ? .full : nil,
             value: dateFormatter.string(from: record.date)
         )
 

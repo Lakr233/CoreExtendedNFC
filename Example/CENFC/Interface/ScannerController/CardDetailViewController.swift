@@ -21,6 +21,9 @@ class CardDetailViewController: StackScrollController, RecordDetailScreen {
         self.record = record
         super.init(nibName: nil, bundle: nil)
         title = record.cardInfo.type.description
+        // A data page: the values matter, so hide the explanations to fit more
+        // rows. VoiceOver and each value's menu still offer them.
+        descriptionStyle = .hidden
     }
 
     @available(*, unavailable)
@@ -286,6 +289,8 @@ class CardDetailViewController: StackScrollController, RecordDetailScreen {
                     icon: "list.bullet.rectangle",
                     title: String(localized: "Known ISO 7816 Application"),
                     description: application.note,
+                    // Describes this card's application, not the row.
+                    descriptionStyle: .full,
                     value: application.displayName
                 )
             }
