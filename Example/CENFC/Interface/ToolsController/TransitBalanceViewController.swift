@@ -261,7 +261,7 @@ class TransitBalanceViewController: StackScrollController {
                 addInfoRow(
                     icon: tx.type == .topup ? "plus.circle" : "arrow.right.circle",
                     title: "#\(index + 1)",
-                    description: details.joined(separator: " · "),
+                    description: details.joined(separator: "\n"),
                     value: value
                 )
             }

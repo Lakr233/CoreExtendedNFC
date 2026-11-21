@@ -140,44 +140,55 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         return try? NDEFMessage(data: ndefMessage)
     }
 
-    /// Shared user-facing and technical summaries for the dump.
+    /// Shared user-facing and technical summaries for the dump, in English.
+    ///
+    /// Exports (``exportHex()``, ``exportStructuredJSON(prettyPrinted:)``) use this,
+    /// so files read the same on every device. Show ``localizedSummary`` in the UI.
     public var summary: DumpSummary {
+        summary(text: .english)
+    }
+
+    /// ``summary`` with `userSummary` and `technicalSummary` in the user's language,
+    /// with counts in their singular or plural form ("1 NDEF record", "16 pages").
+    public var localizedSummary: DumpSummary {
+        summary(text: .current)
+    }
+
+    func summary(text: DumpSummaryText) -> DumpSummary {
         let storageSummary = if !pages.isEmpty {
-            "\(pages.count) pages"
+            text.pages(pages.count)
         } else if !blocks.isEmpty {
-            "\(blocks.count) blocks"
+            text.blocks(blocks.count)
         } else if !files.isEmpty {
-            "\(files.count) files"
+            text.files(files.count)
         } else if let ndefMessage {
-            "\(ndefMessage.count) NDEF bytes"
+            text.ndefBytes(ndefMessage.count)
         } else {
-            "identification only"
+            text.identificationOnly
         }
 
         let userSummary = switch cardInfo.type.family {
         case .ntag, .mifareUltralight:
-            "Read a Type 2 style memory map with \(storageSummary)."
+            text.type2Summary(storageSummary)
         case .type4:
-            "Read an NFC Forum Type 4 file layout with \(storageSummary)."
+            text.type4Summary(storageSummary)
         case .felica:
-            "Read FeliCa Type 3 blocks with \(storageSummary)."
+            text.feliCaSummary(storageSummary)
         case .iso15693:
-            "Read ISO 15693 vicinity memory with \(storageSummary)."
+            text.iso15693Summary(storageSummary)
         case .mifareDesfire:
-            "Enumerated DESFire applications and captured \(storageSummary)."
+            text.desfireSummary(storageSummary)
         case .passport:
-            "Passport chips use the dedicated eMRTD workflow instead of generic dump reads."
+            text.passportSummary
         default:
-            "Captured \(storageSummary) from \(cardInfo.type.description)."
+            text.capturedSummary(storageSummary, from: cardInfo.type.description)
         }
 
-        let technicalSummary = [
+        let technicalSummary = text.list([
             storageSummary,
-            "export \(exportBinary().count) bytes",
-            parsedNDEFMessage.map { "\($0.records.count) NDEF records" },
-        ]
-        .compactMap(\.self)
-        .joined(separator: " · ")
+            text.exportBytes(exportBinary().count),
+            parsedNDEFMessage.map { text.ndefRecords($0.records.count) },
+        ].compactMap(\.self))
 
         let normalizedCapabilities = capabilities.isEmpty ? inferredCapabilities() : capabilities
         return DumpSummary(

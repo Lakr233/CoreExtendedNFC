@@ -5617,22 +5617,6 @@
         }
       }
     },
-    "Tap Scan to add · long press for options · two-finger swipe to multi-select" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap Scan to add · long press for options · two-finger swipe to multi-select"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "轻点扫描以添加 · 长按显示选项 · 双指滑动以多选"
-          }
-        }
-      }
-    },
     "Tap the share button to export all formats." : {
       "localizations" : {
         "en" : {

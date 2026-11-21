@@ -656,6 +656,345 @@
           }
         }
       }
+    },
+    "%lld NDEF bytes" : {
+      "comment" : "Dump size: bytes of the NDEF message",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld NDEF byte"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld NDEF bytes"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 字节 NDEF 数据"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld NDEF records" : {
+      "comment" : "Number of records in the NDEF message",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld NDEF record"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld NDEF records"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 条 NDEF 记录"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld blocks" : {
+      "comment" : "Dump size: memory blocks",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld block"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld blocks"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 个块"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld files" : {
+      "comment" : "Dump size: Type 4 / DESFire files",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld pages" : {
+      "comment" : "Dump size: Type 2 tag pages",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld page"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld pages"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 页"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld-byte export" : {
+      "comment" : "Size of the binary export, as in \"16 pages, 64-byte export, and 1 NDEF record\"",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld-byte export"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld-byte export"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "导出 %lld 字节"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Captured %@ from %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Captured %1$@ from %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从 %2$@ 采集 %1$@。"
+          }
+        }
+      }
+    },
+    "Enumerated DESFire applications and captured %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enumerated DESFire applications and captured %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已枚举 DESFire 应用，并采集了 %@。"
+          }
+        }
+      }
+    },
+    "Passport chips use the dedicated eMRTD workflow instead of generic dump reads." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passport chips use the dedicated eMRTD workflow instead of generic dump reads."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "护照芯片使用专用的 eMRTD 流程读取，而不是通用转储。"
+          }
+        }
+      }
+    },
+    "Read FeliCa Type 3 blocks with %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read FeliCa Type 3 blocks with %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取了 FeliCa Type 3 数据块，共 %@。"
+          }
+        }
+      }
+    },
+    "Read ISO 15693 vicinity memory with %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read ISO 15693 vicinity memory with %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取了 ISO 15693 近场内存，共 %@。"
+          }
+        }
+      }
+    },
+    "Read a Type 2 style memory map with %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read a Type 2 style memory map with %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取了 Type 2 类型的内存映射，共 %@。"
+          }
+        }
+      }
+    },
+    "Read an NFC Forum Type 4 file layout with %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read an NFC Forum Type 4 file layout with %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取了 NFC Forum Type 4 文件结构，共 %@。"
+          }
+        }
+      }
+    },
+    "identification only" : {
+      "comment" : "Dump size: no memory was read",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "identification only"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅识别信息"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
