@@ -20,6 +20,9 @@ class DumpDetailViewController: StackScrollController, RecordDetailScreen {
         self.record = record
         super.init(nibName: nil, bundle: nil)
         title = record.dump.cardInfo.type.description
+        // A data page: the values matter, so hide the explanations to fit more
+        // rows. VoiceOver and each value's menu still offer them.
+        descriptionStyle = .hidden
     }
 
     @available(*, unavailable)
