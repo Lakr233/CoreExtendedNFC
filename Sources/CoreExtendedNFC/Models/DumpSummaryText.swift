@@ -44,16 +44,14 @@ struct DumpSummaryText: Sendable {
         String(localized: "identification only", bundle: bundle, locale: locale, comment: "Dump size: no memory was read")
     }
 
-    func exportBytes(_ count: Int) -> String {
-        String(localized: "\(count)-byte export", bundle: bundle, locale: locale, comment: "Size of the binary export, as in \"16 pages, 64-byte export, and 1 NDEF record\"")
+    func bytes(_ count: Int) -> String {
+        String(localized: "\(count) bytes", bundle: bundle, locale: locale, comment: "Dump size: bytes in the binary export, as in \"16 pages, 64 bytes\"")
     }
 
-    /// The parts of the technical summary as one phrase, such as
-    /// "16 pages, 64-byte export, and 1 NDEF record" or "16 页、导出 64 字节和1 条 NDEF 记录".
-    func list(_ parts: [String]) -> String {
-        let formatter = ListFormatter()
-        formatter.locale = locale
-        return formatter.string(from: parts) ?? parts.joined(separator: ", ")
+    /// Two parts of the technical summary joined with the language's comma, such
+    /// as "16 pages, 64 bytes" or "16 页，64 字节".
+    func pair(_ first: String, _ second: String) -> String {
+        String(localized: "\(first), \(second)", bundle: bundle, locale: locale, comment: "Joins two parts of a dump summary, as in \"16 pages, 64 bytes\" or \"16 pages, 64 bytes, 1 NDEF record\"")
     }
 
     func ndefRecords(_ count: Int) -> String {

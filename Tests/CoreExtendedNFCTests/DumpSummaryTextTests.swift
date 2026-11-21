@@ -20,7 +20,7 @@ struct DumpSummaryTextTests {
         #expect(text.blocks(1) == "1 block")
         #expect(text.files(1) == "1 file")
         #expect(text.ndefBytes(1) == "1 NDEF byte")
-        #expect(text.exportBytes(1) == "1-byte export")
+        #expect(text.bytes(1) == "1 byte")
         #expect(text.ndefRecords(1) == "1 NDEF record")
     }
 
@@ -32,7 +32,8 @@ struct DumpSummaryTextTests {
         #expect(text.blocks(2) == "2 blocks")
         #expect(text.files(3) == "3 files")
         #expect(text.ndefBytes(12) == "12 NDEF bytes")
-        #expect(text.exportBytes(64) == "64-byte export")
+        #expect(text.bytes(64) == "64 bytes")
+        #expect(text.pair("16 pages", "64 bytes") == "16 pages, 64 bytes")
         #expect(text.ndefRecords(2) == "2 NDEF records")
     }
 
@@ -41,30 +42,40 @@ struct DumpSummaryTextTests {
         let text = DumpSummaryText.language("zh-Hans")
         #expect(text.pages(1) == "1 页")
         #expect(text.pages(16) == "16 页")
-        #expect(text.exportBytes(64) == "导出 64 字节")
+        #expect(text.bytes(64) == "64 字节")
         #expect(text.ndefRecords(1) == "1 条 NDEF 记录")
         #expect(text.capturedSummary("16 页", from: "卡片") == "已从 卡片 采集 16 页。")
-        #expect(text.list(["16 页", "导出 64 字节", "1 条 NDEF 记录"]) == "16 页、导出 64 字节和1 条 NDEF 记录")
+        #expect(text.pair("16 页", "64 字节") == "16 页，64 字节")
     }
 
     @Test
     func `Summary of a one-record Ultralight dump uses singular and plural`() {
         let summary = ultralightDump(pageCount: 16).summary
-        #expect(summary.technicalSummary == "16 pages, 64-byte export, and 1 NDEF record")
+        #expect(summary.technicalSummary == "16 pages, 64 bytes, 1 NDEF record")
         #expect(summary.userSummary == "Read a Type 2 style memory map with 16 pages.")
     }
 
     @Test
     func `Summary of a one-page dump is singular`() {
         let summary = ultralightDump(pageCount: 1, ndef: nil).summary
-        #expect(summary.technicalSummary == "1 page and 4-byte export")
+        #expect(summary.technicalSummary == "1 page, 4 bytes")
         #expect(summary.userSummary == "Read a Type 2 style memory map with 1 page.")
     }
 
     @Test
     func `Summary of a dump without memory says identification only`() {
         let dump = MemoryDump(cardInfo: CardInfo(type: .mifareUltralight, uid: Data([0x01])))
-        #expect(dump.summary.technicalSummary == "identification only and 0-byte export")
+        #expect(dump.summary.technicalSummary == "identification only, 0 bytes")
+    }
+
+    @Test
+    func `Technical summary lines are the size, then the NDEF records`() {
+        let dump = ultralightDump(pageCount: 16)
+        #expect(dump.technicalSummaryLines(text: .english, storageSummary: "16 pages") == ["16 pages, 64 bytes", "1 NDEF record"])
+        let chinese = DumpSummaryText.language("zh-Hans")
+        #expect(dump.technicalSummaryLines(text: chinese, storageSummary: chinese.pages(16)) == ["16 页，64 字节", "1 条 NDEF 记录"])
+        #expect(dump.summary(text: chinese).technicalSummary == "16 页，64 字节，1 条 NDEF 记录")
+        #expect(ultralightDump(pageCount: 1, ndef: nil).technicalSummaryLines(text: .english, storageSummary: "1 page") == ["1 page, 4 bytes"])
     }
 
     @Test

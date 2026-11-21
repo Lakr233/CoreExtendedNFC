@@ -154,8 +154,23 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         summary(text: .current)
     }
 
-    func summary(text: DumpSummaryText) -> DumpSummary {
-        let storageSummary = if !pages.isEmpty {
+    /// The technical summary in the user's language, as lines for display: the
+    /// size of the dump ("16 pages, 64 bytes"), then the NDEF records
+    /// ("1 NDEF record") when there is a message. ``DumpSummary/technicalSummary``
+    /// is the same text on one line.
+    public var localizedTechnicalSummaryLines: [String] {
+        technicalSummaryLines(text: .current, storageSummary: storageSummary(text: .current))
+    }
+
+    func technicalSummaryLines(text: DumpSummaryText, storageSummary: String) -> [String] {
+        [
+            text.pair(storageSummary, text.bytes(exportBinary().count)),
+            parsedNDEFMessage.map { text.ndefRecords($0.records.count) },
+        ].compactMap(\.self)
+    }
+
+    func storageSummary(text: DumpSummaryText) -> String {
+        if !pages.isEmpty {
             text.pages(pages.count)
         } else if !blocks.isEmpty {
             text.blocks(blocks.count)
@@ -166,7 +181,10 @@ public struct MemoryDump: Sendable, Codable, Equatable {
         } else {
             text.identificationOnly
         }
+    }
 
+    func summary(text: DumpSummaryText) -> DumpSummary {
+        let storageSummary = storageSummary(text: text)
         let userSummary = switch cardInfo.type.family {
         case .ntag, .mifareUltralight:
             text.type2Summary(storageSummary)
@@ -184,11 +202,8 @@ public struct MemoryDump: Sendable, Codable, Equatable {
             text.capturedSummary(storageSummary, from: cardInfo.type.description)
         }
 
-        let technicalSummary = text.list([
-            storageSummary,
-            text.exportBytes(exportBinary().count),
-            parsedNDEFMessage.map { text.ndefRecords($0.records.count) },
-        ].compactMap(\.self))
+        let lines = technicalSummaryLines(text: text, storageSummary: storageSummary)
+        let technicalSummary = lines.dropFirst().reduce(lines.first ?? "", text.pair)
 
         let normalizedCapabilities = capabilities.isEmpty ? inferredCapabilities() : capabilities
         return DumpSummary(

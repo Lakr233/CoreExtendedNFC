@@ -19,7 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- Dump summaries use the singular for a count of one: "1 NDEF record", "1 page", "1-byte export". `technicalSummary` is now a list such as "16 pages, 64-byte export, and 1 NDEF record" instead of parts joined with " · ", so the text of hex exports and the `technicalSummary` field of JSON exports change.
+- Dump summaries use the singular for a count of one: "1 NDEF record", "1 page", "1 byte". `technicalSummary` is now a short comma-separated line such as "16 pages, 64 bytes, 1 NDEF record" ("16 页，64 字节，1 条 NDEF 记录" in Simplified Chinese) instead of parts joined with " · ", so the text of hex exports and the `technicalSummary` field of JSON exports change.
+- `MemoryDump.localizedTechnicalSummaryLines` gives the same summary as lines for display: the size ("16 pages, 64 bytes"), then the NDEF records ("1 NDEF record").
 - `NDEFRecord.displayValue` for a Smart Poster reads "Title (URI)" instead of "Title · URI". Without a title it is the URI alone, not "Untitled · URI".
 - **Example app:** no UI text is joined with " · " or " • " any more. The dump list shows the date and the summary on separate lines, the passport list the document number and the date, and transit transactions the entry, exit and bus on separate lines. The log list reads "time [level] source".
 
