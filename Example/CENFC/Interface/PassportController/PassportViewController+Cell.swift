@@ -40,7 +40,9 @@ extension PassportViewController {
         func update(with record: PassportRecord) {
             content.configure(icon: UIImage(systemName: "person.text.rectangle"))
             content.configure(title: String.LocalizationValue(stringLiteral: record.displayName))
-            let desc = "\(record.passport.mrz?.documentNumber ?? "") · \(dateFormatter.string(from: record.date))"
+            let desc = [record.passport.mrz?.documentNumber, dateFormatter.string(from: record.date)]
+                .compactMap { $0?.isEmpty == false ? $0 : nil }
+                .joined(separator: "\n")
             content.configure(description: String.LocalizationValue(stringLiteral: desc))
         }
 

@@ -129,7 +129,7 @@ class DumpDetailViewController: StackScrollController, RecordDetailScreen {
             icon: "text.justify.left",
             title: String(localized: "Technical"),
             description: String(localized: "Memory layout and page/block count read from the card."),
-            value: record.dump.summary.technicalSummary
+            value: record.dump.localizedSummary.technicalSummary
         )
 
         if !record.dump.summary.capabilities.isEmpty {
@@ -141,7 +141,7 @@ class DumpDetailViewController: StackScrollController, RecordDetailScreen {
             )
         }
 
-        addSectionFooter(record.dump.summary.userSummary)
+        addSectionFooter(record.dump.localizedSummary.userSummary)
     }
 
     // MARK: - Facts

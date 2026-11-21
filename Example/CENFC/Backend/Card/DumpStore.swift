@@ -128,7 +128,7 @@ class DumpStore: @MainActor ObjectListDataSource {
         return ObjectListRowPresentation(
             icon: ScanStore.iconName(for: item.dump.cardInfo.type.family),
             title: item.dump.cardInfo.type.description,
-            detail: "\(dateString) · \(item.dump.summary.technicalSummary)"
+            detail: "\(dateString)\n\(item.dump.localizedSummary.technicalSummary)"
         )
     }
 }
