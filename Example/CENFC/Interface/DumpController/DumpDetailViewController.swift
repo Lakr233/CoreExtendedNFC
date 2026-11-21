@@ -20,6 +20,9 @@ class DumpDetailViewController: StackScrollController, RecordDetailScreen {
         self.record = record
         super.init(nibName: nil, bundle: nil)
         title = record.dump.cardInfo.type.description
+        // A data page: the values matter, so hide the explanations to fit more
+        // rows. VoiceOver and each value's menu still offer them.
+        descriptionStyle = .hidden
     }
 
     @available(*, unavailable)
@@ -126,7 +129,7 @@ class DumpDetailViewController: StackScrollController, RecordDetailScreen {
             icon: "text.justify.left",
             title: String(localized: "Technical"),
             description: String(localized: "Memory layout and page/block count read from the card."),
-            value: record.dump.summary.technicalSummary
+            value: record.dump.localizedTechnicalSummaryLines.joined(separator: "\n")
         )
 
         if !record.dump.summary.capabilities.isEmpty {
@@ -138,7 +141,7 @@ class DumpDetailViewController: StackScrollController, RecordDetailScreen {
             )
         }
 
-        addSectionFooter(record.dump.summary.userSummary)
+        addSectionFooter(record.dump.localizedSummary.userSummary)
     }
 
     // MARK: - Facts

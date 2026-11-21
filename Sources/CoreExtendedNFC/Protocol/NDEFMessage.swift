@@ -166,8 +166,12 @@ public struct NDEFRecord: Sendable, Equatable {
         case let .mime(type, data):
             return "\(type) (\(data.count) bytes)"
         case let .smartPoster(uri, title):
-            let resolvedTitle = title ?? "Untitled"
-            return [resolvedTitle, uri].compactMap(\.self).joined(separator: " · ")
+            switch (title, uri) {
+            case let (title?, uri?): return "\(title) (\(uri))"
+            case let (title?, nil): return title
+            case let (nil, uri?): return uri
+            case (nil, nil): return "Untitled"
+            }
         case let .external(_, data):
             return "\(data.count) bytes"
         case let .unknown(data):

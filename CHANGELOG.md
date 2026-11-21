@@ -15,6 +15,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Example app:** an App Clip (`CENFCClip`, `wiki.qaq.nfc.app.Clip`, iOS 17) that scans one card or tag and shows its details, then offers the full app. It stores nothing and reads NFC with the `TAG` format only. Not yet tested on a device.
 
+- `MemoryDump.localizedSummary`: the dump summary in the user's language (English and Simplified Chinese), for showing in an app. `summary` stays in English for exports.
+
+### Changed
+
+- Dump summaries use the singular for a count of one: "1 NDEF record", "1 page", "1 byte". `technicalSummary` is now a short comma-separated line such as "16 pages, 64 bytes, 1 NDEF record" ("16 页，64 字节，1 条 NDEF 记录" in Simplified Chinese) instead of parts joined with " · ", so the text of hex exports and the `technicalSummary` field of JSON exports change.
+- `MemoryDump.localizedTechnicalSummaryLines` gives the same summary as lines for display: the size ("16 pages, 64 bytes"), then the NDEF records ("1 NDEF record").
+- `NDEFRecord.displayValue` for a Smart Poster reads "Title (URI)" instead of "Title · URI". Without a title it is the URI alone, not "Untitled · URI".
+- **Example app:** no UI text is joined with " · " or " • " any more. The dump list shows the date and the summary on separate lines, the passport list the document number and the date, and transit transactions the entry, exit and bus on separate lines. The log list reads "time [level] source".
+
 ## [2.1.0] - 2026-10-17
 
 2.1.0 is a minor release: it adds public API (an experimental NTAG 424 DNA module, `DESFireVersionInfo.ntagHardwareType`, `FeliCaFrame.REQUEST_RESPONSE`, `DESFireStatus.authenticationDelay` and the passport and ISO 15693 helpers listed below) and fixes conformance issues found by checking every supported card family against its standard, cross-checked with closed-source readers. Not yet confirmed on real hardware: the passport Chip Access Procedure order and extended-length Active Authentication, ISO 15693 Extended Get System Information, and the NTAG 424 DNA module.

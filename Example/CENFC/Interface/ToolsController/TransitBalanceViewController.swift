@@ -205,15 +205,13 @@ class TransitBalanceViewController: StackScrollController {
         addInfoRow(
             icon: "banknote",
             title: String(localized: "Balance"),
-            value: balance.formattedBalance,
-            wrapValue: true
+            value: balance.formattedBalance
         )
 
         addInfoRow(
             icon: "info.circle",
             title: String(localized: "Raw"),
-            value: balance.currencyCode == "SGD" ? String(localized: "\(String(balance.balanceRaw)) SGD cents") : "\(balance.balanceRaw) \(balance.currencyCode)",
-            wrapValue: true
+            value: balance.currencyCode == "SGD" ? String(localized: "\(String(balance.balanceRaw)) SGD cents") : "\(balance.balanceRaw) \(balance.currencyCode)"
         )
 
         // Transaction History
@@ -263,9 +261,8 @@ class TransitBalanceViewController: StackScrollController {
                 addInfoRow(
                     icon: tx.type == .topup ? "plus.circle" : "arrow.right.circle",
                     title: "#\(index + 1)",
-                    description: details.joined(separator: " · "),
-                    value: value,
-                    wrapValue: true
+                    description: details.joined(separator: "\n"),
+                    value: value
                 )
             }
 

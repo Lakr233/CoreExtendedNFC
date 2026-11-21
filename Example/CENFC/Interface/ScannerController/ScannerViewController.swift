@@ -543,7 +543,7 @@ class ScannerViewController: ObjectListViewController<ScanStore>,
     private func promptSaveDump(_ dumpRecord: DumpRecord) {
         let alert = UIAlertController(
             title: String(localized: "Dump Data Detected"),
-            message: String(localized: "This file contains memory dump data (\(dumpRecord.dump.summary.technicalSummary)). Save it to Dump?"),
+            message: String(localized: "This file contains memory dump data (\(dumpRecord.dump.localizedSummary.technicalSummary)). Save it to Dump?"),
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: String(localized: "Save"), style: .default) { _ in
