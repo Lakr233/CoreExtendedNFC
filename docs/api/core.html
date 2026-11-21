@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Core API</title><link rel="stylesheet" href="../styles.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Core API - CoreExtendedNFC</title><link rel="stylesheet" href="../styles.css"></head>
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="../index.html">CoreExtendedNFC</a><a href="../index.html">Overview</a><a href="../guide/index.html">Guide</a><a href="index.html" aria-current="page">API</a><a href="../architecture.html">Architecture</a><a href="../build.html">Build</a><a href="../research/index.html">Research</a></nav>
 <main><h1>Core API</h1><p class="lede">The <code>CoreExtendedNFC</code> namespace exposes the high-level flows used by apps.</p>
 <pre><code class="language-swift">public static func scan(
@@ -113,4 +113,4 @@ if let balanceAfter = transaction.balanceAfter {
     showBalance(balanceAfter)
 }</code></pre>
 <p>Existing JSON records containing numeric amounts and balances remain decodable. Encoding a <code>nil</code> value omits that key; JSON consumers must accept missing <code>amount</code> and <code>balanceAfter</code> keys. Numeric zero remains a known zero value.</p>
-<nav class="pager"><span class="parent"><a href="index.html">API</a></span><a class="next" href="card-commands.html">Card commands</a></nav><footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>
+<nav class="pager"><span class="parent"><a href="index.html">API</a></span><a class="next" href="card-commands.html">Card commands</a></nav><footer>Source code on GitHub: <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>

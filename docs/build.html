@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>CoreExtendedNFC · Build</title><link rel="stylesheet" href="styles.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Build - CoreExtendedNFC</title><link rel="stylesheet" href="styles.css"></head>
 <body><nav class="topbar" aria-label="Primary"><a class="home" href="index.html">CoreExtendedNFC</a><a href="index.html">Overview</a><a href="guide/index.html">Guide</a><a href="api/index.html">API</a><a href="architecture.html">Architecture</a><a href="build.html" aria-current="page">Build</a><a href="research/index.html">Research</a></nav>
 <main><h1>Build</h1><p class="lede">CoreExtendedNFC is iOS-only. Validate with an iOS-capable toolchain and do not add macOS compatibility shims for CoreNFC.</p>
 <h2 id="requirements">Requirements</h2><table><thead><tr><th>Tool</th><th>Version</th></tr></thead><tbody><tr><td>Swift</td><td>6.2 or newer</td></tr><tr><td>iOS</td><td>15.0 or newer</td></tr><tr><td>Xcode</td><td>iOS SDK with CoreNFC available</td></tr><tr><td>openssl-spm</td><td>3.6.1 or newer, resolved by SwiftPM</td></tr></tbody></table>
@@ -11,4 +11,4 @@ xcodebuild -scheme CoreExtendedNFC -destination "$DESTINATION" test</code></pre>
 <h2 id="example">Example App</h2><pre><code class="language-bash">xcodebuild -project Example/CENFC.xcodeproj -scheme CENFC -destination 'generic/platform=iOS Simulator' build</code></pre>
 <p>NFC reads require a physical iPhone and card. For Singapore CEPAS, use the <a href="guide/transit.html#singapore">offline test guide</a> and export Logs; passing a simulator build or mock tests does not verify card support.</p>
 <h2 id="pages">GitHub Pages</h2><p><code>.github/workflows/pages.yml</code> publishes the static <code>docs/</code> directory on pushes to <code>main</code>.</p>
-<footer>CoreExtendedNFC · <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>
+<footer>Source code on GitHub: <a href="https://github.com/Lakr233/CoreExtendedNFC">github.com/Lakr233/CoreExtendedNFC</a></footer></main></body></html>
