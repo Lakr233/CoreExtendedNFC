@@ -304,7 +304,7 @@ final class LogsViewController: UIViewController, UITableViewDataSource, UITable
         cell.detailTextLabel?.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
         cell.detailTextLabel?.numberOfLines = 1
         cell.detailTextLabel?.textColor = .secondaryLabel
-        cell.detailTextLabel?.text = "\(DateFormatter.logTimestamp.string(from: entry.timestamp)) • \(entry.source) • \(entry.level.rawValue)"
+        cell.detailTextLabel?.text = "\(DateFormatter.logTimestamp.string(from: entry.timestamp)) [\(entry.level.rawValue)] \(entry.source)"
 
         cell.backgroundColor = .systemBackground
         cell.selectionStyle = .none

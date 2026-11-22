@@ -3,13 +3,16 @@ import SPIndicator
 import UIKit
 
 extension StackScrollController {
+    /// Adds a row showing `value` beside its title, or under it when it is too
+    /// long to fit there. `descriptionStyle` overrides the page's
+    /// `descriptionStyle` for this row, for an explanation people must read.
     func addInfoRow(
         icon: String,
         title: String,
         description: String = "",
+        descriptionStyle: ConfigurableDescriptionStyle? = nil,
         value: String,
         isDestructive: Bool = false,
-        wrapValue: Bool = false,
         extraMenuActions: [UIMenuElement] = []
     ) {
         let infoView = ConfigurableInfoView()
@@ -18,15 +21,21 @@ extension StackScrollController {
         #if APPCLIP
             // The App Clip shows the name and the whole value, without the explanation.
             infoView.configure(description: "")
-            infoView.configure(value: value, isDestructive: isDestructive, wrapValue: true)
         #else
+            infoView.descriptionStyle = descriptionStyle
             infoView.configure(description: String.LocalizationValue(stringLiteral: description))
-            infoView.configure(value: value, isDestructive: isDestructive, wrapValue: wrapValue)
         #endif
+        infoView.configure(value: value, isDestructive: isDestructive)
         // Passport screens keep copied values on this device and let them expire.
         let copiesSensitively = self is PrivacySensitiveScreen
-        infoView.use { [weak self] in
-            let valueAction = UIAction(title: value, attributes: .disabled) { _ in }
+        infoView.use { [weak self, weak infoView] in
+            // Where the page hides the explanation, the value's menu still has it.
+            let showsDescription = infoView?.effectiveDescriptionStyle == .full
+            let valueAction = UIAction(
+                title: value,
+                subtitle: showsDescription || description.isEmpty ? nil : description,
+                attributes: .disabled
+            ) { _ in }
             let copyAction = UIAction(
                 title: String(localized: "Copy"),
                 image: UIImage(systemName: "doc.on.doc")

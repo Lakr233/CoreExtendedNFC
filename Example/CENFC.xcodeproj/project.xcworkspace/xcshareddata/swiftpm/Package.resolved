@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/Lakr233/ConfigurableKit",
       "state" : {
-        "revision" : "491ce28fb46fd226d5dcad8392703ffde14b7b16",
-        "version" : "4.2.1"
+        "revision" : "d96d318c2bd68c4f3541ac972e410c41e452767d",
+        "version" : "4.2.2"
       }
     },
     {
