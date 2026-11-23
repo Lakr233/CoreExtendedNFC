@@ -132,6 +132,7 @@
 		<string>80DE</string>
 		<string>865E</string>
 		<string>8592</string>
+		<string>8FC1</string>
 	</array>
 	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
 	<array>

@@ -54,9 +54,17 @@ public protocol FeliCaTagTransporting: NFCTagTransport {
 
     /// Query whether service codes exist on the current tag.
     func requestService(nodeCodeList: [Data]) async throws -> [Data]
+
+    /// List the systems advertised by the card, without changing the selected system.
+    /// The default implementation throws `unsupportedOperation`.
+    func requestSystemCode() async throws -> [Data]
 }
 
 public extension FeliCaTagTransporting {
+    func requestSystemCode() async throws -> [Data] {
+        throw NFCError.unsupportedOperation("FeliCa system enumeration is not supported by this transport")
+    }
+
     func readWithoutEncryption(
         serviceCodeList: [Data],
         blockList: [Data]
